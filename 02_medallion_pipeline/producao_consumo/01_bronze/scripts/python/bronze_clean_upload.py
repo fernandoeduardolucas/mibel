@@ -53,15 +53,11 @@ def _parse_common(df: pd.DataFrame) -> pd.DataFrame:
     df = _normalize_columns(df)
 
     # Limpa espaços em colunas de texto.
-    for col in df.select_dtypes(include="object").columns:
+    for col in df.select_dtypes(include=["object", "string"]).columns:
         df[col] = df[col].astype(str).str.strip()
 
     # Converte timestamps e datas. Quando falha, fica NaT.
-    df["timestamp_utc"] = (
-    pd.to_datetime(df["datahora"], utc=True)
-    .dt.tz_localize(None)
-    .dt.floor("ms")
-)
+    df["timestamp_utc"] = pd.to_datetime(df["datahora"], utc=True).dt.tz_localize(None).dt.floor("ms")
     df["data_local"] = pd.to_datetime(df["date"], errors="coerce").dt.date
 
     # Converte colunas de calendário para inteiros anuláveis.
@@ -133,7 +129,7 @@ def clean_consumo(path: Path) -> pd.DataFrame:
             "flag_bad_date": df["flag_bad_date"],
             "flag_bad_total": df["flag_bad_total"],
             "flag_zero_row": df["flag_zero_total"],
-            "ingest_ts_utc": pd.Timestamp.utcnow(),
+            "ingest_ts_utc": pd.Timestamp.now("UTC"),
         }
     )
     return out.sort_values("timestamp_utc", kind="mergesort").reset_index(drop=True)
@@ -169,7 +165,7 @@ def clean_producao(path: Path) -> pd.DataFrame:
             "flag_bad_date": df["flag_bad_date"],
             "flag_bad_total": df["flag_bad_total"],
             "flag_zero_row": df["flag_zero_total"],
-            "ingest_ts_utc": pd.Timestamp.utcnow(),
+            "ingest_ts_utc": pd.Timestamp.now("UTC"),
         }
     )
     return out.sort_values("timestamp_utc", kind="mergesort").reset_index(drop=True)

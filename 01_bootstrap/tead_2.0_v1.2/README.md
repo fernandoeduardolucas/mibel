@@ -31,6 +31,7 @@ A local data platform for development and experimentation, combining a **Docker 
 | `metastore-db` | MariaDB backend for Hive Metastore | internal |
 | `hive-metastore` | Hive Metastore (Thrift) for Iceberg/Hive catalogs | `9083` |
 | `trino` | Distributed query engine | `8080` |
+| `trino-cli` | Helper container for Trino CLI commands | — |
 | `mlflow-db` | Postgres backend for MLflow | internal |
 | `mlflow` | MLflow tracking server | `15000` |
 
@@ -130,7 +131,7 @@ You should see confirmation that the `warehouse` and `mlflow` buckets were creat
 
 **Trino:** Verify the `hive` and `iceberg` catalogs are registered:
 ```bash
-docker compose exec trino trino --execute "SHOW CATALOGS;"
+docker compose exec trino-cli trino --server http://trino:8080 --execute "SHOW CATALOGS;"
 ```
 
 Expected output:

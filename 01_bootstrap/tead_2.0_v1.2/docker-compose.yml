@@ -57,6 +57,12 @@ services:
       - ./trino/etc:/etc/trino:ro
       - trino-data:/data/trino
 
+  # Helper container to run Trino CLI commands from Compose network
+  trino-cli:
+    image: trinodb/trino:468
+    depends_on: [trino]
+    entrypoint: ["/bin/sh", "-c", "sleep infinity"]
+
   mlflow-db:
     image: postgres:16
     environment:

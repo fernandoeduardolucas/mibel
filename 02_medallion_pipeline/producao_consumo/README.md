@@ -16,17 +16,32 @@ Ordem recomendada:
 
 ## Execução rápida (Windows)
 
-No Windows, o runner usa `pipeline/run_all.bat` e espera o Trino CLI disponível no `PATH`.
+No Windows, o runner usa `pipeline/run_all.bat`.
 
-Se o comando `trino` não existir, defina o executável manualmente:
+Ele tenta nesta ordem:
+1. `TRINO_CMD` / `TRINO_EXE` (quando definidos)
+2. comando `trino` no `PATH`
+3. fallback automático para Docker Compose (`docker compose exec trino trino ...`)
+
+### Opção A — Trino CLI local
 
 ```bat
 set TRINO_CMD=C:\tools\trino.exe
 cmd.exe /c pipeline\run_all.bat
 ```
 
+### Opção B — Docker Compose (recomendado quando não há CLI local)
+
+```bat
+set TRINO_COMPOSE_FILE=..\..\01_bootstrap\tead_2.0_v1.2\docker-compose.yml
+docker compose -f %TRINO_COMPOSE_FILE% up -d
+cmd.exe /c pipeline\run_all.bat
+```
+
 Também pode usar as variáveis opcionais:
 
-- `TRINO_HOST` (default: `localhost`)
-- `TRINO_PORT` (default: `8080`)
 - `TRINO_USER` (default: `admin`)
+- `TRINO_HOST` (default: `localhost`, usado no modo CLI local)
+- `TRINO_PORT` (default: `8080`, usado no modo CLI local)
+- `TRINO_DOCKER_SERVICE` (default: `trino`, usado no modo Docker)
+- `TRINO_DOCKER_SERVER` (default: `http://trino:8080`, usado no modo Docker)

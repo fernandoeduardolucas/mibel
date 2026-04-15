@@ -1,0 +1,27 @@
+DESENHO DA CAMADA GOLD
+
+Produto Gold
+- gold.producao_vs_consumo_hourly
+
+Granularidade
+- 1 linha por hora em timestamp_utc
+
+Medidas finais
+- consumo_total_kwh
+- producao_total_kwh
+- producao_dgm_kwh
+- producao_pre_kwh
+- saldo_kwh = producao_total_kwh - consumo_total_kwh
+- ratio_producao_consumo = producao_total_kwh / consumo_total_kwh
+- flag_defice
+- flag_excedente
+- flag_missing_source
+
+Origem
+- Silver consumo 15 minutos
+- Silver produção 15 minutos
+
+Transformações
+- agregação horária com date_trunc('hour', timestamp_utc)
+- soma por hora das medidas em kWh
+- junção final por timestamp_utc

@@ -1,0 +1,40 @@
+DESENHO DA CAMADA SILVER
+
+Camada Bronze
+- preserva o dado limpo e auditável, mas ainda com linhas duplicadas marcadas
+- serve de histórico técnico e base de rastreabilidade
+
+Camada Silver
+- produz um registo final e confiável por timestamp de 15 minutos
+- aplica regras de qualidade e de negócio leves
+- mantém colunas úteis para consumo analítico e para a Gold
+
+Tabelas Silver propostas
+1. consumo_total_nacional_15min
+   Colunas principais:
+   - timestamp_utc
+   - consumo_bt_kwh
+   - consumo_mt_kwh
+   - consumo_at_kwh
+   - consumo_mat_kwh
+   - consumo_total_kwh
+   - consumo_componentes_kwh
+   - diff_componentes_total_kwh
+   - flags de qualidade
+
+2. energia_produzida_total_nacional_15min
+   Colunas principais:
+   - timestamp_utc
+   - producao_dgm_kwh
+   - producao_pre_kwh
+   - producao_total_kwh
+   - producao_componentes_kwh
+   - diff_componentes_total_kwh
+   - flags de qualidade
+
+Regra de qualidade
+- excluir linhas com timestamp inválido
+- excluir linhas com total inválido
+- deduplicar por timestamp_utc
+- manter flags de origem para auditoria
+- criar flag_component_sum_mismatch com tolerância técnica muito pequena

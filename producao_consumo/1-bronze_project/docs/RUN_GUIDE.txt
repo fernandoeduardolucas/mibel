@@ -1,0 +1,14 @@
+Comandos úteis
+
+1) Instalar dependências
+   pip install -r scripts/python/requirements_bronze.txt
+
+2) Correr limpeza + upload
+   python scripts/python/bronze_clean_upload.py \
+     --consumo data/raw/consumo-total-nacional.csv \
+     --producao data/raw/energia-produzida-total-nacional.csv \
+     --out-dir data/clean \
+     --upload
+
+3) No DataGrip / Trino
+   correr sql/bronze_trino.sql

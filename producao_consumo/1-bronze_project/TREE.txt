@@ -1,0 +1,17 @@
+bronze_pipeline_package
+├── data
+│   ├── clean
+│   └── raw
+│       ├── consumo-total-nacional.csv
+│       └── energia-produzida-total-nacional.csv
+├── docs
+│   ├── produto_gold_a_sem_silver.docx
+│   ├── README_bronze_pipeline.txt
+│   └── RUN_GUIDE.txt
+├── scripts
+│   └── python
+│       ├── bronze_clean_upload.py
+│       └── requirements_bronze.txt
+├── sql
+│   └── bronze_trino.sql
+└── README.txt

@@ -68,8 +68,8 @@ services:
 
   mlflow:
     build:
-      context: ./mlflow
-      dockerfile: Dockerfile
+      context: mlflow
+      dockerfile: mlflow/Dockerfile
     image: tead-mlflow:v3.10.1
     depends_on: [mlflow-db, minio, mc]
     ports:

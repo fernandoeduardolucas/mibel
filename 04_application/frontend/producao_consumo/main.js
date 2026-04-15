@@ -8,6 +8,16 @@ const refreshButton = document.getElementById("refreshButton");
 const numberFmt = new Intl.NumberFormat("pt-PT", { maximumFractionDigits: 2 });
 const percentFmt = new Intl.NumberFormat("pt-PT", { maximumFractionDigits: 2 });
 
+function defaultApiBase() {
+  const pageProtocol = window.location.protocol === "https:" ? "https:" : "http:";
+  const pageHost = window.location.hostname || "127.0.0.1";
+  return `${pageProtocol}//${pageHost}:8000`;
+}
+
+if (!apiBaseInput.value.trim()) {
+  apiBaseInput.value = defaultApiBase();
+}
+
 function toFixed(value) {
   return numberFmt.format(value ?? 0);
 }
@@ -56,13 +66,39 @@ async function fetchJson(url) {
 
 function candidateBases(base) {
   const normalized = base.replace(/\/$/, "");
-  const candidates = [normalized];
+  const candidates = new Set([normalized]);
 
-  if (normalized.includes("localhost")) {
-    candidates.push(normalized.replace("localhost", "127.0.0.1"));
+  let parsed;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    return [normalized];
   }
 
-  return [...new Set(candidates)];
+  const { protocol, hostname, port } = parsed;
+  const apiPort = port || "8000";
+  const pageHost = window.location.hostname;
+
+  if (hostname === "localhost") {
+    candidates.add(`${protocol}//127.0.0.1:${apiPort}`);
+    candidates.add(`${protocol}//[::1]:${apiPort}`);
+  } else if (hostname === "127.0.0.1") {
+    candidates.add(`${protocol}//localhost:${apiPort}`);
+    candidates.add(`${protocol}//[::1]:${apiPort}`);
+  } else if (hostname === "::1" || hostname === "[::1]") {
+    candidates.add(`${protocol}//localhost:${apiPort}`);
+    candidates.add(`${protocol}//127.0.0.1:${apiPort}`);
+  }
+
+  if (pageHost && pageHost !== hostname) {
+    candidates.add(`${protocol}//${pageHost}:${apiPort}`);
+  }
+
+  if (["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname)) {
+    candidates.add(`${protocol}//host.docker.internal:${apiPort}`);
+  }
+
+  return [...candidates];
 }
 
 async function load() {
@@ -95,7 +131,7 @@ async function load() {
       }
 
       if (error instanceof TypeError) {
-        statusEl.textContent = `Erro ao carregar dashboard: sem ligação à API em ${configuredBase}. Dica: se estiver em Windows/IPv6, experimente http://127.0.0.1:8000 e confirme backend ativo (ex.: py 04_application/backend/producao_consumo/server.py).`;
+        statusEl.textContent = `Erro ao carregar dashboard: sem ligação à API. Tentativas: ${attempts.join(", ")}. Confirme backend ativo (ex.: py 04_application/backend/producao_consumo/server.py).`;
         return;
       }
 

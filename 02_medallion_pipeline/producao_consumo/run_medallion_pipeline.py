@@ -2,7 +2,7 @@
 """Runner único (cross-platform) para a pipeline Medallion de producao_consumo.
 
 Fluxo:
-1) Sobe stack Docker Compose (01_bootstrap/tead_2.0_v1.2/docker-compose.yml)
+1) Sobe stack Docker Compose (sem build por padrão)
 2) Instala dependências da Bronze
 3) Executa limpeza + upload Bronze
 4) Executa SQL Bronze, Silver e Gold via Trino dentro do Docker
@@ -36,7 +36,7 @@ def must_exist(path: Path, description: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Corre a medallion pipeline de producao_consumo")
-    parser.add_argument("--skip-build", action="store_true", help="não faz build no docker compose up")
+    parser.add_argument("--build", action="store_true", help="faz build no docker compose up")
     args = parser.parse_args()
 
     pipeline_root = Path(__file__).resolve().parent
@@ -66,7 +66,7 @@ def main() -> None:
         raise SystemExit("Erro: não foi encontrado python/python3 no PATH.")
 
     compose_up = ["docker", "compose", "-f", str(compose_file), "up", "-d"]
-    if not args.skip_build:
+    if args.build:
         compose_up.append("--build")
     run(compose_up)
 

@@ -56,7 +56,10 @@ function renderSeries(rows) {
 }
 
 async function fetchJson(url) {
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    mode: "cors",
+    referrerPolicy: "no-referrer",
+  });
   if (!response.ok) {
     const errorBody = await response.text();
     throw new Error(`${response.status} ${response.statusText}: ${errorBody}`);

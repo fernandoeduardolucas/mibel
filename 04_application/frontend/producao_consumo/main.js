@@ -69,6 +69,10 @@ async function load() {
     renderSeries(series);
     statusEl.textContent = `Atualizado em ${new Date().toLocaleString("pt-PT")}.`;
   } catch (error) {
+    if (error instanceof TypeError) {
+      statusEl.textContent = `Erro ao carregar dashboard: sem ligação à API em ${base}. Confirme se o backend está ativo (ex.: python3 04_application/backend/producao_consumo/server.py).`;
+      return;
+    }
     statusEl.textContent = `Erro ao carregar dashboard: ${error.message}`;
   }
 }

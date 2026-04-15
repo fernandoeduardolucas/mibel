@@ -34,6 +34,21 @@ def must_exist(path: Path, description: str) -> None:
         raise SystemExit(f"Erro: {description} não encontrado: {path}")
 
 
+def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
+    """Cria (se necessário) e devolve o python de um venv local da pipeline."""
+    venv_dir = pipeline_root / ".venv_medallion"
+    if os.name == "nt":
+        venv_python = venv_dir / "Scripts" / "python.exe"
+    else:
+        venv_python = venv_dir / "bin" / "python"
+
+    if not venv_python.exists():
+        print(f"\n>>> Criando virtualenv local em: {venv_dir}")
+        run([base_python, "-m", "venv", str(venv_dir)])
+
+    return venv_python
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Corre a medallion pipeline de producao_consumo")
     parser.add_argument("--build", action="store_true", help="faz build no docker compose up")
@@ -64,13 +79,15 @@ def main() -> None:
     python_cmd = shutil.which("python") or shutil.which("python3")
     if python_cmd is None:
         raise SystemExit("Erro: não foi encontrado python/python3 no PATH.")
+    venv_python = create_local_venv(pipeline_root, python_cmd)
 
     compose_up = ["docker", "compose", "-f", str(compose_file), "up", "-d"]
     if args.build:
         compose_up.append("--build")
     run(compose_up)
 
-    run([python_cmd, "-m", "pip", "install", "-r", str(bronze_requirements)])
+    run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"])
+    run([str(venv_python), "-m", "pip", "install", "-r", str(bronze_requirements)])
 
     env = os.environ.copy()
     env.update(
@@ -86,7 +103,7 @@ def main() -> None:
     print("\n>>> Bronze clean + upload")
     subprocess.run(
         [
-            python_cmd,
+            str(venv_python),
             "scripts/python/bronze_clean_upload.py",
             "--consumo",
             "data/raw/consumo-total-nacional.csv",

@@ -54,26 +54,54 @@ async function fetchJson(url) {
   return response.json();
 }
 
+function candidateBases(base) {
+  const normalized = base.replace(/\/$/, "");
+  const candidates = [normalized];
+
+  if (normalized.includes("localhost")) {
+    candidates.push(normalized.replace("localhost", "127.0.0.1"));
+  }
+
+  return [...new Set(candidates)];
+}
+
 async function load() {
-  const base = apiBaseInput.value.replace(/\/$/, "");
+  const configuredBase = apiBaseInput.value.replace(/\/$/, "");
   const group = groupBySelect.value;
   statusEl.textContent = "A carregar dados...";
 
-  try {
-    const [overview, series] = await Promise.all([
-      fetchJson(`${base}/api/overview`),
-      fetchJson(`${base}/api/timeseries?group=${group}`),
-    ]);
+  const attempts = candidateBases(configuredBase);
 
-    renderKpis(overview);
-    renderSeries(series);
-    statusEl.textContent = `Atualizado em ${new Date().toLocaleString("pt-PT")}.`;
-  } catch (error) {
-    if (error instanceof TypeError) {
-      statusEl.textContent = `Erro ao carregar dashboard: sem ligação à API em ${base}. Confirme se o backend está ativo (ex.: python3 04_application/backend/producao_consumo/server.py).`;
+  for (const base of attempts) {
+    try {
+      const [overview, series] = await Promise.all([
+        fetchJson(`${base}/api/overview`),
+        fetchJson(`${base}/api/timeseries?group=${group}`),
+      ]);
+
+      renderKpis(overview);
+      renderSeries(series);
+
+      if (base !== configuredBase) {
+        apiBaseInput.value = base;
+      }
+
+      statusEl.textContent = `Atualizado em ${new Date().toLocaleString("pt-PT")}.`;
+      return;
+    } catch (error) {
+      const isLastAttempt = base === attempts[attempts.length - 1];
+      if (!isLastAttempt && error instanceof TypeError) {
+        continue;
+      }
+
+      if (error instanceof TypeError) {
+        statusEl.textContent = `Erro ao carregar dashboard: sem ligação à API em ${configuredBase}. Dica: se estiver em Windows/IPv6, experimente http://127.0.0.1:8000 e confirme backend ativo (ex.: py 04_application/backend/producao_consumo/server.py).`;
+        return;
+      }
+
+      statusEl.textContent = `Erro ao carregar dashboard: ${error.message}`;
       return;
     }
-    statusEl.textContent = `Erro ao carregar dashboard: ${error.message}`;
   }
 }
 

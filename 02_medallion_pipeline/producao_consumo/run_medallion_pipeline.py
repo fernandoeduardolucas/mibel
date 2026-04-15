@@ -76,9 +76,11 @@ def main() -> None:
     if shutil.which("docker") is None:
         raise SystemExit("Erro: comando 'docker' não encontrado.")
 
-    python_cmd = shutil.which("python") or shutil.which("python3")
-    if python_cmd is None:
-        raise SystemExit("Erro: não foi encontrado python/python3 no PATH.")
+    python_cmd = sys.executable
+    if not python_cmd or "WindowsApps" in python_cmd or not Path(python_cmd).exists():
+        raise RuntimeError(
+            "Python inválido detectado. Use o executável real do Python, não o alias WindowsApps."
+        )
     venv_python = create_local_venv(pipeline_root, python_cmd)
 
     compose_up = ["docker", "compose", "-f", str(compose_file), "up", "-d"]

@@ -36,3 +36,6 @@ Thumbs.db
 
 # Project-specific
 /02_medallion_pipeline/producao_consumo/.venv_medallion/
+
+# Local clean data outputs
+/02_medallion_pipeline/producao_consumo/01_bronze/data/clean/

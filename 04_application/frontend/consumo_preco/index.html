@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Dashboard Consumo vs Preço</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <h1>Dashboard Consumo vs Preço</h1>
+        <p>Análise nacional do consumo energético face ao preço horário de mercado (MIBEL).</p>
+      </header>
+
+      <section class="controls">
+        <label for="apiBase">Base da API</label>
+        <input id="apiBase" type="text" value="" placeholder="http://127.0.0.1:8000" />
+
+        <label for="groupBy">Agregação</label>
+        <select id="groupBy">
+          <option value="day">Diária</option>
+          <option value="month">Mensal</option>
+        </select>
+
+        <button id="refreshButton">Atualizar</button>
+      </section>
+
+      <section class="kpis" id="kpiCards"></section>
+
+      <section class="tables">
+        <article>
+          <h2>Série temporal</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Período</th>
+                  <th>Consumo (MWh)</th>
+                  <th>Custo estimado (€)</th>
+                  <th>Preço médio simples (€/MWh)</th>
+                  <th>Preço médio ponderado (€/MWh)</th>
+                  <th>Leituras</th>
+                </tr>
+              </thead>
+              <tbody id="seriesRows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <p id="status" class="status"></p>
+    </main>
+
+    <script src="./main.js" type="module"></script>
+  </body>
+</html>

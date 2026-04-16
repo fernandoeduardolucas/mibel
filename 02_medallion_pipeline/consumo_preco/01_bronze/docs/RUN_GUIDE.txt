@@ -1,0 +1,46 @@
+RUN GUIDE — Bronze Pipeline Consumo vs Preços
+
+Pré-requisitos
+1. Python 3.11+ recomendado.
+2. Instalar dependências:
+   pip install -r scripts/python/requirements_bronze.txt
+
+Execução local sem upload
+A partir da raiz do pacote:
+
+python scripts/python/bronze_clean_upload_consumo_precos.py   --consumo "data/raw/consumo-total-nacional.csv"   --precos "data/raw/Day-ahead Market Prices_20230101_20260311.csv"   --out-dir data/clean
+
+Execução local com upload para MinIO/S3
+Definir variáveis de ambiente:
+- S3_ENDPOINT_URL=http://localhost:9000
+- AWS_ACCESS_KEY_ID=minioadmin
+- AWS_SECRET_ACCESS_KEY=minioadmin
+- S3_BUCKET=warehouse
+- S3_PREFIX=bronze/clean
+
+Depois executar:
+
+python scripts/python/bronze_clean_upload_consumo_precos.py   --consumo "data/raw/consumo-total-nacional.csv"   --precos "data/raw/Day-ahead Market Prices_20230101_20260311.csv"   --out-dir data/clean   --upload
+
+Timezone de mercado para preços
+Por omissão, o script assume:
+  --price-timezone Europe/Lisbon
+
+Se o contrato de mercado for outro, alterar explicitamente o argumento.
+
+Outputs esperados
+- data/clean/consumo_total_nacional_clean.parquet
+- data/clean/energy_market_prices_pt_es_clean.parquet
+
+Observação importante
+O argumento --out-dir recebe uma pasta base. O script grava os dois Parquet diretamente nessa pasta. Se quiseres uma saída exatamente alinhada com a estrutura data/clean/consumo e data/clean/precos, tens duas alternativas:
+1. executar e depois mover os ficheiros para as subpastas; ou
+2. evoluir o script para escrever cada dataset na sua subpasta nativa.
+
+Validação rápida pós-execução
+Verificar no terminal:
+- número de linhas por dataset;
+- min/max timestamp_utc;
+- contagem de duplicados;
+- contagem de flags de qualidade;
+- Run ID e Ingest TS UTC.

@@ -5,16 +5,30 @@ from __future__ import annotations
 
 import csv
 import json
+import subprocess
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import StringIO
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[3]
-CONSUMPTION_CSV = ROOT / "02_medallion_pipeline/producao_consumo/01_bronze/data/raw/consumo-total-nacional.csv"
-PRODUCTION_CSV = ROOT / "02_medallion_pipeline/producao_consumo/01_bronze/data/raw/energia-produzida-total-nacional.csv"
+DOCKER_COMPOSE_FILE = ROOT / "01_bootstrap/tead_2.0_v1.2/docker-compose.yml"
+GOLD_TABLE = "iceberg.gold.producao_vs_consumo_hourly"
+TRINO_QUERY = f"""
+SELECT
+    timestamp_utc,
+    consumo_total_kwh,
+    producao_total_kwh,
+    producao_dgm_kwh,
+    producao_pre_kwh
+FROM {GOLD_TABLE}
+ORDER BY timestamp_utc
+"""
+CACHE_TTL_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -63,72 +77,80 @@ class Point:
 
 
 class ProducaoConsumoService:
-    def __init__(self, consumo_path: Path, producao_path: Path):
-        self._consumo_path = consumo_path
-        self._producao_path = producao_path
+    def __init__(self):
         self._cache: List[Point] | None = None
-        self._cache_stamp: Tuple[float, float] | None = None
+        self._cache_loaded_at: float | None = None
 
-    def _read_consumption(self) -> Dict[str, Dict[str, float]]:
-        with self._consumo_path.open("r", encoding="utf-8-sig", newline="") as handle:
-            reader = csv.DictReader(handle)
-            rows: Dict[str, Dict[str, float]] = {}
-            for row in reader:
-                timestamp = (row.get("datahora") or "").strip()
-                total_raw = (row.get("total") or "").strip()
-                if not timestamp or not total_raw:
-                    continue
-                rows[timestamp] = {
-                    "consumo_total": float(total_raw),
-                }
-            return rows
+    @staticmethod
+    def _parse_float(value: str | None) -> float | None:
+        text = (value or "").strip()
+        if not text:
+            return None
+        return float(text)
 
-    def _read_production(self) -> Dict[str, Dict[str, float]]:
-        with self._producao_path.open("r", encoding="utf-8-sig", newline="") as handle:
-            reader = csv.DictReader(handle)
-            rows: Dict[str, Dict[str, float]] = {}
-            for row in reader:
-                timestamp = (row.get("datahora") or "").strip()
-                total_raw = (row.get("total") or "").strip()
-                dgm_raw = (row.get("dgm") or "").strip()
-                pre_raw = (row.get("pre") or "").strip()
-                if not timestamp or not total_raw:
-                    continue
-                rows[timestamp] = {
-                    "producao_total": float(total_raw),
-                    "producao_dgm": float(dgm_raw or 0.0),
-                    "producao_pre": float(pre_raw or 0.0),
-                }
-            return rows
+    @staticmethod
+    def _parse_timestamp(value: str) -> datetime:
+        raw = value.strip()
+        iso_value = raw.replace(" ", "T", 1)
+        if iso_value.endswith(" UTC"):
+            iso_value = iso_value.removesuffix(" UTC") + "+00:00"
+        if iso_value.endswith("Z"):
+            iso_value = iso_value[:-1] + "+00:00"
+        try:
+            return datetime.fromisoformat(iso_value)
+        except ValueError:
+            pass
+
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f %Z", "%Y-%m-%d %H:%M:%S %Z"):
+            try:
+                parsed = datetime.strptime(raw, fmt)
+                return parsed.replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+        raise ValueError(f"Formato de timestamp inesperado vindo do Trino: {value!r}")
+
+    def _fetch_gold_rows(self) -> List[dict]:
+        command = [
+            "docker",
+            "compose",
+            "-f",
+            str(DOCKER_COMPOSE_FILE),
+            "exec",
+            "-T",
+            "trino",
+            "trino",
+            "--output-format",
+            "CSV_HEADER",
+            "--execute",
+            TRINO_QUERY,
+        ]
+        completed = subprocess.run(command, check=True, capture_output=True, text=True, cwd=ROOT)
+        reader = csv.DictReader(StringIO(completed.stdout))
+        return list(reader)
 
     def _build_points(self) -> List[Point]:
-        consumo = self._read_consumption()
-        producao = self._read_production()
-
-        joined: List[Point] = []
-        for timestamp_iso in sorted(set(consumo) | set(producao)):
-            timestamp = datetime.fromisoformat(timestamp_iso)
-            consumo_row = consumo.get(timestamp_iso)
-            producao_row = producao.get(timestamp_iso)
-            joined.append(
+        points: List[Point] = []
+        for row in self._fetch_gold_rows():
+            timestamp_raw = (row.get("timestamp_utc") or "").strip()
+            if not timestamp_raw:
+                continue
+            points.append(
                 Point(
-                    timestamp=timestamp,
-                    consumo_total=consumo_row["consumo_total"] if consumo_row else None,
-                    producao_total=producao_row["producao_total"] if producao_row else None,
-                    producao_dgm=producao_row["producao_dgm"] if producao_row else None,
-                    producao_pre=producao_row["producao_pre"] if producao_row else None,
+                    timestamp=self._parse_timestamp(timestamp_raw),
+                    consumo_total=self._parse_float(row.get("consumo_total_kwh")),
+                    producao_total=self._parse_float(row.get("producao_total_kwh")),
+                    producao_dgm=self._parse_float(row.get("producao_dgm_kwh")),
+                    producao_pre=self._parse_float(row.get("producao_pre_kwh")),
                 )
             )
-        return joined
-
-    def _stamp(self) -> Tuple[float, float]:
-        return (self._consumo_path.stat().st_mtime, self._producao_path.stat().st_mtime)
+        return points
 
     def points(self) -> List[Point]:
-        new_stamp = self._stamp()
-        if self._cache is None or self._cache_stamp != new_stamp:
+        now = time.monotonic()
+        needs_refresh = self._cache is None or self._cache_loaded_at is None or (now - self._cache_loaded_at) >= CACHE_TTL_SECONDS
+        if needs_refresh:
             self._cache = self._build_points()
-            self._cache_stamp = new_stamp
+            self._cache_loaded_at = now
         return self._cache
 
     def _aggregate(self, fmt: str) -> List[dict]:
@@ -298,7 +320,7 @@ class ProducaoConsumoService:
         }
 
 
-SERVICE = ProducaoConsumoService(CONSUMPTION_CSV, PRODUCTION_CSV)
+SERVICE = ProducaoConsumoService()
 
 
 class Handler(BaseHTTPRequestHandler):

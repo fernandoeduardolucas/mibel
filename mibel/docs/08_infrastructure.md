@@ -4,150 +4,100 @@ Este documento define a infraestrutura mínima do projeto para suportar o lakeho
 
 ---
 
-# 2. Stack mínima adotada
+# 2. Arquitetura Geral
 
-A infraestrutura do projeto assenta nos seguintes componentes:
+A arquitetura do projeto está dividida em dois blocos principais:
 
-- **MinIO**: armazenamento de objetos para o lakehouse
-- **Iceberg Catalog**: catálogo para gestão das tabelas Iceberg
-- **Trino**: motor SQL para criação e consulta das tabelas
-- **MLflow**: tracking de experiências e artefactos de machine learning
-- **PostgreSQL**: backend metadata store do MLflow
-- **Flyte**: orquestração dos workflows
-- **Docker Compose**: mecanismo de execução local e reprodutível da stack
+## 2.1 Docker Compose Stack (Data Platform)
 
----
+Responsável pela plataforma de dados:
 
-# 3. Serviços a levantar
+- MinIO (object storage)
+- Hive Metastore + base de dados
+- Trino (motor SQL)
+- MLflow + PostgreSQL
 
-## 3.1 MinIO
-**Função:** armazenar ficheiros e tabelas do lakehouse em formato Parquet / Iceberg.
+## 2.2 Flyte Sandbox (Orquestração)
 
-**Responsabilidades:**
-- armazenar dados Bronze, Silver e Gold
-- servir como object storage compatível com S3
-- suportar persistência do lakehouse
+Executado como container independente fora do Docker Compose:
+
+- Flyte Sandbox com K3s interno
+- Responsável pela execução de workflows
+- Comunica com a stack via endpoints expostos no host
 
 ---
 
-## 3.2 Iceberg Catalog
-**Função:** gerir metadados das tabelas Iceberg.
+# 3. Stack adotada
 
-**Responsabilidades:**
-- registar tabelas Bronze, Silver e Gold
-- permitir criação e leitura das tabelas a partir do Trino
-- suportar evolução de schema e operações do formato Iceberg
+## 3.1 Serviços no Docker Compose
 
----
-
-## 3.3 Trino
-**Função:** motor SQL principal do projeto.
-
-**Responsabilidades:**
-- criar schemas e tabelas
-- transformar dados entre Bronze, Silver e Gold
-- executar queries de qualidade
-- servir queries analíticas e de suporte à API
+- **MinIO**: armazenamento S3-compatible
+- **MC (MinIO Client)**: criação automática de buckets
+- **MariaDB**: base de dados do Hive Metastore
+- **Hive Metastore**: catálogo de metadados
+- **Trino**: motor SQL
+- **PostgreSQL**: backend do MLflow
+- **MLflow**: tracking de machine learning
 
 ---
 
-## 3.4 PostgreSQL
-**Função:** backend relacional de suporte ao MLflow.
+## 3.2 Serviço externo
 
-**Responsabilidades:**
-- armazenar metadata das runs
-- guardar parâmetros, métricas e referências a artefactos
-
----
-
-## 3.5 MLflow
-**Função:** tracking do workflow de machine learning.
-
-**Responsabilidades:**
-- registar experiências
-- armazenar métricas, parâmetros e artefactos
-- suportar reprodutibilidade do treino
+- **Flyte Sandbox**
+  - execução de workflows
+  - cluster Kubernetes interno (K3s)
+  - corre fora do docker-compose
 
 ---
 
-## 3.6 Flyte
-**Função:** orquestrar workflows do projeto.
+# 4. Serviços detalhados
 
-**Responsabilidades:**
-- workflow de ingestão Bronze
-- workflow Bronze → Silver
-- workflow Silver → Gold
-- workflow de treino ML
+## 4.1 MinIO
+- armazenamento de dados Bronze, Silver e Gold
+- buckets:
+  - `warehouse`
+  - `mlflow`
 
----
+## 4.2 MC (bootstrap)
+- cria automaticamente os buckets
+- execução única (termina após sucesso)
 
-# 4. Ordem de ativação da infraestrutura
+## 4.3 Hive Metastore
+- catálogo de tabelas Iceberg/Hive
+- usa MariaDB como backend
 
-A infraestrutura deverá ser ativada por fases, pela seguinte ordem:
+## 4.4 Trino
+- execução de queries SQL
+- criação de tabelas Iceberg
+- transformação entre camadas
 
-## Fase 1
-- MinIO
-- Iceberg Catalog
-- Trino
+## 4.5 PostgreSQL
+- metadata store do MLflow
 
-**Objetivo:** validar o lakehouse e o acesso SQL.
+## 4.6 MLflow
+- tracking de modelos ML
+- armazenamento de artefactos no MinIO
 
-## Fase 2
-- PostgreSQL
-- MLflow
-
-**Objetivo:** preparar tracking de machine learning.
-
-## Fase 3
-- Flyte
-
-**Objetivo:** orquestrar os workflows já estabilizados.
-
----
-
-# 5. Princípios de configuração
-
-- a infraestrutura deve ser reproduzível localmente via Docker Compose
-- os serviços devem comunicar através de uma rede Docker dedicada
-- os dados devem ser persistidos em volumes
-- as credenciais e configurações variáveis devem ficar em `.env`
-- o lakehouse deve utilizar MinIO como object storage
-- o Trino deve aceder ao catálogo Iceberg configurado sobre o object storage
+## 4.7 Flyte Sandbox
+- orquestração dos workflows
+- execução isolada em K3s
+- acesso à stack via host
 
 ---
 
-# 6. Estrutura esperada na pasta infrastructure
+# 5. Conectividade Flyte ↔ Stack
 
-## `infrastructure/docker/`
-- `docker-compose.yml`
-- `.env`
+Os workflows executados em Flyte comunicam com os serviços através do host:
 
-## `infrastructure/trino/catalog/`
-- ficheiros de configuração do catálogo Iceberg
+| Serviço | Endpoint |
+|--------|--------|
+| MinIO | http://host.docker.internal:9000 |
+| MLflow | http://host.docker.internal:15000 |
+| Trino | http://host.docker.internal:8080 |
+| Hive Metastore | thrift://host.docker.internal:9083 |
 
----
+Credenciais:
+- Access Key: `minioadmin`
+- Secret Key: `minioadmin`
 
-# 7. Validação mínima da infraestrutura
-
-A infraestrutura considera-se validada quando for possível:
-
-1. aceder ao MinIO
-2. aceder ao Trino
-3. criar um schema no catálogo Iceberg
-4. criar uma tabela de teste
-5. consultar essa tabela a partir do Trino
-6. aceder ao MLflow
-7. registar uma run de teste
-8. preparar o ambiente para execução de workflows Flyte
-
----
-
-# 8. Estratégia de implementação
-
-A implementação da infraestrutura será incremental:
-
-- primeiro validar armazenamento e SQL
-- depois validar tracking ML
-- só depois integrar orquestração
-
-Esta abordagem reduz risco técnico e permite validar cada componente antes de aumentar complexidade.
+Variáveis necessárias em Flyte:

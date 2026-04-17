@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -62,6 +63,60 @@ def run(
 def must_exist(path: Path, description: str) -> None:
     if not path.exists():
         raise SystemExit(f"Erro: {description} não encontrado: {path}")
+
+
+def docker_engine_running() -> bool:
+    result = subprocess.run(["docker", "info"], text=True, capture_output=True)
+    return result.returncode == 0
+
+
+def try_start_docker_engine() -> bool:
+    """Tenta arrancar o Docker Engine de forma best-effort conforme o SO."""
+    system = platform.system().lower()
+    start_commands: list[list[str]] = []
+
+    if system == "linux":
+        start_commands = [
+            ["systemctl", "start", "docker"],
+            ["service", "docker", "start"],
+        ]
+    elif system == "darwin":
+        start_commands = [["open", "-a", "Docker"]]
+    elif system == "windows":
+        start_commands = [
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'",
+            ]
+        ]
+
+    for cmd in start_commands:
+        if shutil.which(cmd[0]) is None:
+            continue
+        print(f">>> Docker Engine indisponível. A tentar arrancar com: {' '.join(cmd)}")
+        subprocess.run(cmd, text=True, capture_output=True)
+        for _ in range(20):
+            if docker_engine_running():
+                print(">>> Docker Engine está disponível.")
+                return True
+            time.sleep(1)
+
+    return docker_engine_running()
+
+
+def ensure_docker_engine_running() -> None:
+    if docker_engine_running():
+        return
+
+    if try_start_docker_engine():
+        return
+
+    raise SystemExit(
+        "Erro: Docker Engine não está a correr.\n"
+        "Tentativa automática de arranque falhou. Arranca o Docker manualmente e repete."
+    )
 
 
 def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
@@ -170,6 +225,7 @@ def main() -> None:
 
     if shutil.which("docker") is None:
         raise SystemExit("Erro: comando 'docker' não encontrado.")
+    ensure_docker_engine_running()
 
     python_cmd = sys.executable
     if not python_cmd or "WindowsApps" in python_cmd or not Path(python_cmd).exists():

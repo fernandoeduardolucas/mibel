@@ -20,7 +20,6 @@ A API arranca por omissão em `http://localhost:8000`.
 
 ## Fonte de dados
 
-Os dados são lidos dos CSV do pipeline medallion:
+Os dados são lidos diretamente da tabela Gold no Trino:
 
-- `02_medallion_pipeline/producao_consumo/01_bronze/data/raw/consumo-total-nacional.csv`
-- `02_medallion_pipeline/producao_consumo/01_bronze/data/raw/energia-produzida-total-nacional.csv`
+- `iceberg.gold.producao_vs_consumo_hourly`

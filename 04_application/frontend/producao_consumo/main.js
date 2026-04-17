@@ -1,5 +1,7 @@
 const kpiCards = document.getElementById("kpiCards");
 const seriesRows = document.getElementById("seriesRows");
+const deficitRows = document.getElementById("deficitRows");
+const mixRows = document.getElementById("mixRows");
 const statusEl = document.getElementById("status");
 const apiBaseInput = document.getElementById("apiBase");
 const groupBySelect = document.getElementById("groupBy");
@@ -22,13 +24,28 @@ function toFixed(value) {
   return numberFmt.format(value ?? 0);
 }
 
-function renderKpis(overview) {
+function toPercent(value) {
+  return `${percentFmt.format(value ?? 0)} %`;
+}
+
+function toRatio(value) {
+  return value == null ? "—" : numberFmt.format(value);
+}
+
+function renderKpis(overview, analytics) {
+  const deficit = analytics?.questao_defice ?? {};
   const cards = [
     ["Registos", overview.registos],
     ["Consumo total", `${toFixed(overview.consumo_total)} MWh`],
     ["Produção total", `${toFixed(overview.producao_total)} MWh`],
     ["Saldo total", `${toFixed(overview.saldo_total)} MWh`],
-    ["Cobertura", `${percentFmt.format(overview.cobertura_percentual)} %`],
+    ["Ratio global P/C", toRatio(overview.ratio_producao_consumo)],
+    ["Horas em défice", overview.horas_defice],
+    ["Horas em excedente", overview.horas_excedente],
+    ["Horas missing source", overview.horas_missing_source],
+    ["Dependência PRE", toPercent(overview.share_pre_percentual)],
+    ["Dependência DGM", toPercent(overview.share_dgm_percentual)],
+    ["Taxa de défice", toPercent(deficit.percentual_defice)],
   ];
 
   kpiCards.innerHTML = cards
@@ -47,8 +64,53 @@ function renderSeries(rows) {
           <td>${row.periodo}</td>
           <td>${toFixed(row.consumo_total)}</td>
           <td>${toFixed(row.producao_total)}</td>
+          <td>${toFixed(row.producao_pre)}</td>
+          <td>${toFixed(row.producao_dgm)}</td>
           <td>${toFixed(row.saldo)}</td>
+          <td>${toRatio(row.ratio_producao_consumo)}</td>
+          <td>${row.defice_horas}</td>
+          <td>${row.excedente_horas}</td>
+          <td>${row.missing_horas}</td>
           <td>${row.leituras}</td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function renderDeficitTable(analytics) {
+  const rows = analytics?.questao_defice?.piores_horas ?? [];
+  deficitRows.innerHTML = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${row.timestamp}</td>
+          <td>${toFixed(row.consumo_total)}</td>
+          <td>${toFixed(row.producao_total)}</td>
+          <td>${toFixed(row.saldo)}</td>
+          <td>${toRatio(row.ratio_producao_consumo)}</td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function renderMixTable(analytics) {
+  const mix = analytics?.questao_dependencia_pre_dgm ?? {};
+  const rows = [
+    ["Produção total", `${toFixed(mix.producao_total)} MWh`],
+    ["Produção PRE", `${toFixed(mix.producao_pre)} MWh`],
+    ["Produção DGM", `${toFixed(mix.producao_dgm)} MWh`],
+    ["Peso PRE", toPercent(mix.share_pre_percentual)],
+    ["Peso DGM", toPercent(mix.share_dgm_percentual)],
+  ];
+
+  mixRows.innerHTML = rows
+    .map(
+      ([label, value]) => `
+        <tr>
+          <td>${label}</td>
+          <td>${value}</td>
         </tr>
       `,
     )
@@ -113,13 +175,16 @@ async function load() {
 
   for (const base of attempts) {
     try {
-      const [overview, series] = await Promise.all([
+      const [overview, series, analytics] = await Promise.all([
         fetchJson(`${base}/api/overview`),
         fetchJson(`${base}/api/timeseries?group=${group}`),
+        fetchJson(`${base}/api/analytics`),
       ]);
 
-      renderKpis(overview);
+      renderKpis(overview, analytics);
       renderSeries(series);
+      renderDeficitTable(analytics);
+      renderMixTable(analytics);
 
       if (base !== configuredBase) {
         apiBaseInput.value = base;

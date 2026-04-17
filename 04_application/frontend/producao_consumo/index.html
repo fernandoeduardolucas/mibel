@@ -11,7 +11,7 @@
     <main class="container">
       <header class="header">
         <h1>Dashboard Produção/Consumo</h1>
-        <p>Monitorização nacional de energia com comparação entre consumo e produção.</p>
+        <p>Painel analítico para défice energético, dependência PRE/DGM e tendência de desbalanceamento.</p>
       </header>
 
       <section class="controls">
@@ -27,17 +27,58 @@
 
       <section class="kpis" id="kpiCards"></section>
 
+      <section class="tables grid-2">
+        <article>
+          <h2>Piores horas com défice (Top 10)</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp (UTC)</th>
+                  <th>Consumo (MWh)</th>
+                  <th>Produção (MWh)</th>
+                  <th>Saldo (MWh)</th>
+                  <th>Ratio P/C</th>
+                </tr>
+              </thead>
+              <tbody id="deficitRows"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article>
+          <h2>Dependência PRE vs DGM</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Métrica</th>
+                  <th>Valor</th>
+                </tr>
+              </thead>
+              <tbody id="mixRows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
       <section class="tables">
         <article>
-          <h2>Série temporal</h2>
+          <h2>Série temporal (com flags analíticas)</h2>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>Período</th>
-                  <th>Consumo total (MWh)</th>
-                  <th>Produção total (MWh)</th>
+                  <th>Consumo (MWh)</th>
+                  <th>Produção (MWh)</th>
+                  <th>Produção PRE (MWh)</th>
+                  <th>Produção DGM (MWh)</th>
                   <th>Saldo (MWh)</th>
+                  <th>Ratio P/C</th>
+                  <th>Horas défice</th>
+                  <th>Horas excedente</th>
+                  <th>Horas missing</th>
                   <th>Leituras</th>
                 </tr>
               </thead>

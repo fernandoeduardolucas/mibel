@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, List, Tuple
 from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -20,12 +20,46 @@ PRODUCTION_CSV = ROOT / "02_medallion_pipeline/producao_consumo/01_bronze/data/r
 @dataclass(frozen=True)
 class Point:
     timestamp: datetime
-    consumo_total: float
-    producao_total: float
+    consumo_total: float | None
+    producao_total: float | None
+    producao_dgm: float | None
+    producao_pre: float | None
 
     @property
-    def saldo(self) -> float:
-        return self.producao_total - self.consumo_total
+    def has_consumo(self) -> bool:
+        return self.consumo_total is not None
+
+    @property
+    def has_producao(self) -> bool:
+        return self.producao_total is not None
+
+    @property
+    def has_complete_data(self) -> bool:
+        return self.has_consumo and self.has_producao
+
+    @property
+    def saldo(self) -> float | None:
+        if not self.has_complete_data:
+            return None
+        return (self.producao_total or 0.0) - (self.consumo_total or 0.0)
+
+    @property
+    def ratio_producao_consumo(self) -> float | None:
+        if not self.has_complete_data or not self.consumo_total:
+            return None
+        return (self.producao_total or 0.0) / self.consumo_total
+
+    @property
+    def flag_defice(self) -> bool:
+        return self.saldo is not None and self.saldo < 0
+
+    @property
+    def flag_excedente(self) -> bool:
+        return self.saldo is not None and self.saldo > 0
+
+    @property
+    def flag_missing_source(self) -> bool:
+        return not self.has_complete_data
 
 
 class ProducaoConsumoService:
@@ -35,30 +69,54 @@ class ProducaoConsumoService:
         self._cache: List[Point] | None = None
         self._cache_stamp: Tuple[float, float] | None = None
 
-    def _read_csv_totals(self, csv_path: Path, total_field: str) -> Dict[str, float]:
-        with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
+    def _read_consumption(self) -> Dict[str, Dict[str, float]]:
+        with self._consumo_path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
-            rows = {}
+            rows: Dict[str, Dict[str, float]] = {}
             for row in reader:
                 timestamp = (row.get("datahora") or "").strip()
-                total_raw = (row.get(total_field) or "").strip()
+                total_raw = (row.get("total") or "").strip()
                 if not timestamp or not total_raw:
                     continue
-                rows[timestamp] = float(total_raw)
+                rows[timestamp] = {
+                    "consumo_total": float(total_raw),
+                }
+            return rows
+
+    def _read_production(self) -> Dict[str, Dict[str, float]]:
+        with self._producao_path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            rows: Dict[str, Dict[str, float]] = {}
+            for row in reader:
+                timestamp = (row.get("datahora") or "").strip()
+                total_raw = (row.get("total") or "").strip()
+                dgm_raw = (row.get("dgm") or "").strip()
+                pre_raw = (row.get("pre") or "").strip()
+                if not timestamp or not total_raw:
+                    continue
+                rows[timestamp] = {
+                    "producao_total": float(total_raw),
+                    "producao_dgm": float(dgm_raw or 0.0),
+                    "producao_pre": float(pre_raw or 0.0),
+                }
             return rows
 
     def _build_points(self) -> List[Point]:
-        consumo = self._read_csv_totals(self._consumo_path, "total")
-        producao = self._read_csv_totals(self._producao_path, "total")
+        consumo = self._read_consumption()
+        producao = self._read_production()
 
         joined: List[Point] = []
-        for timestamp_iso in sorted(set(consumo) & set(producao)):
+        for timestamp_iso in sorted(set(consumo) | set(producao)):
             timestamp = datetime.fromisoformat(timestamp_iso)
+            consumo_row = consumo.get(timestamp_iso)
+            producao_row = producao.get(timestamp_iso)
             joined.append(
                 Point(
                     timestamp=timestamp,
-                    consumo_total=consumo[timestamp_iso],
-                    producao_total=producao[timestamp_iso],
+                    consumo_total=consumo_row["consumo_total"] if consumo_row else None,
+                    producao_total=producao_row["producao_total"] if producao_row else None,
+                    producao_dgm=producao_row["producao_dgm"] if producao_row else None,
+                    producao_pre=producao_row["producao_pre"] if producao_row else None,
                 )
             )
         return joined
@@ -79,20 +137,111 @@ class ProducaoConsumoService:
             key = point.timestamp.strftime(fmt)
             agg = totals.setdefault(
                 key,
-                {"periodo": key, "consumo_total": 0.0, "producao_total": 0.0, "saldo": 0.0, "leituras": 0},
+                {
+                    "periodo": key,
+                    "consumo_total": 0.0,
+                    "producao_total": 0.0,
+                    "producao_dgm": 0.0,
+                    "producao_pre": 0.0,
+                    "saldo": 0.0,
+                    "ratio_producao_consumo": None,
+                    "defice_horas": 0,
+                    "excedente_horas": 0,
+                    "missing_horas": 0,
+                    "leituras": 0,
+                    "leituras_completas": 0,
+                },
             )
-            agg["consumo_total"] += point.consumo_total
-            agg["producao_total"] += point.producao_total
-            agg["saldo"] += point.saldo
             agg["leituras"] += 1
 
-        return [totals[key] for key in sorted(totals)]
+            if point.has_consumo:
+                agg["consumo_total"] += point.consumo_total or 0.0
+            if point.has_producao:
+                agg["producao_total"] += point.producao_total or 0.0
+                agg["producao_dgm"] += point.producao_dgm or 0.0
+                agg["producao_pre"] += point.producao_pre or 0.0
+
+            if point.flag_missing_source:
+                agg["missing_horas"] += 1
+                continue
+
+            agg["leituras_completas"] += 1
+            agg["saldo"] += point.saldo or 0.0
+            if point.flag_defice:
+                agg["defice_horas"] += 1
+            elif point.flag_excedente:
+                agg["excedente_horas"] += 1
+
+        rows = []
+        for key in sorted(totals):
+            row = totals[key]
+            if row["consumo_total"] > 0:
+                row["ratio_producao_consumo"] = row["producao_total"] / row["consumo_total"]
+            rows.append(row)
+        return rows
 
     def daily_series(self) -> List[dict]:
         return self._aggregate("%Y-%m-%d")
 
     def monthly_series(self) -> List[dict]:
         return self._aggregate("%Y-%m")
+
+    def analytics(self) -> dict:
+        points = self.points()
+        complete = [point for point in points if point.has_complete_data]
+        deficit_hours = [point for point in complete if point.flag_defice]
+
+        top_deficit = sorted(deficit_hours, key=lambda p: p.saldo or 0.0)[:10]
+
+        total_producao = sum(point.producao_total or 0.0 for point in points)
+        total_pre = sum(point.producao_pre or 0.0 for point in points)
+        total_dgm = sum(point.producao_dgm or 0.0 for point in points)
+
+        monthly = self.monthly_series()
+        monthly_balance = [
+            {
+                "periodo": row["periodo"],
+                "saldo": row["saldo"],
+                "ratio_producao_consumo": row["ratio_producao_consumo"],
+                "defice_horas": row["defice_horas"],
+                "excedente_horas": row["excedente_horas"],
+                "missing_horas": row["missing_horas"],
+            }
+            for row in monthly
+        ]
+
+        trend_delta = 0.0
+        if len(monthly_balance) >= 2:
+            trend_delta = monthly_balance[-1]["saldo"] - monthly_balance[0]["saldo"]
+
+        return {
+            "questao_defice": {
+                "horas_defice": len(deficit_hours),
+                "horas_com_dados": len(complete),
+                "percentual_defice": (len(deficit_hours) / len(complete) * 100) if complete else 0.0,
+                "piores_horas": [
+                    {
+                        "timestamp": point.timestamp.isoformat(),
+                        "consumo_total": point.consumo_total,
+                        "producao_total": point.producao_total,
+                        "saldo": point.saldo,
+                        "ratio_producao_consumo": point.ratio_producao_consumo,
+                    }
+                    for point in top_deficit
+                ],
+            },
+            "questao_dependencia_pre_dgm": {
+                "producao_total": total_producao,
+                "producao_pre": total_pre,
+                "producao_dgm": total_dgm,
+                "share_pre_percentual": (total_pre / total_producao * 100) if total_producao else 0.0,
+                "share_dgm_percentual": (total_dgm / total_producao * 100) if total_producao else 0.0,
+            },
+            "questao_tendencia_desbalanceamento": {
+                "delta_saldo_primeiro_ultimo_mes": trend_delta,
+                "serie_mensal": monthly_balance,
+            },
+        }
 
     def overview(self) -> dict:
         points = self.points()
@@ -103,14 +252,24 @@ class ProducaoConsumoService:
                 "consumo_total": 0.0,
                 "producao_total": 0.0,
                 "saldo_total": 0.0,
-                "cobertura_percentual": 0.0,
+                "ratio_producao_consumo": 0.0,
+                "horas_defice": 0,
+                "horas_excedente": 0,
+                "horas_missing_source": 0,
+                "share_pre_percentual": 0.0,
+                "share_dgm_percentual": 0.0,
                 "ultimo_ponto": None,
             }
 
-        consumo_total = sum(point.consumo_total for point in points)
-        producao_total = sum(point.producao_total for point in points)
+        consumo_total = sum(point.consumo_total or 0.0 for point in points)
+        producao_total = sum(point.producao_total or 0.0 for point in points)
         saldo_total = producao_total - consumo_total
-        cobertura = (producao_total / consumo_total * 100) if consumo_total else 0.0
+        deficit_count = sum(1 for point in points if point.flag_defice)
+        excedent_count = sum(1 for point in points if point.flag_excedente)
+        missing_count = sum(1 for point in points if point.flag_missing_source)
+        total_pre = sum(point.producao_pre or 0.0 for point in points)
+        total_dgm = sum(point.producao_dgm or 0.0 for point in points)
+
         last = points[-1]
 
         return {
@@ -122,12 +281,18 @@ class ProducaoConsumoService:
             "consumo_total": consumo_total,
             "producao_total": producao_total,
             "saldo_total": saldo_total,
-            "cobertura_percentual": cobertura,
+            "ratio_producao_consumo": (producao_total / consumo_total) if consumo_total else 0.0,
+            "horas_defice": deficit_count,
+            "horas_excedente": excedent_count,
+            "horas_missing_source": missing_count,
+            "share_pre_percentual": (total_pre / producao_total * 100) if producao_total else 0.0,
+            "share_dgm_percentual": (total_dgm / producao_total * 100) if producao_total else 0.0,
             "ultimo_ponto": {
                 "timestamp": last.timestamp.isoformat(),
                 "consumo_total": last.consumo_total,
                 "producao_total": last.producao_total,
                 "saldo": last.saldo,
+                "flag_missing_source": last.flag_missing_source,
             },
             "gerado_em": datetime.now(timezone.utc).isoformat(),
         }
@@ -137,7 +302,7 @@ SERVICE = ProducaoConsumoService(CONSUMPTION_CSV, PRODUCTION_CSV)
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ProducaoConsumoHTTP/1.0"
+    server_version = "ProducaoConsumoHTTP/1.1"
 
     def _send_json(self, payload: dict | list, status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -167,6 +332,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/overview":
             self._send_json(SERVICE.overview())
+            return
+
+        if path == "/api/analytics":
+            self._send_json(SERVICE.analytics())
             return
 
         if path == "/api/timeseries":

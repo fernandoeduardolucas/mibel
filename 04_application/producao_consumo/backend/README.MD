@@ -1,26 +1,71 @@
-# Aplicação - produção/consumo
+# Backend produção/consumo (Python REST API em camadas + MVC)
 
-Este módulo contém o backend e frontend do dashboard final de produção/consumo.
+Backend REST em Python organizado em camadas, usando como fonte de dados o Gold SQL:
+
+- `02_medallion_pipeline/producao_consumo/03_gold/sql/01_gold_trino.sql`
+
+## Arquitetura
+
+A API foi organizada no padrão **MVC + camadas**:
+
+- **Model**: `app/models/energy_point.py`
+- **Controller (API)**: `app/controllers/producao_consumo_controller.py`
+- **Service/Business**: `app/services/producao_consumo_service.py`
+- **Repository (acesso a dados)**: `app/repositories/producao_consumo_repository.py`
+- **Query DB/Cliente Trino**: `app/db/trino_client.py`
+
+## Ligação à base de dados (Trino)
+
+A ligação é feita **sem docker exec**, diretamente ao Trino em:
+
+- JDBC URL: `jdbc:trino://localhost:8080/`
+- user: `trino`
+- password: *(sem password)*
+
+No backend Python, isto corresponde a:
+
+- host: `localhost`
+- port: `8080`
+- user: `trino`
+- catalog: `iceberg`
+- schema: `gold`
 
 ## Estrutura
 
-- `backend/producao_consumo/server.py`: API HTTP em Python.
-- `frontend/producao_consumo/index.html`: dashboard web.
+```text
+04_application/producao_consumo/backend/
+├── app/
+│   ├── config.py
+│   ├── main.py
+│   ├── models/
+│   │   └── energy_point.py
+│   ├── db/
+│   │   └── trino_client.py
+│   ├── repositories/
+│   │   └── producao_consumo_repository.py
+│   ├── services/
+│   │   └── producao_consumo_service.py
+│   └── controllers/
+│       └── producao_consumo_controller.py
+└── server.py
+```
 
-## Quickstart
+## Endpoints REST
 
-Terminal 1:
+- `GET /health`
+- `GET /api/v1/producao-consumo/hourly?start=2024-01-01T00:00:00+00:00&end=2024-01-02T00:00:00+00:00`
+- `GET /api/v1/producao-consumo/daily`
+- `GET /api/v1/producao-consumo/monthly`
+- `GET /api/v1/producao-consumo/analytics`
+
+## Como correr
+
+Na raiz do repositório:
 
 ```bash
-cd 04_application/backend/producao_consumo
+cd 04_application/producao_consumo/backend
+python3 -m pip install trino
 python3 server.py
 ```
 
-Terminal 2:
-
-```bash
-cd 04_application/frontend/producao_consumo
-python3 -m http.server 4173
-```
-
-Depois, abrir `http://localhost:4173`.
+Por omissão, a API sobe em `http://localhost:8081`.

@@ -219,3 +219,103 @@ Em resumo:
 O pipeline Medallion de `producao_consumo` está estruturado com boas práticas de engenharia de dados: separação de responsabilidades por camada, regras explícitas de qualidade, deduplicação determinística e modelação final orientada a decisão de negócio.
 
 A arquitetura escolhida (MinIO + Hive + Iceberg + Trino + Python) é coerente para um lakehouse analítico e suporta evolução incremental com governança e escalabilidade.
+
+---
+
+## 12) A) Especificação de Data Products (enunciado) — `producao_consumo`
+
+> Esta secção materializa o entregável A diretamente na pasta `02_medallion_pipeline/producao_consumo`.
+
+### DP1 — `gold.producao_vs_consumo_hourly`
+
+**Perguntas analíticas**
+- Em que horas há défice (`producao_total_kwh < consumo_total_kwh`)?
+- Qual o saldo horário e a cobertura (`ratio_producao_consumo`) ao longo do tempo?
+- Existem lacunas de fonte (`flag_missing_source`) que invalidem decisão operacional?
+
+**Métricas e consumidores**
+- Métricas: `consumo_total_kwh`, `producao_total_kwh`, `saldo_kwh`, `ratio_producao_consumo`, `flag_defice`, `flag_excedente`, `flag_missing_source`.
+- Consumidores: dashboard operacional (`04_application/frontend/producao_consumo`) e API (`04_application/backend/producao_consumo`).
+
+**Grão e chaves**
+- Grão: 1 registo por `timestamp_utc` (hora UTC).
+- Chave de negócio: `timestamp_utc`.
+
+**Contrato (schema + SLOs)**
+- Schema mínimo: `timestamp_utc TIMESTAMP NOT NULL`, métricas numéricas DOUBLE, flags BOOLEAN.
+- Regras de qualidade:
+  - unicidade de `timestamp_utc`;
+  - `consumo_total_kwh >= 0` e `producao_total_kwh >= 0`;
+  - `flag_defice` e `flag_excedente` mutuamente exclusivos.
+- SLOs:
+  - freshness máxima: 2 horas;
+  - completude horária: >= 99%;
+  - taxa de duplicados por chave: 0%.
+
+**Schema evolution/versionamento**
+- `v1` (atual) compatível com adição de colunas opcionais.
+- Mudança de fórmula de KPI ou unidade (kWh->MWh) exige `v2` (breaking change).
+
+### DP2 — `gold.producao_mix_hourly`
+
+**Perguntas analíticas**
+- Qual o contributo relativo de DGM e PRE na produção total por hora?
+- Em períodos de pico de consumo, qual componente de produção sustenta melhor a cobertura?
+
+**Métricas e consumidores**
+- Métricas: `producao_dgm_kwh`, `producao_pre_kwh`, `producao_total_kwh`, `share_dgm`, `share_pre`.
+- Consumidores: planeamento energético e análises SQL ad-hoc via Trino.
+
+**Grão e chaves**
+- Grão: horário (`timestamp_utc`).
+- Chave de negócio: `timestamp_utc`.
+
+**Contrato (schema + SLOs)**
+- Regras de qualidade:
+  - `producao_total_kwh >= 0`;
+  - `share_dgm` e `share_pre` em [0,1] quando `producao_total_kwh > 0`;
+  - coerência `share_dgm + share_pre ≈ 1` (com tolerância técnica).
+- SLOs:
+  - freshness máxima: 2 horas;
+  - null rate de `producao_total_kwh`: 0%.
+
+**Schema evolution/versionamento**
+- Inclusão de novas fontes (ex.: hídrica) como colunas adicionais compatíveis (minor).
+- Alteração da semântica de `share_*` implica versão major.
+
+### DP3 — `gold.producao_consumo_daily_ml_features`
+
+**Perguntas analíticas**
+- É possível antecipar risco de défice diário com base no histórico consumo/produção?
+- Quais features diárias mais impactam o target de défice no dia seguinte?
+
+**Métricas/features e consumidores**
+- Features: `consumo_total_mwh_d`, `producao_total_mwh_d`, `saldo_mwh_d`, `ratio_producao_consumo_d`, `horas_defice_d`, `horas_excedente_d`.
+- Target: `target_defice_next_day`.
+- Consumidores: workflow Flyte + tracking em MLflow.
+
+**Grão e chaves**
+- Grão diário (`date_utc`).
+- Chave de negócio: `date_utc`.
+- Chave técnica: (`date_utc`, `feature_set_version`).
+
+**Contrato (schema + SLOs)**
+- Regras de qualidade:
+  - unicidade de `date_utc`;
+  - zero nulos em features obrigatórias;
+  - `horas_defice_d + horas_excedente_d <= 24`.
+- SLOs:
+  - publicação diária até 07:00 UTC;
+  - freshness máxima: 1 dia;
+  - completude diária >= 99.5%.
+
+**Schema evolution/versionamento**
+- `feature_set_version` obrigatório.
+- Alteração de target/transformações base exige versão major.
+
+### Critérios transversais de aceitação
+
+- Rastreabilidade Bronze -> Silver -> Gold para todos os produtos.
+- Contratos versionados e explícitos para todos os consumidores.
+- Quebra de contrato bloqueia promoção para produção.
+- Evidência de qualidade observável por queries SQL (e dashboard opcional de observabilidade).

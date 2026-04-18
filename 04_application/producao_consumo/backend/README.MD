@@ -65,7 +65,7 @@ Na raiz do repositório:
 
 ```bash
 cd 04_application/producao_consumo/backend
-python3 -m pip install trino
+python3 -m pip install -r requirements.txt
 python3 server.py
 ```
 

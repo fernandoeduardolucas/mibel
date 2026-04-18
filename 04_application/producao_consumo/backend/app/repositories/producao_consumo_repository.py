@@ -13,6 +13,9 @@ class ProducaoConsumoRepository:
     def __init__(self, client: TrinoClient):
         self.client = client
 
+    def test_connection(self) -> dict[str, str | bool]:
+        return self.client.test_connection()
+
     @staticmethod
     def _parse_float(value: str | None) -> float | None:
         text = (value or "").strip()

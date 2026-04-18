@@ -39,6 +39,9 @@ class ProducaoConsumoController:
     def get_analytics(self) -> tuple[int, dict]:
         return 200, {"data": self.service.analytics()}
 
+    def test_database_connection(self) -> tuple[int, dict]:
+        return 200, {"data": self.service.test_database_connection()}
+
     def route(self, path_with_query: str) -> tuple[int, dict]:
         parsed = urlparse(path_with_query)
         path = parsed.path
@@ -53,6 +56,8 @@ class ProducaoConsumoController:
             return self.get_monthly()
         if path == "/api/v1/producao-consumo/analytics":
             return self.get_analytics()
+        if path == "/api/v1/producao-consumo/db-connection":
+            return self.test_database_connection()
 
         return 404, {
             "error": "endpoint_not_found",

@@ -17,19 +17,33 @@ class ProducaoConsumoRepository:
         return self.client.test_connection()
 
     @staticmethod
-    def _parse_float(value: str | None) -> float | None:
-        text = (value or "").strip()
+    def _parse_float(value: object | None) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        text = str(value).strip()
         if not text:
             return None
         return float(text)
 
     @staticmethod
-    def _parse_bool(value: str | None) -> bool:
-        return (value or "").strip().lower() == "true"
+    def _parse_bool(value: object | None) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        return str(value).strip().lower() == "true"
 
     @staticmethod
-    def _parse_timestamp(value: str) -> datetime:
-        raw = value.strip()
+    def _parse_timestamp(value: object) -> datetime:
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value
+
+        raw = str(value).strip()
         iso_value = raw.replace(" ", "T", 1)
         if iso_value.endswith(" UTC"):
             iso_value = iso_value.removesuffix(" UTC") + "+00:00"
@@ -53,8 +67,8 @@ class ProducaoConsumoRepository:
         points: list[EnergyPoint] = []
 
         for row in rows:
-            timestamp_raw = (row.get("timestamp_utc") or "").strip()
-            if not timestamp_raw:
+            timestamp_raw = row.get("timestamp_utc")
+            if timestamp_raw is None:
                 continue
 
             points.append(

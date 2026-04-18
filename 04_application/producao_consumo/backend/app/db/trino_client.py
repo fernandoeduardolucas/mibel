@@ -48,7 +48,7 @@ class TrinoClient:
             cursor.close()
             connection.close()
 
-    def run_query(self, query: str) -> list[dict[str, str]]:
+    def run_query(self, query: str) -> list[dict[str, object]]:
         connection = self._connect()
         cursor = connection.cursor()
         try:

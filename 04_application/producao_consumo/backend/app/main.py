@@ -60,7 +60,10 @@ class RequestHandler(BaseHTTPRequestHandler):
 def main() -> None:
     print(f"[INFO] SQL base (gold): {GOLD_SQL_PATH}")
     print(f"[INFO] Backend MVC ativo em http://{HOST}:{PORT}")
-    print("[INFO] Endpoints: /health e /api/v1/producao-consumo/*")
+    print(
+        "[INFO] Endpoints: /health, /api/v1/producao-consumo/* e "
+        "/api/v1/producao-consumo/db-connection"
+    )
 
     server = ThreadingHTTPServer((HOST, PORT), RequestHandler)
     try:

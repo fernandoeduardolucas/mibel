@@ -12,7 +12,7 @@ from app.config import (
 class TrinoClient:
     """Executa SQL no Trino via JDBC URL (sem docker exec)."""
 
-    def run_query(self, query: str) -> list[dict[str, str]]:
+    def _connect(self):
         try:
             import trino
         except ImportError as exc:  # pragma: no cover
@@ -20,7 +20,7 @@ class TrinoClient:
                 "Dependência em falta: instale 'trino' (pip install trino)."
             ) from exc
 
-        connection = trino.dbapi.connect(
+        return trino.dbapi.connect(
             host=TRINO_HOST,
             port=TRINO_PORT,
             user=TRINO_USER,
@@ -29,6 +29,27 @@ class TrinoClient:
             http_scheme="http",
         )
 
+    def test_connection(self) -> dict[str, str | bool]:
+        connection = self._connect()
+        cursor = connection.cursor()
+        try:
+            cursor.execute("SELECT 1 AS ok")
+            result = cursor.fetchone()
+            connected = bool(result and result[0] == 1)
+            return {
+                "connected": connected,
+                "host": TRINO_HOST,
+                "port": str(TRINO_PORT),
+                "user": TRINO_USER,
+                "catalog": TRINO_CATALOG,
+                "schema": TRINO_SCHEMA,
+            }
+        finally:
+            cursor.close()
+            connection.close()
+
+    def run_query(self, query: str) -> list[dict[str, str]]:
+        connection = self._connect()
         cursor = connection.cursor()
         try:
             cursor.execute(query)

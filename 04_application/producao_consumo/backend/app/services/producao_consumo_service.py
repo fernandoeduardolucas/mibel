@@ -152,3 +152,6 @@ class ProducaoConsumoService:
                 for point in top_defices
             ],
         }
+
+    def test_database_connection(self) -> dict[str, str | bool]:
+        return self.repository.test_connection()

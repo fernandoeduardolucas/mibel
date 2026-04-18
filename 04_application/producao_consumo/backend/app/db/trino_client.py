@@ -17,7 +17,7 @@ class TrinoClient:
             import trino
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
-                "Dependência em falta: instale 'trino' (pip install trino)."
+                "Dependência em falta: instale as dependências com 'pip install -r 04_application/producao_consumo/backend/requirements.txt' (ou 'pip install trino')."
             ) from exc
 
         return trino.dbapi.connect(

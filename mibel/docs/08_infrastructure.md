@@ -101,3 +101,127 @@ Credenciais:
 - Secret Key: `minioadmin`
 
 Variáveis necessárias em Flyte:
+MLFLOW_S3_ENDPOINT_URL=http://host.docker.internal:9000
+AWS_ACCESS_KEY_ID=minioadmin
+AWS_SECRET_ACCESS_KEY=minioadmin
+
+---
+
+# 6. Estrutura de diretórios
+
+## Infrastructure
+infrastructure/
+├── docker/
+│ ├── docker-compose.yml
+│ └── .env
+└── trino/
+└── catalog/
+
+
+---
+
+# 7. Ordem de ativação
+
+## Fase 1 — Lakehouse
+1. MinIO
+2. Hive Metastore
+3. Trino
+
+## Fase 2 — ML
+4. PostgreSQL
+5. MLflow
+
+## Fase 3 — Orquestração
+6. Flyte Sandbox (externo)
+
+---
+
+# 8. Validação da infraestrutura
+
+A infraestrutura é considerada válida quando:
+
+## MinIO
+- acesso à consola
+- buckets criados (`warehouse`, `mlflow`)
+
+## Trino
+- acesso ao UI
+- comando: SHOW CATALOGS;
+
+
+## Hive Metastore
+- acessível via Thrift
+
+## MLflow
+- UI acessível
+- criação de run de teste
+
+## Flyte
+- sandbox iniciado
+- UI acessível
+
+---
+
+# 9. Princípios de configuração
+
+- execução local via Docker Compose
+- persistência com volumes
+- comunicação via rede Docker
+- uso de MinIO como data lake
+- uso de Trino como motor central
+- separação entre plataforma de dados e orquestração
+
+---
+
+# 10. Infraestrutura existente
+
+O projeto já dispõe de um docker-compose funcional com:
+
+- MinIO + bootstrap de buckets
+- Hive Metastore + MariaDB
+- Trino
+- MLflow + PostgreSQL
+
+---
+
+# 11. Melhorias necessárias
+
+- fixar versões das imagens (evitar `latest`)
+- introduzir ficheiro `.env`
+- definir rede Docker explícita
+- validar configuração do catálogo Iceberg
+- integrar Flyte como componente externa
+
+---
+
+# 12. Estratégia de implementação
+
+- validar primeiro o lakehouse (MinIO + Trino)
+- validar depois MLflow
+- integrar Flyte apenas após estabilidade da base
+- implementar workflows sobre uma base já funcional
+
+---
+
+# 13. Resultado esperado
+
+A infraestrutura deverá permitir:
+
+- armazenamento e consulta de dados em formato Iceberg
+- criação de pipelines de transformação
+- execução de queries analíticas via Trino
+- tracking de modelos ML com MLflow
+- orquestração de workflows com Flyte
+
+---
+
+# 14. Critério de fecho
+
+Este passo considera-se concluído quando:
+
+- docker-compose funcional e validado
+- serviços acessíveis
+- conectividade confirmada
+- documentação alinhada com arquitetura real
+- Flyte identificado como componente externo
+

@@ -120,6 +120,8 @@ class ProducaoConsumoService:
         total_horas = len(self._cache)
         total_consumo = sum(point.consumo_total_kwh or 0.0 for point in self._cache)
         total_producao = sum(point.producao_total_kwh or 0.0 for point in self._cache)
+        total_producao_pre = sum(point.producao_pre_kwh or 0.0 for point in self._cache)
+        total_producao_dgm = sum(point.producao_dgm_kwh or 0.0 for point in self._cache)
         total_saldo = sum(point.saldo_kwh or 0.0 for point in self._cache)
 
         defice_horas = sum(1 for point in self._cache if point.flag_defice)
@@ -135,10 +137,19 @@ class ProducaoConsumoService:
             "total_horas": total_horas,
             "total_consumo_kwh": total_consumo,
             "total_producao_kwh": total_producao,
+            "total_producao_pre_kwh": total_producao_pre,
+            "total_producao_dgm_kwh": total_producao_dgm,
             "saldo_total_kwh": total_saldo,
             "ratio_global_producao_consumo": (
                 (total_producao / total_consumo) if total_consumo else None
             ),
+            "share_pre_percentual": (
+                (total_producao_pre / total_producao) * 100 if total_producao else 0.0
+            ),
+            "share_dgm_percentual": (
+                (total_producao_dgm / total_producao) * 100 if total_producao else 0.0
+            ),
+            "percentual_defice": ((defice_horas / total_horas) * 100 if total_horas else 0.0),
             "horas_defice": defice_horas,
             "horas_excedente": excedente_horas,
             "horas_missing_source": missing_horas,

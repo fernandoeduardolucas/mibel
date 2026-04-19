@@ -27,6 +27,85 @@ async function fetchJson(url) {
   return response.json();
 }
 
+function toNumber(value) {
+  if (value == null || value === "") {
+    return 0;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeGroupedSeries(rows) {
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+
+  return rows.map((row) => {
+    const consumoTotal = toNumber(row.consumo_total ?? row.consumo_total_kwh);
+    const producaoTotal = toNumber(row.producao_total ?? row.producao_total_kwh);
+
+    return {
+      ...row,
+      consumo_total: consumoTotal,
+      producao_total: producaoTotal,
+      producao_pre: toNumber(row.producao_pre ?? row.producao_pre_kwh),
+      producao_dgm: toNumber(row.producao_dgm ?? row.producao_dgm_kwh),
+      saldo: toNumber(row.saldo ?? row.saldo_kwh),
+      ratio_producao_consumo:
+        row.ratio_producao_consumo ?? (consumoTotal > 0 ? producaoTotal / consumoTotal : null),
+    };
+  });
+}
+
+function normalizeAnalytics(rawAnalytics) {
+  const analytics = rawAnalytics ?? {};
+  const consumoTotal = toNumber(analytics.total_consumo ?? analytics.total_consumo_kwh);
+  const producaoTotal = toNumber(analytics.total_producao ?? analytics.total_producao_kwh);
+
+  return {
+    resumo_geral: {
+      registos: analytics.total_horas ?? analytics.registos ?? 0,
+      consumo_total: consumoTotal,
+      producao_total: producaoTotal,
+      saldo_total: toNumber(analytics.saldo_total ?? analytics.saldo_total_kwh),
+      ratio_producao_consumo:
+        analytics.ratio_global_producao_consumo ?? analytics.ratio_producao_consumo ?? null,
+    },
+    questao_defice: {
+      percentual_defice:
+        analytics.percentual_defice ??
+        (analytics.total_horas
+          ? (toNumber(analytics.horas_defice) / toNumber(analytics.total_horas)) * 100
+          : 0),
+      piores_horas: (analytics.top_10_piores_defices ?? []).map((row) => {
+        const consumoPiorHora = toNumber(row.consumo_total ?? row.consumo_total_kwh);
+        const producaoPiorHora = toNumber(row.producao_total ?? row.producao_total_kwh);
+        return {
+          timestamp: row.timestamp ?? row.timestamp_utc,
+          consumo_total: consumoPiorHora,
+          producao_total: producaoPiorHora,
+          saldo: toNumber(row.saldo ?? row.saldo_kwh),
+          ratio_producao_consumo:
+            row.ratio_producao_consumo ??
+            (consumoPiorHora > 0 ? producaoPiorHora / consumoPiorHora : null),
+        };
+      }),
+    },
+    questao_dependencia_pre_dgm: {
+      producao_total: producaoTotal,
+      producao_pre: toNumber(analytics.total_producao_pre ?? analytics.total_producao_pre_kwh),
+      producao_dgm: toNumber(analytics.total_producao_dgm ?? analytics.total_producao_dgm_kwh),
+      share_pre_percentual: toNumber(
+        analytics.share_pre_percentual ?? analytics.percentual_pre ?? analytics.peso_pre,
+      ),
+      share_dgm_percentual: toNumber(
+        analytics.share_dgm_percentual ?? analytics.percentual_dgm ?? analytics.peso_dgm,
+      ),
+    },
+  };
+}
+
 export async function getDashboardData({ apiBase, groupBy }) {
   const normalizedBase = resolveApiBase(apiBase);
 
@@ -36,8 +115,8 @@ export async function getDashboardData({ apiBase, groupBy }) {
   ]);
 
   return {
-    analytics: analyticsResponse.data,
-    groupedSeries: groupedResponse.data,
+    analytics: normalizeAnalytics(analyticsResponse.data),
+    groupedSeries: normalizeGroupedSeries(groupedResponse.data),
     apiBase: normalizedBase,
   };
 }

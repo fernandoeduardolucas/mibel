@@ -21,3 +21,7 @@ Como correr
 2. Abrir o ficheiro sql/01_gold_trino.sql no DataGrip.
 3. Executar o script completo.
 4. Validar com as queries do fim do script.
+
+
+Checks adicionais de qualidade
+- Depois de gerar a tabela Gold, executar também sql/02_gold_quality_checks.sql para validar cobertura mensal, lacunas de fonte e desvios de saldo.

@@ -16,7 +16,35 @@ import tempfile
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
-from flytekit import ImageSpec, Resources, task, workflow
+try:
+    from flytekit import ImageSpec, Resources, task, workflow
+except ModuleNotFoundError:  # execução local sem Flyte instalado
+    class ImageSpec:  # type: ignore[override]
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+    class Resources:  # type: ignore[override]
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+    def task(*args, **kwargs):  # type: ignore[override]
+        def decorator(func):
+            return func
+
+        if args and callable(args[0]) and len(args) == 1 and not kwargs:
+            return args[0]
+        return decorator
+
+    def workflow(func=None, **kwargs):  # type: ignore[override]
+        if func is not None and callable(func):
+            return func
+
+        def decorator(f):
+            return f
+
+        return decorator
 
 image_spec = ImageSpec(
     name="ml-producao-consumo-image",

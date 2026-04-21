@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import tempfile
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
@@ -63,22 +64,40 @@ image_spec = ImageSpec(
 )
 
 # Ajusta estes valores conforme o teu ambiente.
-TRINO_HOST = "host.docker.internal"
-TRINO_PORT = 8080
-TRINO_USER = "tead"
-TRINO_HTTP_SCHEME = "http"
-TRINO_CATALOG = "iceberg"
-TRINO_SCHEMA = "gold"
-TRINO_TABLE = "producao_vs_consumo_hourly"
+# Defaults apontam para `host.docker.internal` porque tarefas Flyte executam
+# num container externo e acedem aos serviços do docker-compose via host.
+# Para execução Python diretamente no host, exporta TRINO_HOST=localhost.
+TRINO_HOST = os.getenv("TRINO_HOST", "host.docker.internal")
+TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
+TRINO_USER = os.getenv("TRINO_USER", "tead")
+TRINO_HTTP_SCHEME = os.getenv("TRINO_HTTP_SCHEME", "http")
+TRINO_CATALOG = os.getenv("TRINO_CATALOG", "iceberg")
+TRINO_SCHEMA = os.getenv("TRINO_SCHEMA", "gold")
+TRINO_TABLE = os.getenv("TRINO_TABLE", "producao_vs_consumo_hourly")
 
-MLFLOW_TRACKING_URI = "http://host.docker.internal:15000"
-MLFLOW_EXPERIMENT = "producao-consumo-defice"
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://host.docker.internal:15000")
+MLFLOW_EXPERIMENT = os.getenv("MLFLOW_EXPERIMENT", "producao-consumo-defice")
 
 os.environ.setdefault("MLFLOW_S3_ENDPOINT_URL", "http://host.docker.internal:9000")
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "minioadmin")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "minioadmin")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
+
+
+def _resolved_host(host: str) -> str:
+    """Resolve hostname e faz fallback para localhost quando aplicável.
+
+    Em execuções locais (fora de container), `host.docker.internal` pode não
+    resolver. Neste caso, assumimos localhost para facilitar desenvolvimento.
+    """
+    try:
+        socket.getaddrinfo(host, None)
+        return host
+    except socket.gaierror:
+        if host == "host.docker.internal":
+            return "localhost"
+        raise
 
 
 @dataclass
@@ -89,8 +108,9 @@ class FeatureSpec:
 def _get_trino_connection():
     import trino
 
+    resolved_trino_host = _resolved_host(TRINO_HOST)
     return trino.dbapi.connect(
-        host=TRINO_HOST,
+        host=resolved_trino_host,
         port=TRINO_PORT,
         user=TRINO_USER,
         http_scheme=TRINO_HTTP_SCHEME,

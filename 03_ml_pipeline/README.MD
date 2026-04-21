@@ -16,6 +16,12 @@ Flow de MLflow para o domínio **producao_consumo**.
 
 ## Execução local
 
+Antes de correr localmente, instala as dependências (incluindo `mlflow`):
+
+```bash
+python -m pip install pandas==2.2.3 scikit-learn==1.6.1 trino==0.336.0 mlflow==3.10.1 boto3
+```
+
 ```bash
 python 03_ml_pipeline/producao_consumo_mlflow_flow.py
 ```

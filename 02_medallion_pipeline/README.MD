@@ -42,6 +42,7 @@ pyflyte run --remote -p flytesnacks -d development \
 - `run_producao_consumo` (bool): corre pipeline produção vs consumo.
 - `run_consumo_preco` (bool): corre pipeline consumo vs preço.
 - `build_images` (bool): propaga `--build` para os runners.
+- `producao_consumo_backfill_days` (int): reprocessamento simples (reruns idempotentes) da pipeline `producao_consumo`.
 
 Exemplo para correr só `consumo_preco`:
 
@@ -50,6 +51,31 @@ pyflyte run --remote -p flytesnacks -d development \
   02_medallion_pipeline/flyte_workflow.py medallion_full_wf \
   --run_producao_consumo False --run_consumo_preco True
 ```
+
+Exemplo com backfill simples para `producao_consumo`:
+
+```bash
+pyflyte run --remote -p flytesnacks -d development \
+  02_medallion_pipeline/flyte_workflow.py medallion_full_wf \
+  --run_producao_consumo True --run_consumo_preco False \
+  --producao_consumo_backfill_days 3
+```
+
+## Estado das etapas (produção_consumo)
+
+Checklist rápido para validação do projeto:
+
+1. **Etapa 1 — Stack operacional:** Docker Compose + MinIO + Trino (catálogos hive/iceberg) + MLflow + Flyte.
+2. **Etapa 2 — Definições fechadas:** cenário, perspetiva, datasets e data products.
+3. **Etapa 3 — Bronze:** ingestão de ficheiros e tabelas raw em Iceberg.
+4. **Etapa 4 — Silver:** limpeza, normalização temporal, harmonização geográfica e validações.
+5. **Etapa 5 — Gold:** tabelas finais de negócio + feature table para ML.
+6. **Etapa 6 — Flyte:** workflows parametrizados, retries e backfill simples.
+
+Neste momento, a Etapa 6 inclui:
+- Workflow parametrizado (`medallion_full_wf`).
+- Retry automático na task de backfill (`@task(retries=2)`).
+- Backfill simples para `producao_consumo` por reruns idempotentes (`producao_consumo_backfill_days`).
 
 ## Próximos passos recomendados
 

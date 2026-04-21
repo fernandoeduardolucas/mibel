@@ -188,8 +188,16 @@ def _build_features(df, feature_spec: FeatureSpec):
 
 @task(container_image=image_spec)
 def train_producao_consumo_model(test_ratio: float = 0.2, random_state: int = 42) -> str:
-    import mlflow
-    import mlflow.sklearn
+    try:
+        import mlflow
+        import mlflow.sklearn
+    except ModuleNotFoundError as exc:
+        if exc.name == "mlflow":
+            raise ModuleNotFoundError(
+                "Dependência ausente: mlflow. Instala com `python -m pip install mlflow==3.10.1` "
+                "(ou usa o ambiente/container do Flyte com as packages do ImageSpec)."
+            ) from exc
+        raise
     import pandas as pd
     from sklearn.compose import ColumnTransformer
     from sklearn.impute import SimpleImputer

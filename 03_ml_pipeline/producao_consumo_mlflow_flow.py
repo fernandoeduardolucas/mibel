@@ -1,6 +1,10 @@
 """Flow de treino para produção vs consumo com tracking no MLflow.
 
 Execução local:
+    python3 -m venv .venv
+    source .venv/bin/activate
+    python -m pip install --upgrade pip setuptools wheel
+    python -m pip install pandas==2.2.3 scikit-learn==1.6.1 trino==0.336.0 mlflow==3.10.1 boto3
     python 03_ml_pipeline/producao_consumo_mlflow_flow.py
 
 Execução remota no Flyte:
@@ -194,7 +198,8 @@ def train_producao_consumo_model(test_ratio: float = 0.2, random_state: int = 42
     except ModuleNotFoundError as exc:
         if exc.name == "mlflow":
             raise ModuleNotFoundError(
-                "Dependência ausente: mlflow. Instala com `python -m pip install mlflow==3.10.1` "
+                "Dependência ausente: mlflow. Cria/ativa um venv e instala com "
+                "`python -m pip install mlflow==3.10.1` "
                 "(ou usa o ambiente/container do Flyte com as packages do ImageSpec)."
             ) from exc
         raise

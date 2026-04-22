@@ -59,3 +59,7 @@ Como as tasks Flyte correm num container/K3s isolado, usa `host.docker.internal`
 - Hive Metastore: `thrift://host.docker.internal:9083`
 
 Se precisares, posso também criar um segundo flow para **re-treino agendado** + **promoção automática de versão no Model Registry**.
+
+### Para correr Flyte + Ml
+pyflyte run --remote -p flytesnacks -d development \
+  03_ml_pipeline/producao_consumo_mlflow_flow.py producao_consumo_training_wf

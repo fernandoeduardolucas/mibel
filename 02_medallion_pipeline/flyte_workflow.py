@@ -81,11 +81,29 @@ def run_consumo_preco_medallion(build: bool = False) -> str:
     return _run_python(script, build=build)
 
 
+@task(retries=2)
+def run_producao_consumo_backfill(days: int = 1, build: bool = False) -> str:
+    """Executa reruns simples da pipeline como estratégia de backfill.
+
+    Nota: o runner atual ainda não recebe janela temporal; por isso o backfill
+    é implementado como reruns idempotentes para recuperar falhas recentes.
+    """
+    if days < 1:
+        raise ValueError("days tem de ser >= 1")
+
+    outputs: list[str] = []
+    for day_index in range(days):
+        result = run_producao_consumo_medallion(build=build)
+        outputs.append(f"d-{day_index}: {result}")
+    return " | ".join(outputs)
+
+
 @workflow
 def medallion_full_wf(
     run_producao_consumo: bool = True,
     run_consumo_preco: bool = True,
     build_images: bool = False,
+    producao_consumo_backfill_days: int = 0,
 ) -> str:
     outputs: list[str] = []
 
@@ -94,6 +112,14 @@ def medallion_full_wf(
 
     if run_consumo_preco:
         outputs.append(run_consumo_preco_medallion(build=build_images))
+
+    if producao_consumo_backfill_days > 0:
+        outputs.append(
+            run_producao_consumo_backfill(
+                days=producao_consumo_backfill_days,
+                build=build_images,
+            )
+        )
 
     if not outputs:
         return "Nada para executar: ativa pelo menos uma pipeline."

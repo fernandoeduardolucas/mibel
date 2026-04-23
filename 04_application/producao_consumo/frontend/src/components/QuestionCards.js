@@ -1,4 +1,4 @@
-import React from "react";
+import React from "https://esm.sh/react@18.3.1";
 import { ANALYTIC_QUESTIONS } from "../models/analyticsQuestionsModel.js";
 
 export function QuestionCards() {

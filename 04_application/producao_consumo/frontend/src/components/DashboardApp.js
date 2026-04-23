@@ -1,4 +1,4 @@
-import React from "react";
+import React from "https://esm.sh/react@18.3.1";
 import { GROUP_OPTIONS } from "../models/analyticsQuestionsModel.js";
 import {
   getDashboardData,

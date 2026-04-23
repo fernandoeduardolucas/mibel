@@ -1,6 +1,10 @@
 import React from "react";
 import { GROUP_OPTIONS } from "../models/analyticsQuestionsModel.js";
-import { getDashboardData, resolveApiBase } from "../services/producaoConsumoService.js";
+import {
+  getDashboardData,
+  getPredictionData,
+  resolveApiBase,
+} from "../services/producaoConsumoService.js";
 import { DataTables } from "./DataTables.js";
 import { KpiGrid } from "./KpiGrid.js";
 import { QuestionCards } from "./QuestionCards.js";
@@ -62,6 +66,28 @@ function Controls({ state, onChange, onRefresh, loading }) {
   );
 }
 
+function PredictionPanel({ prediction }) {
+  const probability = Number(prediction?.prob_defice_t_plus_1 ?? 0) * 100;
+  const isDefice = Number(prediction?.pred_flag_defice_t_plus_1 ?? 0) === 1;
+  const statusLabel = isDefice ? "Défice provável" : "Sem défice provável";
+
+  return React.createElement(
+    "section",
+    { className: "panel" },
+    React.createElement("h2", null, "Previsão ML (próxima hora)"),
+    React.createElement(
+      "p",
+      null,
+      `Estado previsto: ${statusLabel} • Probabilidade de défice: ${probability.toFixed(1)}%`,
+    ),
+    React.createElement(
+      "p",
+      { className: "subtitle" },
+      `Referência: ${prediction?.timestamp_referencia_utc ?? "n/d"} • Modelo: ${prediction?.model_uri ?? "n/d"}`,
+    ),
+  );
+}
+
 export function DashboardApp() {
   const [filters, setFilters] = React.useState({
     apiBase: resolveApiBase(""),
@@ -72,16 +98,21 @@ export function DashboardApp() {
   const [lastUpdated, setLastUpdated] = React.useState("");
   const [analytics, setAnalytics] = React.useState({});
   const [groupedSeries, setGroupedSeries] = React.useState([]);
+  const [prediction, setPrediction] = React.useState({});
 
   const loadData = React.useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      const data = await getDashboardData(filters);
-      setAnalytics(data.analytics ?? {});
-      setGroupedSeries(data.groupedSeries ?? []);
-      setFilters((previous) => ({ ...previous, apiBase: data.apiBase }));
+      const [dashboardData, predictionData] = await Promise.all([
+        getDashboardData(filters),
+        getPredictionData(filters),
+      ]);
+      setAnalytics(dashboardData.analytics ?? {});
+      setGroupedSeries(dashboardData.groupedSeries ?? []);
+      setPrediction(predictionData.prediction ?? {});
+      setFilters((previous) => ({ ...previous, apiBase: dashboardData.apiBase }));
       setLastUpdated(new Date().toLocaleString("pt-PT"));
     } catch (requestError) {
       setError(`Falha ao carregar dados: ${requestError.message}`);
@@ -108,6 +139,7 @@ export function DashboardApp() {
       onRefresh: loadData,
       loading,
     }),
+    React.createElement(PredictionPanel, { prediction }),
     React.createElement(QuestionCards),
     React.createElement(KpiGrid, { analytics }),
     React.createElement(DataTables, { analytics, groupedSeries }),

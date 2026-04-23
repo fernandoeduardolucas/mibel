@@ -58,6 +58,7 @@ No backend Python, isto corresponde a:
 - `GET /api/v1/producao-consumo/monthly`
 - `GET /api/v1/producao-consumo/analytics`
 - `GET /api/v1/producao-consumo/db-connection`
+- `GET /api/v1/producao-consumo/predictions/next-hour`
 
 ## Como correr
 
@@ -70,3 +71,14 @@ python3 server.py
 ```
 
 Por omissão, a API sobe em `http://localhost:8081`.
+
+
+## Previsões ML (t+1)
+
+O endpoint `GET /api/v1/producao-consumo/predictions/next-hour` carrega o modelo
+registado no MLflow e devolve a probabilidade de défice na próxima hora.
+
+Variáveis opcionais:
+
+- `MLFLOW_TRACKING_URI` (default: `http://localhost:15000`)
+- `MLFLOW_MODEL_URI` (default: `models:/producao_consumo_defice_classifier/latest`)

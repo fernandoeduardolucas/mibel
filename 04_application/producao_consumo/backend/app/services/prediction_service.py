@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 
@@ -20,7 +21,8 @@ class DeficePredictionService:
     """Serviço de inferência para previsão de défice em t+1."""
 
     def __init__(self):
-        self._model = None
+        self._model: Any | None = None
+        self._model_load_error: str | None = None
 
     @staticmethod
     def _model_uri() -> str:
@@ -34,15 +36,21 @@ class DeficePredictionService:
         return os.getenv("MLFLOW_TRACKING_URI", "http://localhost:15000")
 
     def _load_model(self):
+        if self._model_load_error is not None:
+            return None
         if self._model is not None:
             return self._model
 
-        import mlflow
-        import mlflow.sklearn
+        try:
+            import mlflow
+            import mlflow.sklearn
 
-        mlflow.set_tracking_uri(self._tracking_uri())
-        self._model = mlflow.sklearn.load_model(self._model_uri())
-        return self._model
+            mlflow.set_tracking_uri(self._tracking_uri())
+            self._model = mlflow.sklearn.load_model(self._model_uri())
+            return self._model
+        except Exception as exc:  # fallback resiliente para ambiente local sem deps de artefact store
+            self._model_load_error = str(exc)
+            return None
 
     @staticmethod
     def _to_features(hourly_points: list[EnergyPoint]) -> tuple[pd.DataFrame, str]:
@@ -92,15 +100,22 @@ class DeficePredictionService:
         return latest[feature_cols], reference_ts
 
     def predict_next_hour(self, hourly_points: list[EnergyPoint]) -> PredictionResult:
-        model = self._load_model()
         features, reference_ts = self._to_features(hourly_points)
+        model = self._load_model()
 
-        prediction = int(model.predict(features)[0])
-        probability = float(model.predict_proba(features)[0][1])
+        if model is not None:
+            prediction = int(model.predict(features)[0])
+            probability = float(model.predict_proba(features)[0][1])
+            model_uri = self._model_uri()
+        else:
+            latest_saldo = float(features["saldo_kwh_lag_1"].iloc[0])
+            prediction = int(latest_saldo < 0)
+            probability = 0.65 if prediction == 1 else 0.35
+            model_uri = f"fallback:heuristic:{self._model_load_error or 'unavailable_model'}"
 
         return PredictionResult(
             timestamp_referencia_utc=reference_ts,
             pred_flag_defice_t_plus_1=prediction,
             prob_defice_t_plus_1=probability,
-            model_uri=self._model_uri(),
+            model_uri=model_uri,
         )

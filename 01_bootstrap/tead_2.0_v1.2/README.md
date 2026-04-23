@@ -120,7 +120,7 @@ You should see confirmation that the `warehouse` and `mlflow` buckets were creat
 | MinIO S3 API | http://localhost:9000 | `minioadmin` / `minioadmin` |
 | Trino UI | http://localhost:8080 | no auth |
 | Hive Metastore (Thrift) | `thrift://localhost:9083` | — |
-| MLflow | http://localhost:15000 | no auth |
+| MLflow | http://localhost:000 | no auth |
 
 ---
 

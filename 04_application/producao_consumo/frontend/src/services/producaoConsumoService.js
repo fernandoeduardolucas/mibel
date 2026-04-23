@@ -39,6 +39,23 @@ function unwrapPayload(responseBody) {
   return responseBody;
 }
 
+function deepUnwrapPayload(responseBody) {
+  let current = responseBody;
+  let guard = 0;
+
+  while (
+    current != null &&
+    typeof current === "object" &&
+    Object.prototype.hasOwnProperty.call(current, "data") &&
+    guard < 5
+  ) {
+    current = unwrapPayload(current);
+    guard += 1;
+  }
+
+  return current;
+}
+
 function toNumber(value) {
   if (value == null || value === "") {
     return 0;
@@ -184,12 +201,13 @@ export async function getDashboardData({ apiBase, groupBy }) {
     fetchJson(`${normalizedBase}/api/v1/producao-consumo/${groupBy}`),
   ]);
 
-  const analyticsPayload = unwrapPayload(analyticsResponse);
-  const groupedPayload = unwrapPayload(groupedResponse);
+  const analyticsPayload = deepUnwrapPayload(analyticsResponse);
+  const groupedPayload = deepUnwrapPayload(groupedResponse);
   const groupedRows = Array.isArray(groupedPayload)
     ? groupedPayload
     : groupedPayload?.series ??
       groupedPayload?.rows ??
+      groupedPayload?.data ??
       groupedPayload?.data?.series ??
       groupedPayload?.data?.rows ??
       groupedPayload?.aggregates ??
@@ -198,8 +216,8 @@ export async function getDashboardData({ apiBase, groupBy }) {
       [];
 
   return {
-    analytics: normalizeAnalytics(unwrapPayload(analyticsPayload)),
-    groupedSeries: normalizeGroupedSeries(unwrapPayload(groupedRows)),
+    analytics: normalizeAnalytics(deepUnwrapPayload(analyticsPayload)),
+    groupedSeries: normalizeGroupedSeries(deepUnwrapPayload(groupedRows)),
     apiBase: normalizedBase,
   };
 }

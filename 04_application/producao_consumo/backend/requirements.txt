@@ -1,1 +1,4 @@
 trino==0.336.0
+pandas==2.2.3
+scikit-learn==1.6.1
+mlflow==3.10.1

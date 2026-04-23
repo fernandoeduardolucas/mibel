@@ -12,6 +12,7 @@ Frontend em **React (sem build step)** com arquitetura por camadas para consumo 
 - Dashboard configurável (base da API + agregação diária/mensal).
 - Cartões com perguntas analíticas.
 - KPIs principais de consumo/produção e dependência PRE/DGM.
+- Cartão de previsão ML da próxima hora (probabilidade de défice).
 - Tabelas de défice horário e série temporal agregada.
 - Design profissional responsivo.
 

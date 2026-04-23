@@ -120,3 +120,26 @@ export async function getDashboardData({ apiBase, groupBy }) {
     apiBase: normalizedBase,
   };
 }
+
+
+function normalizePrediction(rawPrediction) {
+  const prediction = rawPrediction ?? {};
+  return {
+    timestamp_referencia_utc: prediction.timestamp_referencia_utc ?? null,
+    pred_flag_defice_t_plus_1: Number(prediction.pred_flag_defice_t_plus_1 ?? 0),
+    prob_defice_t_plus_1: toNumber(prediction.prob_defice_t_plus_1),
+    model_uri: prediction.model_uri ?? "",
+  };
+}
+
+export async function getPredictionData({ apiBase }) {
+  const normalizedBase = resolveApiBase(apiBase);
+  const response = await fetchJson(
+    `${normalizedBase}/api/v1/producao-consumo/predictions/next-hour`,
+  );
+
+  return {
+    prediction: normalizePrediction(response.data),
+    apiBase: normalizedBase,
+  };
+}

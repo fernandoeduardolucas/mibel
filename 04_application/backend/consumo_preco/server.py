@@ -14,6 +14,8 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[3]
 
+
+#NAO PODE USAR O CSV So PODE USAR a base de dados gold
 CONSUMPTION_CSV = ROOT / "02_medallion_pipeline/consumo_preco/01_bronze/data/raw/consumo-total-nacional.csv"
 PRICE_CSV = ROOT / "02_medallion_pipeline/consumo_preco/01_bronze/data/raw/Day-ahead Market Prices_20230101_20260311.csv"
 

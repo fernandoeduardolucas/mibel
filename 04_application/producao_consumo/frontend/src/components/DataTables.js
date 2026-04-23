@@ -1,4 +1,4 @@
-import React from "react";
+import React from "https://esm.sh/react@18.3.1";
 import { formatDateTime, formatNumber, formatPercent, formatRatio } from "../utils/formatters.js";
 
 function deficitRows(analytics = {}) {

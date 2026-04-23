@@ -27,6 +27,18 @@ async function fetchJson(url) {
   return response.json();
 }
 
+function unwrapPayload(responseBody) {
+  if (responseBody == null) {
+    return null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(responseBody, "data")) {
+    return responseBody.data;
+  }
+
+  return responseBody;
+}
+
 function toNumber(value) {
   if (value == null || value === "") {
     return 0;
@@ -114,9 +126,19 @@ export async function getDashboardData({ apiBase, groupBy }) {
     fetchJson(`${normalizedBase}/api/v1/producao-consumo/${groupBy}`),
   ]);
 
+  const analyticsPayload = unwrapPayload(analyticsResponse);
+  const groupedPayload = unwrapPayload(groupedResponse);
+  const groupedRows = Array.isArray(groupedPayload)
+    ? groupedPayload
+    : groupedPayload?.series ??
+      groupedPayload?.rows ??
+      groupedPayload?.result ??
+      groupedPayload?.items ??
+      [];
+
   return {
-    analytics: normalizeAnalytics(analyticsResponse.data),
-    groupedSeries: normalizeGroupedSeries(groupedResponse.data),
+    analytics: normalizeAnalytics(unwrapPayload(analyticsPayload)),
+    groupedSeries: normalizeGroupedSeries(unwrapPayload(groupedRows)),
     apiBase: normalizedBase,
   };
 }
@@ -139,7 +161,7 @@ export async function getPredictionData({ apiBase }) {
   );
 
   return {
-    prediction: normalizePrediction(response.data),
+    prediction: normalizePrediction(unwrapPayload(response)),
     apiBase: normalizedBase,
   };
 }

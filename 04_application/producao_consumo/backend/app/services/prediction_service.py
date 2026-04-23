@@ -91,11 +91,6 @@ class DeficePredictionService:
                 feature_cols.append(lag_col)
 
         latest = data.tail(1).copy()
-        if latest[feature_cols].isna().any(axis=1).iloc[0]:
-            raise ValueError(
-                "Última linha sem dados suficientes para inferência. Verifique missing values nas últimas 24h."
-            )
-
         reference_ts = latest["timestamp_utc"].iloc[0].isoformat()
         return latest[feature_cols], reference_ts
 
@@ -108,7 +103,13 @@ class DeficePredictionService:
             probability = float(model.predict_proba(features)[0][1])
             model_uri = self._model_uri()
         else:
-            latest_saldo = float(features["saldo_kwh_lag_1"].iloc[0])
+            latest_saldo = pd.to_numeric(features["saldo_kwh_lag_1"], errors="coerce").iloc[0]
+            if pd.isna(latest_saldo):
+                available_saldo = pd.to_numeric(features.filter(like="saldo_kwh_lag_"), errors="coerce").iloc[0]
+                latest_saldo = float(available_saldo.dropna().iloc[0]) if not available_saldo.dropna().empty else 0.0
+            else:
+                latest_saldo = float(latest_saldo)
+
             prediction = int(latest_saldo < 0)
             probability = 0.65 if prediction == 1 else 0.35
             model_uri = f"fallback:heuristic:{self._model_load_error or 'unavailable_model'}"

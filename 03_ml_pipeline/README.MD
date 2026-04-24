@@ -60,6 +60,163 @@ Como as tasks Flyte correm num container/K3s isolado, usa `host.docker.internal`
 
 Se precisares, posso também criar um segundo flow para **re-treino agendado** + **promoção automática de versão no Model Registry**.
 
-### Para correr Flyte + Ml
-pyflyte run --remote -p flytesnacks -d development \
-  03_ml_pipeline/producao_consumo_mlflow_flow.py producao_consumo_training_wf
+## Checklist rápida: Flyte + projeto a funcionar
+
+No Docker Desktop, para haver orquestração real entre Flyte e este projeto, o `flyte-sandbox` e os serviços da stack (`trino`, `mlflow`, `minio`, `hive-metastore`) devem estar **a correr**.
+
+### Sinais de que está OK
+
+- `flyte-sandbox` em estado **running**.
+- `tead_20_v12` (ou serviços individuais) em estado **running**.
+- UI Flyte acessível em `http://localhost:30080`.
+- MLflow acessível em `http://localhost:15000`.
+- Trino acessível em `http://localhost:8080`.
+
+### Comandos de validação
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+curl -sf http://localhost:30080 >/dev/null && echo "Flyte UI OK"
+curl -sf http://localhost:15000 >/dev/null && echo "MLflow OK"
+curl -sf http://localhost:8080 >/dev/null && echo "Trino OK"
+```
+
+Se os containers aparecerem parados no Docker Desktop, a orquestração ainda **não** está ativa; primeiro inicia os containers e depois executa o `pyflyte run --remote ...`.
+
+## Agora que a UI do Flyte está no ar (`localhost:30080`), o que fazer?
+
+1. **Confirma que a stack de dados está running** (`trino`, `mlflow`, `minio`, `hive-metastore`).
+2. **Executa o workflow remoto** (no host, com `pyflyte` instalado):
+
+   ```bash
+   pyflyte run --remote -p flytesnacks -d development \
+     03_ml_pipeline/producao_consumo_mlflow_flow.py producao_consumo_training_wf
+   ```
+
+3. **Na UI do Flyte**:
+   - entra em `flytesnacks` → `development`;
+   - abre a execution criada;
+   - valida que as tasks ficam `SUCCEEDED`.
+
+4. **Valida integração externa**:
+   - MLflow (`http://localhost:15000`): confirmar experimento novo e métricas;
+   - Trino (`http://localhost:8080`): confirmar que a leitura da tabela Gold ocorreu sem erro.
+
+### Erros comuns rápidos
+
+- `Connection refused` para `localhost` dentro da task Flyte  
+  → usar `host.docker.internal` nos endpoints de runtime da task (já definido neste projeto).
+- `project/domain not found` no `pyflyte run`  
+  → usar `-p flytesnacks -d development`.
+
+## Quando a execução está `RUNNING` no Flyte: próximos passos
+
+Se estiveres no ecrã de execução (como no teu screenshot), faz isto:
+
+1. Clica no node `train_producao_consumo_...` para abrir logs da task.
+2. Espera o estado mudar de `RUNNING` para `SUCCEEDED`.
+3. Depois de concluir, valida:
+   - **Flyte**: workflow com estado final `SUCCEEDED`;
+   - **MLflow** (`http://localhost:15000`): nova run no experimento `producao-consumo-defice`;
+   - **Artefactos**: métricas e modelo registados.
+
+### Se ficar preso muito tempo em `RUNNING`
+
+- Ver logs da task na UI do Flyte e procurar erros de ligação (Trino/MLflow/MinIO).
+- Confirmar no host:
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+curl -sf http://localhost:15000 >/dev/null && echo "MLflow OK"
+curl -sf http://localhost:8080 >/dev/null && echo "Trino OK"
+```
+
+- Se necessário, terminar a execução atual e relançar o `pyflyte run --remote ...`.
+
+## O que foi feito (resumo) e o que testar
+
+### O que foi feito
+
+- Foi executado um workflow remoto no Flyte (`producao_consumo_training_wf`) no projeto `flytesnacks` e domínio `development`.
+- A execução chegou a estado final `SUCCEEDED`.
+- O treino registou resultados no MLflow, incluindo o experimento `producao-consumo-defice`.
+
+### O que testar agora (checklist prático)
+
+1. **Reprodutibilidade mínima**
+   - Relançar a execução pelo botão **Relaunch** na UI Flyte.
+   - Confirmar que uma nova execution também termina em `SUCCEEDED`.
+
+2. **Rastreabilidade no MLflow**
+   - Abrir `http://localhost:15000`.
+   - Entrar no experimento `producao-consumo-defice`.
+   - Confirmar criação de uma nova run com métricas, parâmetros e artefactos.
+
+3. **Sanidade da infraestrutura**
+   - Confirmar containers essenciais em running (`flyte-sandbox`, `trino`, `mlflow`, `minio`, `hive-metastore`).
+   - Confirmar endpoints do host acessíveis (`30080`, `15000`, `8080`).
+
+4. **Teste de falha controlada (opcional)**
+   - Parar temporariamente o `trino`.
+   - Relançar workflow e validar que falha com erro de conexão (esperado).
+   - Voltar a subir `trino` e confirmar recuperação no próximo run.
+
+## FAQ rápida
+
+### Este experimento altera a base de dados?
+
+Não, este flow de ML **não escreve** na tabela Gold nem em Trino: ele apenas faz `SELECT` para ler dados e treinar o modelo.
+O output principal é guardado no MLflow (métricas, parâmetros, artefactos e modelo registado).
+
+### Onde está o resultado do experimento?
+
+- **Flyte UI**: estado da execução (`SUCCEEDED`/`FAILED`) e logs da task.
+- **MLflow UI** (`http://localhost:15000`): experimento, runs, métricas, parâmetros e artefactos.
+- **Model Registry (MLflow)**: modelo registado como `producao_consumo_defice_classifier`.
+
+### Qual foi o experimento usado?
+
+O nome do experimento é `producao-consumo-defice` (valor default de `MLFLOW_EXPERIMENT` neste projeto).
+
+## Como interpretar o ecrã do MLflow (quando dizes "o que é isto?")
+
+Quando abres uma **Run** no MLflow (como no teu screenshot), estás a ver o resultado de uma execução do treino.
+
+- **Run name** (`rf-defice-t-plus-1`): nome da execução de treino.
+- **Metrics** (`accuracy`, `precision`, `recall`, `f1`, `roc_auc`): desempenho do modelo no conjunto de teste.
+- **Parameters** (`test_ratio`, `random_state`, `n_estimators`, datas de treino/teste, etc.): configuração usada nessa run.
+- **Tags** (`dataset`, `target`, `model_type`): metadados para rastrear contexto do treino.
+- **Registered models** (`producao_consumo_defice_classifier v1`): modelo foi registado no Model Registry.
+
+### Em termos práticos, o que isto significa?
+
+- O workflow correu com sucesso e treinou um modelo.
+- O resultado ficou versionado no MLflow (run + modelo registado).
+- Não é um erro: este ecrã é exatamente onde validas qualidade e rastreabilidade do experimento.
+
+## O que fazer na prática com o modelo treinado?
+
+Depois do treino, o modelo `producao_consumo_defice_classifier` pode ser usado em 4 frentes:
+
+1. **Comparar versões (v1, v2, …)**
+   - Treinar novamente com dados mais recentes.
+   - Comparar métricas no MLflow e decidir qual versão fica ativa.
+
+2. **Promover para uso operacional**
+   - No Model Registry do MLflow, promover a versão escolhida (ex.: `v1`) para o estágio pretendido.
+   - Definir essa versão como referência para inferência.
+
+3. **Fazer scoring (previsão) em novos dados**
+   - Carregar o modelo registado e gerar `flag_defice` para novas horas.
+   - Publicar resultados numa tabela de previsões (ex.: `iceberg.gold.producao_consumo_previsoes`) para consumo em BI/alertas.
+
+4. **Automatizar re-treino**
+   - Agendar o workflow Flyte (diário/semanal).
+   - Reavaliar métricas e só promover nova versão quando superar critérios mínimos.
+
+### Checklist mínimo pós-treino
+
+- Confirmar versão registada no MLflow Registry.
+- Definir critérios de promoção (ex.: `f1` e `recall` mínimos).
+- Criar job de inferência batch para alimentar previsões.
+- Monitorizar drift/perda de performance ao longo do tempo.

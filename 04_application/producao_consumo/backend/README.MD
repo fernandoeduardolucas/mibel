@@ -58,6 +58,7 @@ No backend Python, isto corresponde a:
 - `GET /api/v1/producao-consumo/monthly`
 - `GET /api/v1/producao-consumo/analytics`
 - `GET /api/v1/producao-consumo/db-connection`
+- `GET /api/v1/producao-consumo/predictions/next-hour`
 
 ## Como correr
 

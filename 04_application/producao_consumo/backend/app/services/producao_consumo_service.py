@@ -7,6 +7,7 @@ from datetime import datetime
 from app.config import CACHE_TTL_SECONDS
 from app.models.energy_point import EnergyPoint
 from app.repositories.producao_consumo_repository import ProducaoConsumoRepository
+from app.services.prediction_service import DeficePredictionService
 
 
 class ProducaoConsumoService:
@@ -14,6 +15,7 @@ class ProducaoConsumoService:
 
     def __init__(self, repository: ProducaoConsumoRepository):
         self.repository = repository
+        self._prediction_service = DeficePredictionService()
         self._cache: list[EnergyPoint] | None = None
         self._cache_loaded_at: float | None = None
 
@@ -166,3 +168,16 @@ class ProducaoConsumoService:
 
     def test_database_connection(self) -> dict[str, str | bool]:
         return self.repository.test_connection()
+
+
+    def predict_next_hour(self) -> dict:
+        self._refresh_if_needed()
+        assert self._cache is not None
+
+        result = self._prediction_service.predict_next_hour(self._cache)
+        return {
+            "timestamp_referencia_utc": result.timestamp_referencia_utc,
+            "pred_flag_defice_t_plus_1": result.pred_flag_defice_t_plus_1,
+            "prob_defice_t_plus_1": result.prob_defice_t_plus_1,
+            "model_uri": result.model_uri,
+        }

@@ -460,6 +460,7 @@ class ConsumoPrecoService:
         }
 
 
+SERVICE = ConsumoPrecoService(CONSUMPTION_CSV, PRICE_CSV)
 
 
 class Handler(BaseHTTPRequestHandler):

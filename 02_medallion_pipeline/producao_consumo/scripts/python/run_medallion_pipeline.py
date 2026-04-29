@@ -120,6 +120,7 @@ def main() -> None:
     silver_sql = pipeline_root / "02_silver" / "sql" / "01_silver_trino.sql"
     gold_sql = pipeline_root / "03_gold" / "sql" / "01_gold_trino.sql"
     bronze_requirements = script_dir / "requirements.txt"
+    bronze_uploader = script_dir / "bronze_clean_upload.py"
 
     for path, desc in [
         (compose_file, "docker-compose.yml"),
@@ -127,6 +128,7 @@ def main() -> None:
         (silver_sql, "SQL Silver"),
         (gold_sql, "SQL Gold"),
         (bronze_requirements, "requirements da Bronze"),
+        (bronze_uploader, "script bronze_clean_upload.py")
     ]:
         must_exist(path, desc)
 
@@ -164,7 +166,7 @@ def main() -> None:
     subprocess.run(
         [
             str(venv_python),
-            "scripts/python/bronze_clean_upload.py",
+            str(bronze_uploader),
             "--consumo",
             "data/raw/consumo-total-nacional.csv",
             "--producao",

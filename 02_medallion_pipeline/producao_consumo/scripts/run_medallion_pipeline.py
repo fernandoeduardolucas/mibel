@@ -106,6 +106,21 @@ def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
     return venv_python
 
 
+def run_pip_with_recovery(venv_python: Path, pip_args: list[str]) -> None:
+    """Executa pip e tenta recuperar automaticamente do erro KeyError('bootstrap')."""
+    cmd = [str(venv_python), "-m", "pip", *pip_args]
+    try:
+        run(cmd)
+    except subprocess.CalledProcessError:
+        print(
+            ">>> Falha ao executar pip. A tentar recuperação automática com ensurepip "
+            "e downgrade para uma versão estável."
+        )
+        run([str(venv_python), "-m", "ensurepip", "--upgrade"])
+        run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip<26"])
+        run(cmd)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Corre a medallion pipeline de producao_consumo")
     parser.add_argument("--build", action="store_true", help="faz build no docker compose up")
@@ -152,8 +167,8 @@ def main() -> None:
         compose_up.append("--build")
     run(compose_up)
 
-    run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"])
-    run([str(venv_python), "-m", "pip", "install", "-r", str(bronze_requirements)])
+    run_pip_with_recovery(venv_python, ["install", "--upgrade", "pip"])
+    run_pip_with_recovery(venv_python, ["install", "-r", str(bronze_requirements)])
 
     env = os.environ.copy()
     env.update(

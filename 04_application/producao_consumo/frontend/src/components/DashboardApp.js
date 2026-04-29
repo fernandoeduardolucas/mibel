@@ -5,53 +5,6 @@ import { DataTables } from "./DataTables.js";
 import { KpiGrid } from "./KpiGrid.js";
 import { QuestionCards } from "./QuestionCards.js";
 
-function buildGroupedSeriesCsv(groupedSeries = []) {
-  const headers = [
-    "periodo",
-    "consumo_total",
-    "producao_total",
-    "saldo",
-    "ratio_producao_consumo",
-    "defice_horas",
-    "excedente_horas",
-    "leituras",
-  ];
-
-  const rows = groupedSeries.map((row) =>
-    [
-      row.periodo,
-      row.consumo_total,
-      row.producao_total,
-      row.saldo,
-      row.ratio_producao_consumo,
-      row.defice_horas ?? 0,
-      row.excedente_horas ?? 0,
-      row.leituras ?? 0,
-    ]
-      .map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`)
-      .join(","),
-  );
-
-  return [headers.join(","), ...rows].join("\n");
-}
-
-function exportGroupedSeriesCsv(groupedSeries = []) {
-  if (!groupedSeries.length) {
-    return;
-  }
-
-  const csv = buildGroupedSeriesCsv(groupedSeries);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `serie-temporal-agregada-${new Date().toISOString().replace(/[:]/g, "-")}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
 function Header() {
   return React.createElement(
     "header",
@@ -66,7 +19,7 @@ function Header() {
   );
 }
 
-function Controls({ state, onChange, onRefresh, onExport, loading, exportDisabled }) {
+function Controls({ state, onChange, onRefresh, loading }) {
   return React.createElement(
     "section",
     { className: "panel controls" },
@@ -105,16 +58,6 @@ function Controls({ state, onChange, onRefresh, onExport, loading, exportDisable
         disabled: loading,
       },
       loading ? "A atualizar..." : "Atualizar dashboard",
-    ),
-    React.createElement(
-      "button",
-      {
-        type: "button",
-        className: "secondary-button",
-        onClick: onExport,
-        disabled: loading || exportDisabled,
-      },
-      "⬇ Exportar CSV",
     ),
   );
 }
@@ -163,9 +106,7 @@ export function DashboardApp() {
       state: filters,
       onChange: updateFilter,
       onRefresh: loadData,
-      onExport: () => exportGroupedSeriesCsv(groupedSeries),
       loading,
-      exportDisabled: !groupedSeries.length,
     }),
     React.createElement(QuestionCards),
     React.createElement(KpiGrid, { analytics }),

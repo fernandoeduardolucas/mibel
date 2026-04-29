@@ -202,7 +202,7 @@ def main() -> None:
 
     bronze_dir = pipeline_root / "01_bronze"
     bronze_script = bronze_dir / "scripts" / "python" / "bronze_clean_upload_consumo_precos.py"
-    bronze_requirements = bronze_dir / "scripts" / "python" / "requirements_bronze.txt"
+    bronze_requirements = bronze_dir / "scripts" / "python" / "requirements.txt"
 
     consumo_raw = bronze_dir / "data" / "raw" / "consumo-total-nacional.csv"
     precos_raw = bronze_dir / "data" / "raw" / "Day-ahead Market Prices_20230101_20260311.csv"

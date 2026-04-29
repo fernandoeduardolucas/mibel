@@ -21,7 +21,13 @@ import time
 from pathlib import Path
 
 
-def run(cmd: list[str], *, cwd: Path | None = None, input_text: str | None = None) -> None:
+def run(
+    cmd: list[str],
+    *,
+    cwd: Path | None = None,
+    input_text: str | None = None,
+    env: dict[str, str] | None = None,
+) -> None:
     print(f"\n>>> {' '.join(cmd)}")
     subprocess.run(
         cmd,
@@ -29,6 +35,7 @@ def run(cmd: list[str], *, cwd: Path | None = None, input_text: str | None = Non
         text=True,
         input=input_text,
         check=True,
+        env=env,
     )
 
 
@@ -107,18 +114,22 @@ def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
 
 
 def run_pip_with_recovery(venv_python: Path, pip_args: list[str]) -> None:
-    """Executa pip e tenta recuperar automaticamente do erro KeyError('bootstrap')."""
+    """Executa pip com fallback para ambientes onde o schema 'bootstrap' não existe."""
     cmd = [str(venv_python), "-m", "pip", *pip_args]
+    pip_env = os.environ.copy()
+    # Alguns ambientes Python 3.12+ expõem esquema sysconfig sem 'bootstrap'.
+    # Forçar o modo legado evita KeyError em versões recentes do pip.
+    pip_env["PIP_USE_SYSCONFIG"] = "0"
+
     try:
-        run(cmd)
+        run(cmd, env=pip_env)
     except subprocess.CalledProcessError:
         print(
             ">>> Falha ao executar pip. A tentar recuperação automática com ensurepip "
-            "e downgrade para uma versão estável."
+            "e modo legado de instalação."
         )
-        run([str(venv_python), "-m", "ensurepip", "--upgrade"])
-        run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip<26"])
-        run(cmd)
+        run([str(venv_python), "-m", "ensurepip", "--upgrade"], env=pip_env)
+        run(cmd, env=pip_env)
 
 
 def main() -> None:

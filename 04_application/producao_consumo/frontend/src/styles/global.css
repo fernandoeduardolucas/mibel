@@ -68,7 +68,7 @@ body {
   display: grid;
   gap: 14px;
   padding: 16px;
-  grid-template-columns: 1fr 220px auto;
+  grid-template-columns: 1fr 220px auto auto;
   align-items: end;
 }
 
@@ -120,23 +120,6 @@ button {
 .secondary-button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
-}
-
-.export-button {
-  display: inline-flex;
-  margin-bottom: 12px;
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.panel-header h2 {
-  margin-bottom: 0;
 }
 
 .question-grid,

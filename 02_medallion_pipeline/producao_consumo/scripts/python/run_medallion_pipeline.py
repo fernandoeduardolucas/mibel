@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Runner único (cross-platform) para a pipeline Medallion de producao_consumo.
 
-Fluxo:
-1) Sobe stack Docker Compose (sem build por padrão)
-2) Instala dependências da Bronze
-3) Executa limpeza + upload Bronze
-4) Executa SQL Bronze, Silver e Gold via Trino dentro do Docker
-5) Faz validação rápida da Gold
+Fluxo detalhado por tarefas:
+1) Sobe stack Docker Compose (infra Trino/MinIO/Hive)
+2) Instala dependências Python da fase Bronze
+3) Executa tarefa Bronze (ingestão bruta + limpeza + upload)
+4) Executa tarefa Silver (validação dos artefatos clean da Bronze)
+5) Executa tarefa Gold (validação de arranque da camada analítica)
+6) Executa SQL Bronze, Silver e Gold via Trino dentro do Docker
+7) Faz validação rápida da tabela Gold final
 """
 from __future__ import annotations
 
@@ -120,7 +122,9 @@ def main() -> None:
     silver_sql = pipeline_root / "02_silver" / "sql" / "01_silver_trino.sql"
     gold_sql = pipeline_root / "03_gold" / "sql" / "01_gold_trino.sql"
     bronze_requirements = script_dir / "requirements.txt"
-    bronze_uploader = script_dir / "bronze_clean_upload.py"
+    bronze_uploader = script_dir / "01_bronze_ingest_upload.py"
+    silver_validator = script_dir / "02_silver_validate.py"
+    gold_validator = script_dir / "03_gold_validate.py"
 
     for path, desc in [
         (compose_file, "docker-compose.yml"),
@@ -128,7 +132,9 @@ def main() -> None:
         (silver_sql, "SQL Silver"),
         (gold_sql, "SQL Gold"),
         (bronze_requirements, "requirements da Bronze"),
-        (bronze_uploader, "script bronze_clean_upload.py")
+        (bronze_uploader, "script 01_bronze_ingest_upload.py"),
+        (silver_validator, "script 02_silver_validate.py"),
+        (gold_validator, "script 03_gold_validate.py")
     ]:
         must_exist(path, desc)
 
@@ -143,11 +149,13 @@ def main() -> None:
         )
     venv_python = create_local_venv(pipeline_root, python_cmd)
 
+    # Tarefa 1: levantar infraestrutura necessária para processar as 3 camadas.
     compose_up = ["docker", "compose", "-f", str(compose_file), "up", "-d"]
     if args.build:
         compose_up.append("--build")
     run(compose_up)
 
+    # Tarefa 2: preparar ambiente Python da pipeline.
     run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"])
     run([str(venv_python), "-m", "pip", "install", "-r", str(bronze_requirements)])
 
@@ -162,6 +170,7 @@ def main() -> None:
         }
     )
 
+    # Tarefa 3: processar Bronze (raw -> clean + upload para o data lake).
     print("\n>>> Bronze clean + upload")
     subprocess.run(
         [
@@ -181,6 +190,12 @@ def main() -> None:
         text=True,
     )
 
+    # Tarefa 4: validar pré-condições da Silver (ficheiros clean gerados).
+    subprocess.run([str(venv_python), str(silver_validator), "--clean-dir", "data/clean"], cwd=str(bronze_dir), check=True, text=True)
+    # Tarefa 5: validar pré-condições da Gold antes dos SQLs analíticos.
+    subprocess.run([str(venv_python), str(gold_validator)], cwd=str(bronze_dir), check=True, text=True)
+
+    # Tarefa 6: materializar as camadas no lakehouse via SQL no Trino.
     for stage_name, sql_file in [("Bronze", bronze_sql), ("Silver", silver_sql), ("Gold", gold_sql)]:
         print(f"\n>>> SQL {stage_name} via Docker/Trino: {sql_file}")
         run(
@@ -188,6 +203,7 @@ def main() -> None:
             input_text=sql_file.read_text(encoding="utf-8"),
         )
 
+    # Tarefa 7: check rápido da tabela Gold final (contagem de linhas).
     run(
         [
             "docker",

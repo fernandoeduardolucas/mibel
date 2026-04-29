@@ -1,83 +1,69 @@
--- ============================================
--- PROJETO GOLD
--- Entrada:
---   iceberg.silver.consumo_total_nacional_15min
---   iceberg.silver.energia_produzida_total_nacional_15min
--- Saída:
---   iceberg.gold.producao_vs_consumo_hourly
--- ============================================
+CREATE SCHEMA IF NOT EXISTS iceberg.gold WITH (location = 's3a://warehouse/gold/');
 
-CREATE SCHEMA IF NOT EXISTS iceberg.gold
-WITH (location = 's3a://warehouse/gold/');
-
+-- Tabela base horária para análises
 DROP TABLE IF EXISTS iceberg.gold.producao_vs_consumo_hourly;
-
-CREATE TABLE iceberg.gold.producao_vs_consumo_hourly
-WITH (format = 'PARQUET') AS
-WITH consumo_hourly AS (
-    SELECT
-        date_trunc('hour', timestamp_utc) AS timestamp_utc,
-        SUM(consumo_total_kwh) AS consumo_total_kwh
-    FROM iceberg.silver.consumo_total_nacional_15min
-    GROUP BY 1
-),
-producao_hourly AS (
-    SELECT
-        date_trunc('hour', timestamp_utc) AS timestamp_utc,
-        SUM(producao_total_kwh) AS producao_total_kwh,
-        SUM(producao_dgm_kwh) AS producao_dgm_kwh,
-        SUM(producao_pre_kwh) AS producao_pre_kwh
-    FROM iceberg.silver.energia_produzida_total_nacional_15min
-    GROUP BY 1
-)
+CREATE TABLE iceberg.gold.producao_vs_consumo_hourly WITH (format='PARQUET') AS
 SELECT
-    COALESCE(c.timestamp_utc, p.timestamp_utc) AS timestamp_utc,
-    c.consumo_total_kwh,
-    p.producao_total_kwh,
-    p.producao_dgm_kwh,
-    p.producao_pre_kwh,
-    p.producao_total_kwh - c.consumo_total_kwh AS saldo_kwh,
-    CASE
-        WHEN c.consumo_total_kwh IS NULL OR c.consumo_total_kwh = 0 THEN NULL
-        ELSE p.producao_total_kwh / c.consumo_total_kwh
-    END AS ratio_producao_consumo,
-    CASE
-        WHEN c.consumo_total_kwh IS NOT NULL
-         AND p.producao_total_kwh IS NOT NULL
-         AND p.producao_total_kwh < c.consumo_total_kwh
-        THEN true ELSE false
-    END AS flag_defice,
-    CASE
-        WHEN c.consumo_total_kwh IS NOT NULL
-         AND p.producao_total_kwh IS NOT NULL
-         AND p.producao_total_kwh > c.consumo_total_kwh
-        THEN true ELSE false
-    END AS flag_excedente,
-    CASE
-        WHEN c.timestamp_utc IS NULL OR p.timestamp_utc IS NULL THEN true
-        ELSE false
-    END AS flag_missing_source
-FROM consumo_hourly c
-FULL OUTER JOIN producao_hourly p
-    ON c.timestamp_utc = p.timestamp_utc
-ORDER BY 1;
+  date_trunc('hour', timestamp_utc) AS timestamp_utc,
+  SUM(consumo_total_kwh) AS consumo_total_kwh,
+  SUM(producao_total_kwh) AS producao_total_kwh,
+  SUM(producao_dgm_kwh) AS producao_dgm_kwh,
+  SUM(producao_pre_kwh) AS producao_pre_kwh,
+  SUM(producao_total_kwh) - SUM(consumo_total_kwh) AS saldo_kwh
+FROM iceberg.silver.producao_consumo_15min
+GROUP BY 1;
 
--- ============================================
--- VALIDACAO
--- ============================================
-SELECT COUNT(*) AS linhas_gold
-FROM iceberg.gold.producao_vs_consumo_hourly;
-
-SELECT MIN(timestamp_utc) AS min_ts, MAX(timestamp_utc) AS max_ts
-FROM iceberg.gold.producao_vs_consumo_hourly;
-
+-- Consumo diário (dataset atual é nacional; "região" marcada como NACIONAL)
+DROP TABLE IF EXISTS iceberg.gold.consumo_diario_regiao;
+CREATE TABLE iceberg.gold.consumo_diario_regiao WITH (format='PARQUET') AS
 SELECT
-    SUM(CASE WHEN flag_defice THEN 1 ELSE 0 END) AS horas_com_defice,
-    SUM(CASE WHEN flag_excedente THEN 1 ELSE 0 END) AS horas_com_excedente,
-    SUM(CASE WHEN flag_missing_source THEN 1 ELSE 0 END) AS horas_com_fonte_em_falta
-FROM iceberg.gold.producao_vs_consumo_hourly;
+  CAST(date_trunc('day', timestamp_utc) AS DATE) AS data,
+  'NACIONAL' AS regiao,
+  SUM(consumo_total_kwh) AS consumo_total_kwh
+FROM iceberg.silver.producao_consumo_15min
+GROUP BY 1,2;
 
-SELECT *
-FROM iceberg.gold.producao_vs_consumo_hourly
-ORDER BY timestamp_utc
-LIMIT 24;
+-- Produção mensal por tecnologia
+DROP TABLE IF EXISTS iceberg.gold.producao_mensal_tecnologia;
+CREATE TABLE iceberg.gold.producao_mensal_tecnologia WITH (format='PARQUET') AS
+SELECT date_trunc('month', timestamp_utc) AS mes,
+       SUM(producao_dgm_kwh) AS producao_dgm_kwh,
+       SUM(producao_pre_kwh) AS producao_pre_kwh,
+       SUM(producao_total_kwh) AS producao_total_kwh
+FROM iceberg.silver.producao_consumo_15min
+GROUP BY 1;
+
+-- Indicadores finais
+DROP TABLE IF EXISTS iceberg.gold.indicadores_finais;
+CREATE TABLE iceberg.gold.indicadores_finais WITH (format='PARQUET') AS
+SELECT
+  COUNT(*) AS total_registos_15min,
+  SUM(consumo_total_kwh) AS consumo_total_kwh,
+  SUM(producao_total_kwh) AS producao_total_kwh,
+  AVG(producao_total_kwh - consumo_total_kwh) AS saldo_medio_kwh,
+  SUM(CASE WHEN producao_total_kwh < consumo_total_kwh THEN 1 ELSE 0 END) AS periodos_defice
+FROM iceberg.silver.producao_consumo_15min;
+
+-- Tabelas para dashboard
+DROP TABLE IF EXISTS iceberg.gold.dashboard_kpis;
+CREATE TABLE iceberg.gold.dashboard_kpis WITH (format='PARQUET') AS
+SELECT * FROM iceberg.gold.indicadores_finais;
+
+DROP TABLE IF EXISTS iceberg.gold.dashboard_series_horarias;
+CREATE TABLE iceberg.gold.dashboard_series_horarias WITH (format='PARQUET') AS
+SELECT * FROM iceberg.gold.producao_vs_consumo_hourly;
+
+-- Features para modelos
+DROP TABLE IF EXISTS iceberg.gold.features_modelos;
+CREATE TABLE iceberg.gold.features_modelos WITH (format='PARQUET') AS
+SELECT
+  timestamp_utc,
+  consumo_total_kwh,
+  producao_total_kwh,
+  producao_dgm_kwh,
+  producao_pre_kwh,
+  saldo_kwh,
+  hour(timestamp_utc) AS feature_hora,
+  day_of_week(timestamp_utc) AS feature_dia_semana,
+  month(timestamp_utc) AS feature_mes
+FROM iceberg.gold.producao_vs_consumo_hourly;

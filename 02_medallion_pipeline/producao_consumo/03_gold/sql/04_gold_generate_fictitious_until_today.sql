@@ -26,7 +26,7 @@ range_hours AS (
     CROSS JOIN UNNEST(
         sequence(
             date_add('hour', 1, date_trunc('hour', last_ts)),
-            date_trunc('hour', current_timestamp AT TIME ZONE 'UTC'),
+            CAST(date_trunc('hour', current_timestamp AT TIME ZONE 'UTC') AS timestamp(6)),
             INTERVAL '1' HOUR
         )
     ) AS t(ts)

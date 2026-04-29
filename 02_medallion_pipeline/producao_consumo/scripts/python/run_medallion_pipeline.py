@@ -119,7 +119,7 @@ def main() -> None:
     bronze_sql = bronze_dir / "sql" / "bronze_trino.sql"
     silver_sql = pipeline_root / "02_silver" / "sql" / "01_silver_trino.sql"
     gold_sql = pipeline_root / "03_gold" / "sql" / "01_gold_trino.sql"
-    bronze_requirements = bronze_dir / "scripts" / "python" / "requirements.txt"
+    bronze_requirements = script_dir / "requirements.txt"
 
     for path, desc in [
         (compose_file, "docker-compose.yml"),

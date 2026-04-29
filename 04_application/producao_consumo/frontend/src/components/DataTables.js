@@ -170,7 +170,7 @@ export function DataTables({ analytics, groupedSeries }) {
             onClick: () => exportGroupedSeriesCsv(groupedSeries),
             disabled: !groupedSeries.length,
           },
-          "Exportar CSV",
+          "⬇ Exportar CSV",
         ),
       ),
       React.createElement(

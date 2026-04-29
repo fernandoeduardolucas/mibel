@@ -33,7 +33,7 @@ def upload_file(local_path: Path, bucket: str, key: str) -> None:
 def main() -> None:
     base_dir = Path(__file__).resolve().parents[2]
     default_raw_dir = base_dir / "01_bronze" / "data" / "raw"
-    default_clean_dir = base_dir / "scripts" / "python" / "output"
+    default_clean_dir = base_dir / "01_bronze" / "data" / "clean"
 
     parser = argparse.ArgumentParser()
     parser.add_argument(

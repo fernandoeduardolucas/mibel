@@ -4,9 +4,10 @@
 Fluxo:
 1) Sobe stack Docker Compose (sem build por padrão)
 2) Instala dependências da Bronze
-3) Executa limpeza + upload Bronze
-4) Executa SQL Bronze, Silver e Gold via Trino dentro do Docker
-5) Faz validação rápida da Gold
+3) Executa limpeza Bronze (opcional)
+4) Executa upload Bronze
+5) Executa SQL Bronze, Silver e Gold via Trino dentro do Docker
+6) Faz validação rápida da Gold
 """
 from __future__ import annotations
 
@@ -108,6 +109,7 @@ def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Corre a medallion pipeline de producao_consumo")
     parser.add_argument("--build", action="store_true", help="faz build no docker compose up")
+    parser.add_argument("--skip-clean", action="store_true", help="salta o clean e faz apenas upload + SQL")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -120,7 +122,8 @@ def main() -> None:
     silver_sql = pipeline_root / "02_silver" / "sql" / "01_silver_trino.sql"
     gold_sql = pipeline_root / "03_gold" / "sql" / "01_gold_trino.sql"
     bronze_requirements = script_dir / "requirements.txt"
-    bronze_uploader = script_dir / "bronze_clean_upload.py"
+    bronze_cleaner = script_dir / "bronze_clean.py"
+    bronze_uploader = script_dir / "bronz_upload.py"
 
     for path, desc in [
         (compose_file, "docker-compose.yml"),
@@ -128,7 +131,8 @@ def main() -> None:
         (silver_sql, "SQL Silver"),
         (gold_sql, "SQL Gold"),
         (bronze_requirements, "requirements da Bronze"),
-        (bronze_uploader, "script bronze_clean_upload.py")
+        (bronze_cleaner, "script bronze_clean.py"),
+        (bronze_uploader, "script bronz_upload.py")
     ]:
         must_exist(path, desc)
 
@@ -162,25 +166,46 @@ def main() -> None:
         }
     )
 
-    print("\n>>> Bronze clean + upload")
-    subprocess.run(
-        [
-            str(venv_python),
-            str(bronze_uploader),
-            "--consumo",
-            "data/raw/consumo-total-nacional.csv",
-            "--producao",
-            "data/raw/energia-produzida-total-nacional.csv",
-            "--out-dir",
-            "data/clean",
-            "--upload",
-        ],
-        cwd=str(bronze_dir),
-        env=env,
-        check=True,
-        text=True,
-    )
+    consumo_clean = "data/clean/consumo_total_nacional_clean.parquet"
+    producao_clean = "data/clean/energia_produzida_total_nacional_clean.parquet"
 
+    if not args.skip_clean:
+        print("\n>>> Bronze clean")
+        subprocess.run(
+            [
+                str(venv_python),
+                str(bronze_cleaner),
+                "--consumo",
+                "data/raw/consumo-total-nacional.csv",
+                "--producao",
+                "data/raw/energia-produzida-total-nacional.csv",
+                "--out-dir",
+                "data/clean",
+            ],
+            cwd=str(bronze_dir),
+            env=env,
+            check=True,
+            text=True,
+        )
+
+    print("\n>>> Bronze upload")
+    upload_cmd = [
+        str(venv_python),
+        str(bronze_uploader),
+        "--consumo-raw",
+        "data/raw/consumo-total-nacional.csv",
+        "--producao-raw",
+        "data/raw/energia-produzida-total-nacional.csv",
+    ]
+    if not args.skip_clean:
+        upload_cmd += [
+            "--consumo-clean",
+            consumo_clean,
+            "--producao-clean",
+            producao_clean,
+            "--upload-clean",
+        ]
+    subprocess.run(upload_cmd, cwd=str(bronze_dir), env=env, check=True, text=True)
     for stage_name, sql_file in [("Bronze", bronze_sql), ("Silver", silver_sql), ("Gold", gold_sql)]:
         print(f"\n>>> SQL {stage_name} via Docker/Trino: {sql_file}")
         run(

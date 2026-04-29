@@ -110,7 +110,8 @@ def main() -> None:
     parser.add_argument("--build", action="store_true", help="faz build no docker compose up")
     args = parser.parse_args()
 
-    pipeline_root = Path(__file__).resolve().parent
+    script_dir = Path(__file__).resolve().parent
+    pipeline_root = script_dir.parent.parent
     repo_root = pipeline_root.parent.parent
 
     compose_file = repo_root / "01_bootstrap" / "tead_2.0_v1.2" / "docker-compose.yml"

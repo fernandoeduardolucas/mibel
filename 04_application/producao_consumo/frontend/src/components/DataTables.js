@@ -198,20 +198,30 @@ export function DataTables({ analytics, groupedSeries }) {
           React.createElement(
             "tbody",
             null,
-            groupedSeries.map((row, index) =>
-              React.createElement(
-                "tr",
-                { key: `${row.periodo}-${index}` },
-                tableCell(row.periodo, "align-left"),
-                tableCell(formatNumber(row.consumo_total)),
-                tableCell(formatNumber(row.producao_total)),
-                tableCell(formatNumber(row.saldo)),
-                tableCell(formatRatio(row.ratio_producao_consumo)),
-                tableCell(row.defice_horas ?? 0),
-                tableCell(row.excedente_horas ?? 0),
-                tableCell(row.leituras ?? 0),
-              ),
-            ),
+            groupedSeries.length
+              ? groupedSeries.map((row, index) =>
+                  React.createElement(
+                    "tr",
+                    { key: `${row.periodo}-${index}` },
+                    tableCell(row.periodo, "align-left"),
+                    tableCell(formatNumber(row.consumo_total)),
+                    tableCell(formatNumber(row.producao_total)),
+                    tableCell(formatNumber(row.saldo)),
+                    tableCell(formatRatio(row.ratio_producao_consumo)),
+                    tableCell(row.defice_horas ?? 0),
+                    tableCell(row.excedente_horas ?? 0),
+                    tableCell(row.leituras ?? 0),
+                  ),
+                )
+              : React.createElement(
+                  "tr",
+                  null,
+                  React.createElement(
+                    "td",
+                    { className: "empty-state", colSpan: 8 },
+                    "Sem dados para a série temporal agregada.",
+                  ),
+                ),
           ),
         ),
       ),

@@ -211,6 +211,12 @@ th {
   text-align: left;
 }
 
+.empty-state {
+  text-align: center;
+  color: var(--muted);
+  font-style: italic;
+}
+
 .status-bar {
   border-radius: 12px;
   border: 1px solid var(--border);

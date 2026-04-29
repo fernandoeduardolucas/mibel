@@ -12,7 +12,7 @@
 
 CREATE TABLE iceberg.gold.producao_vs_consumo_hourly_backfilled
 WITH (format = 'PARQUET') AS
-WITH limits AS (
+WITH consumo_hourly AS (
     SELECT
         date_trunc('hour', MIN(timestamp_utc)) AS min_ts,
         greatest(
@@ -28,20 +28,40 @@ hourly_calendar AS (
     CROSS JOIN UNNEST(sequence(0, 23)) AS u(h)
     WHERE date_add('hour', h, d) BETWEEN min_ts AND max_ts
 ),
-base AS (
+recomputed_from_silver AS (
     SELECT
-        cal.timestamp_utc,
-        g.consumo_total_kwh,
-        g.producao_total_kwh,
-        g.producao_dgm_kwh,
-        g.producao_pre_kwh,
-        g.flag_missing_source,
-        CASE WHEN g.timestamp_utc IS NULL THEN true ELSE false END AS row_was_missing
-    FROM hourly_calendar cal
-    LEFT JOIN iceberg.gold.producao_vs_consumo_hourly g
-      ON g.timestamp_utc = cal.timestamp_utc
+        COALESCE(c.timestamp_utc, p.timestamp_utc) AS timestamp_utc,
+        c.consumo_total_kwh,
+        p.producao_total_kwh,
+        p.producao_dgm_kwh,
+        p.producao_pre_kwh,
+        p.producao_total_kwh - c.consumo_total_kwh AS saldo_kwh,
+        CASE
+            WHEN c.consumo_total_kwh IS NULL OR c.consumo_total_kwh = 0 THEN NULL
+            ELSE p.producao_total_kwh / c.consumo_total_kwh
+        END AS ratio_producao_consumo,
+        CASE
+            WHEN c.consumo_total_kwh IS NOT NULL
+             AND p.producao_total_kwh IS NOT NULL
+             AND p.producao_total_kwh < c.consumo_total_kwh
+            THEN true ELSE false
+        END AS flag_defice,
+        CASE
+            WHEN c.consumo_total_kwh IS NOT NULL
+             AND p.producao_total_kwh IS NOT NULL
+             AND p.producao_total_kwh > c.consumo_total_kwh
+            THEN true ELSE false
+        END AS flag_excedente,
+        CASE
+            WHEN c.timestamp_utc IS NULL OR p.timestamp_utc IS NULL THEN true
+            ELSE false
+        END AS flag_missing_source,
+        1 AS priority
+    FROM consumo_hourly c
+    FULL OUTER JOIN producao_hourly p
+      ON c.timestamp_utc = p.timestamp_utc
 ),
-with_neighbors AS (
+existing_gold AS (
     SELECT
         *,
         max_by(consumo_total_kwh, timestamp_utc) FILTER (WHERE consumo_total_kwh IS NOT NULL)
@@ -65,47 +85,20 @@ with_neighbors AS (
             OVER (ORDER BY timestamp_utc ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS next_producao_pre_kwh
     FROM base
 ),
-filled AS (
+deduplicated AS (
     SELECT
         timestamp_utc,
-        COALESCE(
-            consumo_total_kwh,
-            CASE
-                WHEN prev_consumo_total_kwh IS NOT NULL AND next_consumo_total_kwh IS NOT NULL
-                    THEN (prev_consumo_total_kwh + next_consumo_total_kwh) / 2.0
-                ELSE prev_consumo_total_kwh
-            END,
-            next_consumo_total_kwh
-        ) AS consumo_total_kwh,
-        COALESCE(
-            producao_total_kwh,
-            CASE
-                WHEN prev_producao_total_kwh IS NOT NULL AND next_producao_total_kwh IS NOT NULL
-                    THEN (prev_producao_total_kwh + next_producao_total_kwh) / 2.0
-                ELSE prev_producao_total_kwh
-            END,
-            next_producao_total_kwh
-        ) AS producao_total_kwh,
-        COALESCE(
-            producao_dgm_kwh,
-            CASE
-                WHEN prev_producao_dgm_kwh IS NOT NULL AND next_producao_dgm_kwh IS NOT NULL
-                    THEN (prev_producao_dgm_kwh + next_producao_dgm_kwh) / 2.0
-                ELSE prev_producao_dgm_kwh
-            END,
-            next_producao_dgm_kwh
-        ) AS producao_dgm_kwh,
-        COALESCE(
-            producao_pre_kwh,
-            CASE
-                WHEN prev_producao_pre_kwh IS NOT NULL AND next_producao_pre_kwh IS NOT NULL
-                    THEN (prev_producao_pre_kwh + next_producao_pre_kwh) / 2.0
-                ELSE prev_producao_pre_kwh
-            END,
-            next_producao_pre_kwh
-        ) AS producao_pre_kwh,
-        row_was_missing
-    FROM with_neighbors
+        consumo_total_kwh,
+        producao_total_kwh,
+        producao_dgm_kwh,
+        producao_pre_kwh,
+        saldo_kwh,
+        ratio_producao_consumo,
+        flag_defice,
+        flag_excedente,
+        flag_missing_source,
+        row_number() OVER (PARTITION BY timestamp_utc ORDER BY priority) AS rn
+    FROM unioned
 )
 SELECT
     timestamp_utc,
@@ -143,5 +136,5 @@ SELECT
     COUNT(*) AS total_linhas,
     MIN(timestamp_utc) AS min_ts,
     MAX(timestamp_utc) AS max_ts,
-    SUM(CASE WHEN flag_missing_source THEN 1 ELSE 0 END) AS linhas_imputadas
+    SUM(CASE WHEN flag_missing_source THEN 1 ELSE 0 END) AS linhas_missing_source
 FROM iceberg.gold.producao_vs_consumo_hourly_backfilled;

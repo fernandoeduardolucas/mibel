@@ -203,6 +203,19 @@ th {
   color: #b91c1c;
 }
 
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.pagination-controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @media (max-width: 920px) {
   .controls {
     grid-template-columns: 1fr;

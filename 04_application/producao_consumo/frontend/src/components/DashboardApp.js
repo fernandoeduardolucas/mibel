@@ -72,6 +72,7 @@ export function DashboardApp() {
   const [lastUpdated, setLastUpdated] = React.useState("");
   const [analytics, setAnalytics] = React.useState({});
   const [groupedSeries, setGroupedSeries] = React.useState([]);
+  const [predictionNextHour, setPredictionNextHour] = React.useState({});
 
   const loadData = React.useCallback(async () => {
     setLoading(true);
@@ -81,6 +82,7 @@ export function DashboardApp() {
       const dashboardData = await getDashboardData(filters);
       setAnalytics(dashboardData.analytics ?? {});
       setGroupedSeries(dashboardData.groupedSeries ?? []);
+      setPredictionNextHour(dashboardData.predictionNextHour ?? {});
       setFilters((previous) => ({ ...previous, apiBase: dashboardData.apiBase }));
       setLastUpdated(new Date().toLocaleString("pt-PT"));
     } catch (requestError) {
@@ -110,7 +112,7 @@ export function DashboardApp() {
     }),
     React.createElement(QuestionCards),
     React.createElement(KpiGrid, { analytics }),
-    React.createElement(DataTables, { analytics, groupedSeries }),
+    React.createElement(DataTables, { analytics, groupedSeries, predictionNextHour }),
     React.createElement(
       "footer",
       { className: "status-bar" },

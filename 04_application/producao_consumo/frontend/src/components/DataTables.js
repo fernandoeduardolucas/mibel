@@ -21,9 +21,20 @@ function tableCell(content, className) {
   return React.createElement("td", { className }, content);
 }
 
-export function DataTables({ analytics, groupedSeries }) {
+export function DataTables({ analytics, groupedSeries, predictionNextHour }) {
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const PAGE_SIZE = 10;
   const worstDeficits = deficitRows(analytics);
   const dependency = dependenciaRows(analytics);
+  const totalPages = Math.max(1, Math.ceil(groupedSeries.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * PAGE_SIZE;
+  const endIndex = startIndex + PAGE_SIZE;
+  const paginatedSeries = groupedSeries.slice(startIndex, endIndex);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [groupedSeries.length]);
 
   return React.createElement(
     React.Fragment,
@@ -97,6 +108,7 @@ export function DataTables({ analytics, groupedSeries }) {
           ),
         ),
       ),
+      React.createElement(PredictionModelCard, { predictionNextHour }),
     ),
     React.createElement(
       "section",
@@ -127,7 +139,7 @@ export function DataTables({ analytics, groupedSeries }) {
           React.createElement(
             "tbody",
             null,
-            groupedSeries.map((row, index) =>
+            paginatedSeries.map((row, index) =>
               React.createElement(
                 "tr",
                 { key: `${row.periodo}-${index}` },
@@ -142,6 +154,45 @@ export function DataTables({ analytics, groupedSeries }) {
               ),
             ),
           ),
+        ),
+      ),
+      React.createElement(
+        "div",
+        { className: "pagination-controls" },
+        React.createElement(
+          "button",
+          { type: "button", onClick: () => setCurrentPage((page) => Math.max(1, page - 1)), disabled: safePage === 1 },
+          "Anterior",
+        ),
+        React.createElement("span", null, `Página ${safePage} de ${totalPages}`),
+        React.createElement(
+          "button",
+          { type: "button", onClick: () => setCurrentPage((page) => Math.min(totalPages, page + 1)), disabled: safePage === totalPages },
+          "Próxima",
+        ),
+      ),
+    ),
+  );
+}
+
+function PredictionModelCard({ predictionNextHour }) {
+  return React.createElement(
+    "article",
+    { className: "panel" },
+    React.createElement("h2", null, "Modelos de IA (t+1h)"),
+    React.createElement(
+      "div",
+      { className: "table-wrapper" },
+      React.createElement(
+        "table",
+        null,
+        React.createElement(
+          "tbody",
+          null,
+          React.createElement("tr", null, tableCell("Timestamp referência", "align-left"), tableCell(predictionNextHour?.timestamp_referencia_utc ?? "—")),
+          React.createElement("tr", null, tableCell("Predição défice", "align-left"), tableCell(predictionNextHour?.pred_flag_defice_t_plus_1 ? "Sim" : "Não")),
+          React.createElement("tr", null, tableCell("Probabilidade défice", "align-left"), tableCell(formatPercent((predictionNextHour?.prob_defice_t_plus_1 ?? 0) * 100))),
+          React.createElement("tr", null, tableCell("Modelo", "align-left"), tableCell(predictionNextHour?.model_uri ?? "—")),
         ),
       ),
     ),

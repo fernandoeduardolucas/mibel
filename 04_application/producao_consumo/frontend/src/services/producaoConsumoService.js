@@ -196,13 +196,15 @@ function normalizeAnalytics(rawAnalytics) {
 export async function getDashboardData({ apiBase, groupBy }) {
   const normalizedBase = resolveApiBase(apiBase);
 
-  const [analyticsResponse, groupedResponse] = await Promise.all([
+  const [analyticsResponse, groupedResponse, predictionResponse] = await Promise.all([
     fetchJson(`${normalizedBase}/api/v1/producao-consumo/analytics`),
     fetchJson(`${normalizedBase}/api/v1/producao-consumo/${groupBy}`),
+    fetchJson(`${normalizedBase}/api/v1/producao-consumo/predictions/next-hour`),
   ]);
 
   const analyticsPayload = deepUnwrapPayload(analyticsResponse);
   const groupedPayload = deepUnwrapPayload(groupedResponse);
+  const predictionPayload = deepUnwrapPayload(predictionResponse);
   const groupedRows = Array.isArray(groupedPayload)
     ? groupedPayload
     : groupedPayload?.series ??
@@ -218,6 +220,7 @@ export async function getDashboardData({ apiBase, groupBy }) {
   return {
     analytics: normalizeAnalytics(deepUnwrapPayload(analyticsPayload)),
     groupedSeries: normalizeGroupedSeries(deepUnwrapPayload(groupedRows)),
+    predictionNextHour: predictionPayload ?? {},
     apiBase: normalizedBase,
   };
 }

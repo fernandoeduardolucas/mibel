@@ -122,6 +122,11 @@ button {
   opacity: 0.6;
 }
 
+.export-button {
+  display: inline-flex;
+  margin-bottom: 12px;
+}
+
 .panel-header {
   display: flex;
   align-items: center;

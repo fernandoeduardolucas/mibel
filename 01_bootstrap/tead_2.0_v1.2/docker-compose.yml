@@ -69,7 +69,7 @@ services:
   mlflow:
     build:
       context: mlflow
-      dockerfile: mlflow/Dockerfile
+      dockerfile: Dockerfile
     image: tead-mlflow:v3.10.1
     depends_on: [mlflow-db, minio, mc]
     ports:

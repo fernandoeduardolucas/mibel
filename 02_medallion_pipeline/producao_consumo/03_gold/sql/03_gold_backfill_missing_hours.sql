@@ -7,12 +7,12 @@
 -- =====================================================
 
 -- ETAPA 1) Limpeza de tabelas temporárias
-DROP TABLE IF EXISTS iceberg.tmp.gold_hourly_calendar;
-DROP TABLE IF EXISTS iceberg.tmp.gold_hourly_base;
-DROP TABLE IF EXISTS iceberg.tmp.gold_hourly_missing_filled;
+DROP TABLE IF EXISTS iceberg.gold.gold_hourly_calendar;
+DROP TABLE IF EXISTS iceberg.gold.gold_hourly_base;
+DROP TABLE IF EXISTS iceberg.gold.gold_hourly_missing_filled;
 
 -- ETAPA 2) Criar calendário horário completo (entre MIN e MAX)
-CREATE TABLE iceberg.tmp.gold_hourly_calendar AS
+CREATE TABLE iceberg.gold.gold_hourly_calendar AS
 WITH limits AS (
     SELECT
         date_trunc('hour', MIN(timestamp_utc)) AS min_ts,
@@ -26,7 +26,7 @@ CROSS JOIN UNNEST(sequence(0, 23)) AS u(h)
 WHERE date_add('hour', h, d) BETWEEN min_ts AND max_ts;
 
 -- ETAPA 3) Juntar calendário com a Gold atual
-CREATE TABLE iceberg.tmp.gold_hourly_base AS
+CREATE TABLE iceberg.gold.gold_hourly_base AS
 SELECT
     c.timestamp_utc,
     g.consumo_total_kwh,
@@ -34,12 +34,12 @@ SELECT
     g.producao_dgm_kwh,
     g.producao_pre_kwh,
     g.timestamp_utc IS NULL AS row_missing
-FROM iceberg.tmp.gold_hourly_calendar c
+FROM iceberg.gold.gold_hourly_calendar c
 LEFT JOIN iceberg.gold.producao_vs_consumo_hourly g
   ON g.timestamp_utc = c.timestamp_utc;
 
 -- ETAPA 4) Calcular valores imputados apenas para horas missing
-CREATE TABLE iceberg.tmp.gold_hourly_missing_filled AS
+CREATE TABLE iceberg.gold.gold_hourly_missing_filled AS
 WITH neighbors AS (
     SELECT
         *,
@@ -78,7 +78,7 @@ WITH neighbors AS (
             ORDER BY timestamp_utc
             ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING
         ) AS next_producao_pre_kwh
-    FROM iceberg.tmp.gold_hourly_base
+    FROM iceberg.gold.gold_hourly_base
 ),
 filled AS (
     SELECT
@@ -147,16 +147,16 @@ SELECT
         THEN true ELSE false
     END AS flag_excedente,
     true AS flag_missing_source
-FROM iceberg.tmp.gold_hourly_missing_filled;
+FROM iceberg.gold.gold_hourly_missing_filled;
 
 -- ETAPA 6) Check rápido: quantas horas continuam em falta
 SELECT COUNT(*) AS horas_em_falta
-FROM iceberg.tmp.gold_hourly_calendar c
+FROM iceberg.gold.gold_hourly_calendar c
 LEFT JOIN iceberg.gold.producao_vs_consumo_hourly g
   ON g.timestamp_utc = c.timestamp_utc
 WHERE g.timestamp_utc IS NULL;
 
 -- ETAPA 7) Limpeza final (opcional)
-DROP TABLE IF EXISTS iceberg.tmp.gold_hourly_base;
-DROP TABLE IF EXISTS iceberg.tmp.gold_hourly_missing_filled;
-DROP TABLE IF EXISTS iceberg.tmp.gold_hourly_calendar;
+DROP TABLE IF EXISTS iceberg.gold.gold_hourly_base;
+DROP TABLE IF EXISTS iceberg.gold.gold_hourly_missing_filled;
+DROP TABLE IF EXISTS iceberg.gold.gold_hourly_calendar;

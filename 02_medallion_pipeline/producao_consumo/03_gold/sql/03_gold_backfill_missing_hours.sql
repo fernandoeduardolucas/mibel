@@ -3,10 +3,10 @@
 -- Tabela alvo:
 --   iceberg.gold.producao_vs_consumo_hourly
 -- Estratégia:
---   1) Gera calendário horário contínuo entre MIN e MAX timestamp_utc
+--   1) Gera calendário horário contínuo entre MIN timestamp_utc e hora atual
 --   2) Junta com a Gold existente
---   3) Para horas sem registo, faz imputação simples por média
---      entre valor anterior e seguinte (quando ambos existem)
+--   3) Para horas sem registo, imputa por média entre vizinho anterior e seguinte
+--      (usando vizinho não-nulo mais próximo); se só existir um lado, usa esse valor
 --   4) Recalcula saldo, ratio e flags
 -- ============================================
 
@@ -15,13 +15,18 @@ WITH (format = 'PARQUET') AS
 WITH limits AS (
     SELECT
         date_trunc('hour', MIN(timestamp_utc)) AS min_ts,
-        date_trunc('hour', MAX(timestamp_utc)) AS max_ts
+        greatest(
+            date_trunc('hour', MAX(timestamp_utc)),
+            date_trunc('hour', current_timestamp)
+        ) AS max_ts
     FROM iceberg.gold.producao_vs_consumo_hourly
 ),
 hourly_calendar AS (
-    SELECT ts AS timestamp_utc
+    SELECT date_add('hour', h, d) AS timestamp_utc
     FROM limits
-    CROSS JOIN UNNEST(sequence(min_ts, max_ts, INTERVAL '1' HOUR)) AS t(ts)
+    CROSS JOIN UNNEST(sequence(date_trunc('day', min_ts), date_trunc('day', max_ts), INTERVAL '1' DAY)) AS t(d)
+    CROSS JOIN UNNEST(sequence(0, 23)) AS u(h)
+    WHERE date_add('hour', h, d) BETWEEN min_ts AND max_ts
 ),
 base AS (
     SELECT
@@ -39,14 +44,25 @@ base AS (
 with_neighbors AS (
     SELECT
         *,
-        lag(consumo_total_kwh) OVER (ORDER BY timestamp_utc) AS prev_consumo_total_kwh,
-        lead(consumo_total_kwh) OVER (ORDER BY timestamp_utc) AS next_consumo_total_kwh,
-        lag(producao_total_kwh) OVER (ORDER BY timestamp_utc) AS prev_producao_total_kwh,
-        lead(producao_total_kwh) OVER (ORDER BY timestamp_utc) AS next_producao_total_kwh,
-        lag(producao_dgm_kwh) OVER (ORDER BY timestamp_utc) AS prev_producao_dgm_kwh,
-        lead(producao_dgm_kwh) OVER (ORDER BY timestamp_utc) AS next_producao_dgm_kwh,
-        lag(producao_pre_kwh) OVER (ORDER BY timestamp_utc) AS prev_producao_pre_kwh,
-        lead(producao_pre_kwh) OVER (ORDER BY timestamp_utc) AS next_producao_pre_kwh
+        max_by(consumo_total_kwh, timestamp_utc) FILTER (WHERE consumo_total_kwh IS NOT NULL)
+            OVER (ORDER BY timestamp_utc ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS prev_consumo_total_kwh,
+        min_by(consumo_total_kwh, timestamp_utc) FILTER (WHERE consumo_total_kwh IS NOT NULL)
+            OVER (ORDER BY timestamp_utc ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS next_consumo_total_kwh,
+
+        max_by(producao_total_kwh, timestamp_utc) FILTER (WHERE producao_total_kwh IS NOT NULL)
+            OVER (ORDER BY timestamp_utc ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS prev_producao_total_kwh,
+        min_by(producao_total_kwh, timestamp_utc) FILTER (WHERE producao_total_kwh IS NOT NULL)
+            OVER (ORDER BY timestamp_utc ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS next_producao_total_kwh,
+
+        max_by(producao_dgm_kwh, timestamp_utc) FILTER (WHERE producao_dgm_kwh IS NOT NULL)
+            OVER (ORDER BY timestamp_utc ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS prev_producao_dgm_kwh,
+        min_by(producao_dgm_kwh, timestamp_utc) FILTER (WHERE producao_dgm_kwh IS NOT NULL)
+            OVER (ORDER BY timestamp_utc ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS next_producao_dgm_kwh,
+
+        max_by(producao_pre_kwh, timestamp_utc) FILTER (WHERE producao_pre_kwh IS NOT NULL)
+            OVER (ORDER BY timestamp_utc ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS prev_producao_pre_kwh,
+        min_by(producao_pre_kwh, timestamp_utc) FILTER (WHERE producao_pre_kwh IS NOT NULL)
+            OVER (ORDER BY timestamp_utc ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS next_producao_pre_kwh
     FROM base
 ),
 filled AS (
@@ -115,8 +131,7 @@ SELECT
         THEN true ELSE false
     END AS flag_excedente,
     row_was_missing AS flag_missing_source
-FROM filled
-ORDER BY timestamp_utc;
+FROM filled;
 
 -- Opcional: substituir a tabela oficial pela versão preenchida
 -- DROP TABLE iceberg.gold.producao_vs_consumo_hourly;

@@ -66,8 +66,22 @@ Na raiz do repositório:
 
 ```bash
 cd 04_application/producao_consumo/backend
-python3 -m pip install -r requirements.txt
-python3 server.py
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python server.py
 ```
+
+> **macOS/Homebrew (PEP 668):** se aparecer `externally-managed-environment`, use sempre o ambiente virtual (`.venv`) acima e evite instalar dependências no Python global.
+
+### Erros comuns
+
+- `ModuleNotFoundError: No module named 'pandas'`
+  - O pacote não foi instalado no ambiente ativo. Ative o `.venv` e volte a correr `python -m pip install -r requirements.txt`.
+- `cd: no such file or directory: 04_application/producao_consumo/backend`
+  - Esse comando só funciona quando executado a partir da raiz do repositório. Se já estiver dentro de `.../backend`, não faça `cd` novamente.
+- `zsh: command not found: py`
+  - Em macOS, use `python`/`python3` (o launcher `py` é típico do Windows).
 
 Por omissão, a API sobe em `http://localhost:8081`.

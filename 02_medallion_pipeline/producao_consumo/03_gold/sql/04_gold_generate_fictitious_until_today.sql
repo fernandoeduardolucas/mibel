@@ -33,17 +33,23 @@ base_values AS (
         ) AS base_pre
     FROM iceberg.gold.producao_vs_consumo_hourly
 ),
+range_limits AS (
+    SELECT
+        date_add('hour', 1, date_trunc('hour', max_ts)) AS start_ts,
+        CAST(date_trunc('hour', current_timestamp AT TIME ZONE 'UTC') AS timestamp(6)) AS end_ts
+    FROM last_ts
+    WHERE max_ts IS NOT NULL
+),
 range_hours AS (
     SELECT ts AS timestamp_utc
-    FROM last_ts
+    FROM range_limits
     CROSS JOIN UNNEST(
-        sequence(
-            date_add('hour', 1, date_trunc('hour', max_ts)),
-            CAST(date_trunc('hour', current_timestamp AT TIME ZONE 'UTC') AS timestamp(6)),
-            INTERVAL '1' HOUR
+        IF(
+            start_ts <= end_ts,
+            sequence(start_ts, end_ts, INTERVAL '1' HOUR),
+            CAST(ARRAY[] AS ARRAY(timestamp(6)))
         )
     ) AS t(ts)
-    WHERE max_ts IS NOT NULL
 ),
 synthetic AS (
     SELECT

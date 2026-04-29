@@ -33,6 +33,14 @@ class DeficePredictionService:
     def _tracking_uri() -> str:
         return os.getenv("MLFLOW_TRACKING_URI", "http://localhost:15000")
 
+    @staticmethod
+    def _configure_local_artifact_store() -> None:
+        """Configura defaults para ambiente local com Docker + MinIO."""
+
+        os.environ.setdefault("AWS_ACCESS_KEY_ID", "minioadmin")
+        os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "minioadmin")
+        os.environ.setdefault("MLFLOW_S3_ENDPOINT_URL", "http://localhost:9000")
+
     def _load_model(self):
         if self._model is not None:
             return self._model
@@ -40,6 +48,7 @@ class DeficePredictionService:
         import mlflow
         import mlflow.sklearn
 
+        self._configure_local_artifact_store()
         mlflow.set_tracking_uri(self._tracking_uri())
         self._model = mlflow.sklearn.load_model(self._model_uri())
         return self._model

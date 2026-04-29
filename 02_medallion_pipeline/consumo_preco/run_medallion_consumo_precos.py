@@ -174,17 +174,17 @@ def main() -> None:
 
     parser.add_argument(
         "--bronze-sql",
-        default="01_bronze/SQL/bronze_consumo_precos_trino.sql",
+        default="01_bronze/sql/bronze_consumo_precos_trino.sql",
         help="caminho relativo (a partir da raiz da pipeline) para o SQL Bronze",
     )
     parser.add_argument(
         "--silver-sql",
-        default="02_silver/SQL/silver_consumo_precos_trino.sql",
+        default="02_silver/sql/silver_consumo_precos_trino.sql",
         help="caminho relativo (a partir da raiz da pipeline) para o SQL Silver",
     )
     parser.add_argument(
         "--gold-sql",
-        default="03_gold/SQL/gold_consumo_precos_trino.sql",
+        default="03_gold/sql/gold_consumo_precos_trino.sql",
         help="caminho relativo (a partir da raiz da pipeline) para o SQL Gold",
     )
     parser.add_argument(

@@ -62,7 +62,18 @@ No backend Python, isto corresponde a:
 
 ## Como correr
 
-Na raiz do repositório:
+### Windows (PowerShell)
+
+```powershell
+cd 04_application/producao_consumo/backend
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python server.py
+```
+
+### Ubuntu/Linux
 
 ```bash
 cd 04_application/producao_consumo/backend
@@ -73,7 +84,18 @@ python -m pip install -r requirements.txt
 python server.py
 ```
 
-> **macOS/Homebrew (PEP 668):** se aparecer `externally-managed-environment`, use sempre o ambiente virtual (`.venv`) acima e evite instalar dependências no Python global.
+### macOS
+
+```bash
+cd 04_application/producao_consumo/backend
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python server.py
+```
+
+> **macOS/Homebrew (PEP 668):** se aparecer `externally-managed-environment`, use sempre o ambiente virtual (`.venv`) e evite instalar dependências no Python global.
 
 ### Erros comuns
 

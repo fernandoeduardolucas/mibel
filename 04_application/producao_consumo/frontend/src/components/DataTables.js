@@ -174,16 +174,6 @@ export function DataTables({ analytics, groupedSeries }) {
         ),
       ),
       React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "secondary-button export-button",
-          onClick: () => exportGroupedSeriesCsv(groupedSeries),
-          disabled: !groupedSeries.length,
-        },
-        "⬇ Exportar CSV",
-      ),
-      React.createElement(
         "div",
         { className: "table-wrapper" },
         React.createElement(

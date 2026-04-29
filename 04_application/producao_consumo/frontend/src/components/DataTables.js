@@ -21,6 +21,63 @@ function tableCell(content, className) {
   return React.createElement("td", { className }, content);
 }
 
+function toCsvCell(value) {
+  const escaped = String(value ?? "").replace(/"/g, "\"\"");
+  return `"${escaped}"`;
+}
+
+function buildGroupedSeriesCsv(groupedSeries = []) {
+  const headers = [
+    "periodo",
+    "consumo_total",
+    "producao_total",
+    "saldo",
+    "ratio_producao_consumo",
+    "defice_horas",
+    "excedente_horas",
+    "leituras",
+  ];
+
+  const lines = [
+    headers.join(","),
+    ...groupedSeries.map((row) =>
+      [
+        row.periodo,
+        row.consumo_total,
+        row.producao_total,
+        row.saldo,
+        row.ratio_producao_consumo,
+        row.defice_horas ?? 0,
+        row.excedente_horas ?? 0,
+        row.leituras ?? 0,
+      ]
+        .map(toCsvCell)
+        .join(","),
+    ),
+  ];
+
+  return lines.join("\n");
+}
+
+function exportGroupedSeriesCsv(groupedSeries = []) {
+  if (!groupedSeries.length) {
+    return;
+  }
+
+  const csvContent = buildGroupedSeriesCsv(groupedSeries);
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const now = new Date().toISOString().replace(/[:]/g, "-");
+
+  link.href = url;
+  link.download = `serie-temporal-agregada-${now}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export function DataTables({ analytics, groupedSeries }) {
   const worstDeficits = deficitRows(analytics);
   const dependency = dependenciaRows(analytics);
@@ -101,7 +158,21 @@ export function DataTables({ analytics, groupedSeries }) {
     React.createElement(
       "section",
       { className: "panel" },
-      React.createElement("h2", null, "Série temporal agregada"),
+      React.createElement(
+        "div",
+        { className: "panel-header" },
+        React.createElement("h2", null, "Série temporal agregada"),
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            className: "secondary-button",
+            onClick: () => exportGroupedSeriesCsv(groupedSeries),
+            disabled: !groupedSeries.length,
+          },
+          "⬇ Exportar CSV",
+        ),
+      ),
       React.createElement(
         "div",
         { className: "table-wrapper" },
@@ -127,20 +198,30 @@ export function DataTables({ analytics, groupedSeries }) {
           React.createElement(
             "tbody",
             null,
-            groupedSeries.map((row, index) =>
-              React.createElement(
-                "tr",
-                { key: `${row.periodo}-${index}` },
-                tableCell(row.periodo, "align-left"),
-                tableCell(formatNumber(row.consumo_total)),
-                tableCell(formatNumber(row.producao_total)),
-                tableCell(formatNumber(row.saldo)),
-                tableCell(formatRatio(row.ratio_producao_consumo)),
-                tableCell(row.defice_horas ?? 0),
-                tableCell(row.excedente_horas ?? 0),
-                tableCell(row.leituras ?? 0),
-              ),
-            ),
+            groupedSeries.length
+              ? groupedSeries.map((row, index) =>
+                  React.createElement(
+                    "tr",
+                    { key: `${row.periodo}-${index}` },
+                    tableCell(row.periodo, "align-left"),
+                    tableCell(formatNumber(row.consumo_total)),
+                    tableCell(formatNumber(row.producao_total)),
+                    tableCell(formatNumber(row.saldo)),
+                    tableCell(formatRatio(row.ratio_producao_consumo)),
+                    tableCell(row.defice_horas ?? 0),
+                    tableCell(row.excedente_horas ?? 0),
+                    tableCell(row.leituras ?? 0),
+                  ),
+                )
+              : React.createElement(
+                  "tr",
+                  null,
+                  React.createElement(
+                    "td",
+                    { className: "empty-state", colSpan: 8 },
+                    "Sem dados para a série temporal agregada.",
+                  ),
+                ),
           ),
         ),
       ),

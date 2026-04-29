@@ -31,12 +31,43 @@ def upload_file(local_path: Path, bucket: str, key: str) -> None:
 
 
 def main() -> None:
+    base_dir = Path(__file__).resolve().parents[2]
+    default_raw_dir = base_dir / "01_bronze" / "data" / "raw"
+    default_clean_dir = base_dir / "scripts" / "python" / "output"
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--consumo-raw", required=True, type=Path)
-    parser.add_argument("--producao-raw", required=True, type=Path)
-    parser.add_argument("--consumo-clean", required=True, type=Path)
-    parser.add_argument("--producao-clean", required=True, type=Path)
+    parser.add_argument(
+        "--consumo-raw",
+        default=default_raw_dir / "consumo-total-nacional.csv",
+        type=Path,
+        help="Caminho para o CSV raw de consumo (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--producao-raw",
+        default=default_raw_dir / "energia-produzida-total-nacional.csv",
+        type=Path,
+        help="Caminho para o CSV raw de produção (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--consumo-clean",
+        default=default_clean_dir / "consumo_total_nacional_clean.parquet",
+        type=Path,
+        help="Caminho para o Parquet clean de consumo (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--producao-clean",
+        default=default_clean_dir / "energia_produzida_total_nacional_clean.parquet",
+        type=Path,
+        help="Caminho para o Parquet clean de produção (default: %(default)s)",
+    )
     args = parser.parse_args()
+
+    missing_files = [
+        path for path in [args.consumo_raw, args.producao_raw, args.consumo_clean, args.producao_clean] if not path.exists()
+    ]
+    if missing_files:
+        formatted = "\n".join(f" - {path}" for path in missing_files)
+        raise SystemExit(f"Ficheiros não encontrados:\n{formatted}")
 
     bucket = os.environ.get("S3_BUCKET", "warehouse")
     prefix = os.environ.get("S3_PREFIX", "bronze/clean").strip("/")

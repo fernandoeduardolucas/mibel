@@ -1,6 +1,8 @@
 import React from "react";
 import { formatDateTime, formatNumber, formatPercent, formatRatio } from "../utils/formatters.js";
 
+const GROUPED_SERIES_PAGE_SIZE = 10;
+
 function deficitRows(analytics = {}) {
   return analytics.questao_defice?.piores_horas ?? [];
 }
@@ -24,6 +26,23 @@ function tableCell(content, className) {
 export function DataTables({ analytics, groupedSeries }) {
   const worstDeficits = deficitRows(analytics);
   const dependency = dependenciaRows(analytics);
+  const [groupedSeriesPage, setGroupedSeriesPage] = React.useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(groupedSeries.length / GROUPED_SERIES_PAGE_SIZE));
+  const safePage = Math.min(groupedSeriesPage, totalPages);
+  const pageStart = (safePage - 1) * GROUPED_SERIES_PAGE_SIZE;
+  const pageEnd = pageStart + GROUPED_SERIES_PAGE_SIZE;
+  const groupedSeriesPageRows = groupedSeries.slice(pageStart, pageEnd);
+
+  React.useEffect(() => {
+    setGroupedSeriesPage(1);
+  }, [groupedSeries]);
+
+  React.useEffect(() => {
+    if (groupedSeriesPage > totalPages) {
+      setGroupedSeriesPage(totalPages);
+    }
+  }, [groupedSeriesPage, totalPages]);
 
   return React.createElement(
     React.Fragment,
@@ -127,10 +146,10 @@ export function DataTables({ analytics, groupedSeries }) {
           React.createElement(
             "tbody",
             null,
-            groupedSeries.map((row, index) =>
+            groupedSeriesPageRows.map((row, index) =>
               React.createElement(
                 "tr",
-                { key: `${row.periodo}-${index}` },
+                { key: `${row.periodo}-${pageStart + index}` },
                 tableCell(row.periodo, "align-left"),
                 tableCell(formatNumber(row.consumo_total)),
                 tableCell(formatNumber(row.producao_total)),
@@ -142,6 +161,29 @@ export function DataTables({ analytics, groupedSeries }) {
               ),
             ),
           ),
+        ),
+      ),
+      React.createElement(
+        "div",
+        { className: "pagination-controls" },
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            disabled: safePage <= 1,
+            onClick: () => setGroupedSeriesPage((page) => Math.max(1, page - 1)),
+          },
+          "Anterior",
+        ),
+        React.createElement("span", null, `Página ${safePage} de ${totalPages}`),
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            disabled: safePage >= totalPages,
+            onClick: () => setGroupedSeriesPage((page) => Math.min(totalPages, page + 1)),
+          },
+          "Seguinte",
         ),
       ),
     ),

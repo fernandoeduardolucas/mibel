@@ -187,6 +187,19 @@ th {
   text-align: left;
 }
 
+.pagination-controls {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.pagination-controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .status-bar {
   border-radius: 12px;
   border: 1px solid var(--border);

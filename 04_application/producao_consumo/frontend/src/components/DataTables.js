@@ -158,7 +158,21 @@ export function DataTables({ analytics, groupedSeries }) {
     React.createElement(
       "section",
       { className: "panel" },
-      React.createElement("h2", null, "Série temporal agregada"),
+      React.createElement(
+        "div",
+        { className: "panel-header" },
+        React.createElement("h2", null, "Série temporal agregada"),
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            className: "secondary-button",
+            onClick: () => exportGroupedSeriesCsv(groupedSeries),
+            disabled: !groupedSeries.length,
+          },
+          "⬇ Exportar CSV",
+        ),
+      ),
       React.createElement(
         "button",
         {

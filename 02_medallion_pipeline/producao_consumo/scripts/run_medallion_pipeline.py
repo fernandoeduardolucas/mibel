@@ -113,17 +113,17 @@ def main() -> None:
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
-    pipeline_root = script_dir.parent.parent
+    pipeline_root = script_dir.parent
     repo_root = pipeline_root.parent.parent
 
-    compose_file = repo_root / "01_bootstrap" / "tead_2.0_v1.2" / "docker-compose.yml"
+    compose_file = repo_root /  "01_bootstrap" / "tead_2.0_v1.2" / "docker-compose.yml"
     bronze_dir = pipeline_root / "01_bronze"
     bronze_sql = bronze_dir / "sql" / "bronze_trino.sql"
     silver_sql = pipeline_root / "02_silver" / "sql" / "01_silver_trino.sql"
     gold_sql = pipeline_root / "03_gold" / "sql" / "01_gold_trino.sql"
     bronze_requirements = script_dir / "requirements.txt"
-    bronze_cleaner = script_dir / "bronze_clean.py"
-    bronze_uploader = script_dir / "bronz_upload.py"
+    bronze_cleaner = bronze_dir / "scripts" / "bronze_clean.py"
+    bronze_uploader = bronze_dir / "scripts" / "bronze_upload.py"
 
     for path, desc in [
         (compose_file, "docker-compose.yml"),
@@ -132,7 +132,7 @@ def main() -> None:
         (gold_sql, "SQL Gold"),
         (bronze_requirements, "requirements da Bronze"),
         (bronze_cleaner, "script bronze_clean.py"),
-        (bronze_uploader, "script bronz_upload.py")
+        (bronze_uploader, "script bronze_upload.py")
     ]:
         must_exist(path, desc)
 

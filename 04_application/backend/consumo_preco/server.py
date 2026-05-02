@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -28,7 +29,7 @@ class Point:
 
 
 class ConsumoPrecoService:
-    def __init__(self, consumo_path: Path, preco_path: Path):
+    def __init__(self, consumo_path: Path | None = None, preco_path: Path | None = None):
         self._consumo_path = consumo_path
         self._preco_path = preco_path
         self._cache: List[Point] | None = None
@@ -349,6 +350,9 @@ class ConsumoPrecoService:
         return joined
 
     def _stamp(self) -> Tuple[float, float]:
+        if self._consumo_path is None or self._preco_path is None:
+            # Em modo Trino não há ficheiros locais para validar mtime.
+            return (0.0, 0.0)
         return (self._consumo_path.stat().st_mtime, self._preco_path.stat().st_mtime)
 
     def points(self) -> List[Point]:
@@ -460,7 +464,59 @@ class ConsumoPrecoService:
         }
 
 
-SERVICE = ConsumoPrecoService(CONSUMPTION_CSV, PRICE_CSV)
+class TrinoConsumoPrecoService(ConsumoPrecoService):
+    def __init__(self):
+        super().__init__(None, None)
+
+    def _run_trino_query(self, query: str) -> list[dict]:
+        try:
+            import trino
+        except ImportError as exc:  # pragma: no cover
+            raise RuntimeError("Dependência 'trino' em falta.") from exc
+
+        conn = trino.dbapi.connect(
+            host=os.getenv("TRINO_HOST", "localhost"),
+            port=int(os.getenv("TRINO_PORT", "8080")),
+            user=os.getenv("TRINO_USER", "trino"),
+            catalog=os.getenv("TRINO_CATALOG", "iceberg"),
+            schema=os.getenv("TRINO_SCHEMA", "gold"),
+            http_scheme=os.getenv("TRINO_HTTP_SCHEME", "http"),
+        )
+        cur = conn.cursor()
+        try:
+            cur.execute(query)
+            cols = [d[0] for d in (cur.description or [])]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+        finally:
+            cur.close()
+            conn.close()
+
+    def _read_consumption_hourly(self) -> Dict[datetime, float]:
+        table = os.getenv("TRINO_CONSUMPTION_TABLE", "consumo_preco_consumption_hourly")
+        rows = self._run_trino_query(
+            f"SELECT datahora, consumo_mwh FROM {table}"
+        )
+        out: Dict[datetime, float] = {}
+        for row in rows:
+            ts = self._parse_datetime(str(row.get("datahora", "")))
+            out[self._hour_bucket(ts)] = float(row.get("consumo_mwh") or 0.0)
+        return out
+
+    def _choose_best_price_series(self, consumo_horario: Dict[datetime, float]) -> Tuple[Dict[datetime, float], dict]:
+        table = os.getenv("TRINO_PRICE_TABLE", "consumo_preco_price_hourly")
+        rows = self._run_trino_query(
+            f"SELECT datahora, preco_eur_mwh FROM {table}"
+        )
+        prices: Dict[datetime, float] = {}
+        for row in rows:
+            ts = self._parse_datetime(str(row.get("datahora", "")))
+            prices[self._hour_bucket(ts)] = float(row.get("preco_eur_mwh") or 0.0)
+
+        inter = len(set(consumo_horario) & set(prices))
+        return prices, {"selected_parser": "trino_direct", "intersection_v1": inter, "intersection_v2": inter}
+
+
+SERVICE = TrinoConsumoPrecoService()
 
 
 class Handler(BaseHTTPRequestHandler):

@@ -1,0 +1,80 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "trinodb-trino-datasource", "uid": "trino-iceberg"},
+      "fieldConfig": {"defaults": {"unit": "kwatth"}, "overrides": []},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "format": 1,
+          "rawQuery": "SELECT\n  timestamp_utc AS time,\n  consumo_total_kwh,\n  producao_total_kwh,\n  saldo_kwh\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE timestamp_utc BETWEEN FROM_UNIXTIME(${__from}/1000) AND FROM_UNIXTIME(${__to}/1000)\nORDER BY 1"
+        }
+      ],
+      "title": "Consumo vs Produção (kWh)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "trinodb-trino-datasource", "uid": "trino-iceberg"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 2}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 10},
+      "id": 2,
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto"},
+      "targets": [
+        {
+          "format": 1,
+          "rawQuery": "SELECT ratio_producao_consumo\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE timestamp_utc BETWEEN FROM_UNIXTIME(${__from}/1000) AND FROM_UNIXTIME(${__to}/1000)\nORDER BY timestamp_utc DESC\nLIMIT 1"
+        }
+      ],
+      "title": "Ratio Produção/Consumo (último)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "trinodb-trino-datasource", "uid": "trino-iceberg"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 10},
+      "id": 3,
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto"},
+      "targets": [
+        {
+          "format": 1,
+          "rawQuery": "SELECT count_if(flag_defice) AS horas_defice\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE timestamp_utc BETWEEN FROM_UNIXTIME(${__from}/1000) AND FROM_UNIXTIME(${__to}/1000)"
+        }
+      ],
+      "title": "Horas com Défice",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "trinodb-trino-datasource", "uid": "trino-iceberg"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 10},
+      "id": 4,
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto"},
+      "targets": [
+        {
+          "format": 1,
+          "rawQuery": "SELECT count_if(flag_excedente) AS horas_excedente\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE timestamp_utc BETWEEN FROM_UNIXTIME(${__from}/1000) AND FROM_UNIXTIME(${__to}/1000)"
+        }
+      ],
+      "title": "Horas com Excedente",
+      "type": "stat"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["mibel", "producao", "consumo"],
+  "templating": {"list": []},
+  "time": {"from": "now-30d", "to": "now"},
+  "timezone": "browser",
+  "title": "MIBEL - Produção vs Consumo",
+  "uid": "mibel-prod-consumo",
+  "version": 1
+}

@@ -5,11 +5,11 @@ Objetivo:
 - Permitir execução local (`python`) e com Flyte (`pyflyte run`).
 
 Execução local:
-    python 02_medallion_pipeline/flyte_workflow.py
+    python 02_medallion_pipeline/producao_consumo/flyte_workflow.py
 
 Execução Flyte (remoto):
     pyflyte run --remote -p flytesnacks -d development \
-      02_medallion_pipeline/flyte_workflow.py medallion_full_wf
+      02_medallion_pipeline/producao_consumo/flyte_workflow.py medallion_full_wf
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ except ModuleNotFoundError:
         return decorator
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _run_python(script_path: Path, *, build: bool = False) -> str:

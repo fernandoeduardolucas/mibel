@@ -27,14 +27,14 @@ A conversão foi feita por **encapsulamento progressivo** (sem reescrever tudo d
 ## Execução local (sem Flyte remote)
 
 ```bash
-python 02_medallion_pipeline/flyte_workflow.py
+python 02_medallion_pipeline/producao_consumo/flyte_workflow.py
 ```
 
 ## Execução com Flyte
 
 ```bash
 pyflyte run --remote -p flytesnacks -d development \
-  02_medallion_pipeline/flyte_workflow.py medallion_full_wf
+  02_medallion_pipeline/producao_consumo/flyte_workflow.py medallion_full_wf
 ```
 
 ## Parâmetros do workflow
@@ -48,7 +48,7 @@ Exemplo para correr só `consumo_preco`:
 
 ```bash
 pyflyte run --remote -p flytesnacks -d development \
-  02_medallion_pipeline/flyte_workflow.py medallion_full_wf \
+  02_medallion_pipeline/producao_consumo/flyte_workflow.py medallion_full_wf \
   --run_producao_consumo False --run_consumo_preco True
 ```
 
@@ -56,7 +56,7 @@ Exemplo com backfill simples para `producao_consumo`:
 
 ```bash
 pyflyte run --remote -p flytesnacks -d development \
-  02_medallion_pipeline/flyte_workflow.py medallion_full_wf \
+  02_medallion_pipeline/producao_consumo/flyte_workflow.py medallion_full_wf \
   --run_producao_consumo True --run_consumo_preco False \
   --producao_consumo_backfill_days 3
 ```

@@ -10,10 +10,10 @@ O provisioning do Grafana está em:
 
 ```bash
 cd 01_bootstrap/tead_2.0_v1.2
-docker compose up -d trino grafana
+GRAFANA_PORT=3300 docker compose up -d trino grafana
 ```
 
-Depois abrir: http://localhost:3000
+Depois abrir: http://localhost:3300 (ou a porta definida em `GRAFANA_PORT`).
 
 - User: `admin`
 - Password: `admin`

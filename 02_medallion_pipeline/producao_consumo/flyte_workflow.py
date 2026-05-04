@@ -98,8 +98,8 @@ def run_producao_consumo_backfill(days: int = 1, build: bool = False) -> str:
     return " | ".join(outputs)
 
 
-@workflow
-def medallion_full_wf(
+@task
+def run_selected_pipelines(
     run_producao_consumo: bool = True,
     run_consumo_preco: bool = True,
     build_images: bool = False,
@@ -108,23 +108,47 @@ def medallion_full_wf(
     outputs: list[str] = []
 
     if run_producao_consumo:
-        outputs.append(run_producao_consumo_medallion(build=build_images))
+        outputs.append(_run_python(
+            REPO_ROOT / "02_medallion_pipeline" / "producao_consumo" / "run_medallion_pipeline.py",
+            build=build_images,
+        ))
 
     if run_consumo_preco:
-        outputs.append(run_consumo_preco_medallion(build=build_images))
+        outputs.append(_run_python(
+            REPO_ROOT / "02_medallion_pipeline" / "consumo_preco" / "run_medallion_consumo_precos.py",
+            build=build_images,
+        ))
 
     if producao_consumo_backfill_days > 0:
-        outputs.append(
-            run_producao_consumo_backfill(
-                days=producao_consumo_backfill_days,
+        if producao_consumo_backfill_days < 1:
+            raise ValueError("producao_consumo_backfill_days tem de ser >= 1")
+
+        for day_index in range(producao_consumo_backfill_days):
+            result = _run_python(
+                REPO_ROOT / "02_medallion_pipeline" / "producao_consumo" / "run_medallion_pipeline.py",
                 build=build_images,
             )
-        )
+            outputs.append(f"backfill_d-{day_index}: {result}")
 
     if not outputs:
         return "Nada para executar: ativa pelo menos uma pipeline."
 
     return " | ".join(outputs)
+
+
+@workflow
+def medallion_full_wf(
+    run_producao_consumo: bool = True,
+    run_consumo_preco: bool = True,
+    build_images: bool = False,
+    producao_consumo_backfill_days: int = 0,
+) -> str:
+    return run_selected_pipelines(
+        run_producao_consumo=run_producao_consumo,
+        run_consumo_preco=run_consumo_preco,
+        build_images=build_images,
+        producao_consumo_backfill_days=producao_consumo_backfill_days,
+    )
 
 
 if __name__ == "__main__":

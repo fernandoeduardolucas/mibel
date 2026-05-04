@@ -5,7 +5,7 @@
       "label": "Trino MIBEL",
       "description": "Trino datasource connected to Hive lakehouse",
       "type": "datasource",
-      "pluginId": "grafana-trino-datasource",
+      "pluginId": "trino-datasource",
       "pluginName": "Trino"
     }
   ],
@@ -19,7 +19,7 @@
     },
     {
       "type": "datasource",
-      "id": "grafana-trino-datasource",
+      "id": "trino-datasource",
       "name": "Trino",
       "version": "1.0.0"
     },
@@ -103,7 +103,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -153,7 +153,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT date_trunc('hour', timestamp_utc) AS time,\n       SUM(producao_total_kwh) AS value\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE timestamp_utc >= NOW() - INTERVAL '$__interval_ms' MILLISECOND\nGROUP BY 1\nORDER BY 1",
@@ -164,7 +164,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -212,7 +212,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT date_trunc('hour', timestamp_utc) AS time,\n       SUM(consumo_total_kwh) AS value\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE timestamp_utc >= NOW() - INTERVAL '$__interval_ms' MILLISECOND\nGROUP BY 1\nORDER BY 1",
@@ -223,7 +223,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -280,7 +280,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT date_trunc('hour', timestamp_utc) AS time,\n       AVG(ratio_producao_consumo) AS value\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
@@ -291,7 +291,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -347,7 +347,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT date_trunc('hour', timestamp_utc) AS time,\n       SUM(saldo_kwh) AS value\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
@@ -358,7 +358,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -414,7 +414,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT date_trunc('hour', timestamp_utc) AS time,\n       MAX(consumo_total_kwh) AS value\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
@@ -425,7 +425,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -473,7 +473,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT date_trunc('hour', timestamp_utc) AS time,\n       MAX(ratio_producao_consumo) AS value\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
@@ -496,7 +496,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -641,7 +641,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(producao_total_kwh) AS \"Produção (GWh)\",\n  SUM(consumo_total_kwh) AS \"Consumo (GWh)\",\n  SUM(saldo_kwh) AS \"Saldo (GWh)\"\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
@@ -652,7 +652,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -703,7 +703,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT\n  'produção total' AS categoria,\n  SUM(producao_total_kwh) AS valor\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY valor DESC",
@@ -726,7 +726,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -803,7 +803,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  AVG(ratio_producao_consumo) AS \"Preço €/MWh\"\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
@@ -814,7 +814,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -879,7 +879,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT\n  date_trunc('hour', TIMESTAMP '2000-01-01' + (hour(timestamp_utc) * INTERVAL '1' HOUR)) AS time,\n  AVG(ratio_producao_consumo) AS \"Preço Médio €/MWh\"\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY hour(timestamp_utc)\nORDER BY hour(timestamp_utc)",
@@ -902,7 +902,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -983,7 +983,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT\n  consumo_total_kwh,\n  ratio_producao_consumo\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nORDER BY timestamp_utc\nLIMIT 2000",
@@ -994,7 +994,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -1185,7 +1185,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT\n  hour(timestamp_utc) AS hora,\n  ROUND(SUM(producao_total_kwh), 2) AS producao_total_kwh,\n  ROUND(SUM(consumo_total_kwh), 2) AS consumo_total_kwh,\n  ROUND(SUM(saldo_kwh), 2) AS saldo_kwh,\n  ROUND(AVG(ratio_producao_consumo), 4) AS ratio_producao_consumo\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE timestamp_utc >= NOW() - INTERVAL '24' HOUR\nGROUP BY hour(timestamp_utc)\nORDER BY hora DESC",
@@ -1208,7 +1208,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -1290,7 +1290,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT\n  date_trunc('day', timestamp_utc) AS time,\n  SUM(producao_total_kwh) AS \"Produção (GWh)\",\n  SUM(consumo_total_kwh) AS \"Consumo (GWh)\"\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
@@ -1301,7 +1301,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -1351,7 +1351,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT\n  date_trunc('day', timestamp_utc) AS time,\n  AVG(ratio_producao_consumo) AS \"Preço Médio\",\n  MAX(ratio_producao_consumo) AS \"Preço Máximo\",\n  MIN(ratio_producao_consumo) AS \"Preço Mínimo\"\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
@@ -1374,7 +1374,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -1433,7 +1433,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT\n  CAST(COUNT(*) AS DOUBLE) / CAST(\n    (CAST(date_diff('hour',\n      MIN(timestamp_utc),\n      MAX(timestamp_utc)\n    ) AS DOUBLE) + 1)\n  AS DOUBLE) AS completude\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)",
@@ -1444,7 +1444,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -1501,7 +1501,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT\n  date_diff('hour', MIN(timestamp_utc), MAX(timestamp_utc)) + 1 - COUNT(*) AS horas_em_falta\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)",
@@ -1512,7 +1512,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -1569,7 +1569,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT COUNT(*) AS nulos\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\n  AND (producao_total_kwh IS NULL OR consumo_total_kwh IS NULL)",
@@ -1580,7 +1580,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -1637,7 +1637,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "WITH stats AS (\n  SELECT approx_percentile(ratio_producao_consumo, 0.99) AS p99\n  FROM iceberg.gold.producao_vs_consumo_hourly\n  WHERE $__timeFilter(timestamp_utc)\n)\nSELECT COUNT(*) AS outliers\nFROM iceberg.gold.producao_vs_consumo_hourly, stats\nWHERE $__timeFilter(timestamp_utc)\n  AND ratio_producao_consumo > p99",
@@ -1648,7 +1648,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-trino-datasource",
+        "type": "trino-datasource",
         "uid": "${DS_TRINO}"
       },
       "fieldConfig": {
@@ -1691,7 +1691,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-trino-datasource",
+            "type": "trino-datasource",
             "uid": "${DS_TRINO}"
           },
           "rawSql": "SELECT\n  date_trunc('day', timestamp_utc) AS time,\n  COUNT(*) AS registos\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
@@ -1720,7 +1720,7 @@
         "multi": false,
         "name": "DS_TRINO",
         "options": [],
-        "query": "grafana-trino-datasource",
+        "query": "trino-datasource",
         "refresh": 1,
         "type": "datasource"
       },
@@ -1731,7 +1731,7 @@
           "value": "$__all"
         },
         "datasource": {
-          "type": "grafana-trino-datasource",
+          "type": "trino-datasource",
           "uid": "${DS_TRINO}"
         },
         "definition": "SELECT 'total' AS fonte",

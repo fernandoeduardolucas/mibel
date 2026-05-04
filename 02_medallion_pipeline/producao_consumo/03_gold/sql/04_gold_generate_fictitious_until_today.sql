@@ -87,7 +87,19 @@ synthetic AS (
     SELECT
         timestamp_utc,
         consumo_total_kwh,
-        GREATEST(producao_total_kwh, consumo_total_kwh + 1.0) AS producao_total_kwh,
+        -- Evita séries quase idênticas: aplica spread horário + componente pseudoaleatória
+        -- determinística por timestamp, preservando produção > consumo.
+        GREATEST(
+            consumo_total_kwh * 1.03,
+            producao_total_kwh * (
+                1.04
+                + 0.05 * sin(2 * pi() * ((hour(timestamp_utc) + 6) / 24.0))
+                + 0.03 * (
+                    (xxhash64(to_utf8(CAST(timestamp_utc AS varchar))) % 1000) / 1000.0
+                    - 0.5
+                )
+            )
+        ) AS producao_total_kwh,
         producao_dgm_kwh,
         producao_pre_kwh,
         true AS flag_missing_source
@@ -99,7 +111,7 @@ SELECT
     producao_total_kwh,
     producao_dgm_kwh,
     producao_pre_kwh,
-    GREATEST(1.0, producao_total_kwh - consumo_total_kwh) AS saldo_kwh,
+    producao_total_kwh - consumo_total_kwh AS saldo_kwh,
     GREATEST(0.000001, producao_total_kwh / consumo_total_kwh) AS ratio_producao_consumo,
     false AS flag_defice,
     true AS flag_excedente,

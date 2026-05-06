@@ -5,11 +5,11 @@ Execução local:
     source .venv/bin/activate
     python -m pip install --upgrade pip setuptools wheel
     python -m pip install pandas==2.2.3 scikit-learn==1.6.1 trino==0.336.0 mlflow==3.10.1 boto3
-    python 03_ml_pipeline/producao_consumo_mlflow_flow.py
+    python ml/producao_consumo_mlflow_flow.py
 
 Execução remota no Flyte:
     pyflyte run --remote -p flytesnacks -d development \
-      03_ml_pipeline/producao_consumo_mlflow_flow.py producao_consumo_training_wf
+      ml/producao_consumo_mlflow_flow.py producao_consumo_training_wf
 """
 
 from __future__ import annotations

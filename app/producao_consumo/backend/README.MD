@@ -33,7 +33,7 @@ No backend Python, isto corresponde a:
 ## Estrutura
 
 ```text
-04_application/producao_consumo/backend/
+app/producao_consumo/backend/
 ├── app/
 │   ├── config.py
 │   ├── main.py
@@ -65,7 +65,7 @@ No backend Python, isto corresponde a:
 ### Windows (PowerShell)
 
 ```powershell
-cd 04_application/producao_consumo/backend
+cd app/producao_consumo/backend
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -76,7 +76,7 @@ python server.py
 ### Ubuntu/Linux
 
 ```bash
-cd 04_application/producao_consumo/backend
+cd app/producao_consumo/backend
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -87,7 +87,7 @@ python server.py
 ### macOS
 
 ```bash
-cd 04_application/producao_consumo/backend
+cd app/producao_consumo/backend
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -101,7 +101,7 @@ python server.py
 
 - `ModuleNotFoundError: No module named 'pandas'`
   - O pacote não foi instalado no ambiente ativo. Ative o `.venv` e volte a correr `python -m pip install -r requirements.txt`.
-- `cd: no such file or directory: 04_application/producao_consumo/backend`
+- `cd: no such file or directory: app/producao_consumo/backend`
   - Esse comando só funciona quando executado a partir da raiz do repositório. Se já estiver dentro de `.../backend`, não faça `cd` novamente.
 - `zsh: command not found: py`
   - Em macOS, use `python`/`python3` (o launcher `py` é típico do Windows).

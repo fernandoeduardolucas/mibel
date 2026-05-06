@@ -151,7 +151,7 @@ async function load() {
         statusEl.textContent =
           "Erro ao carregar dashboard: sem ligação à API. " +
           `Tentativas: ${attempts.join(", ")}. ` +
-          "Confirme backend ativo (ex.: python3 04_application/backend/consumo_preco/server.py).";
+          "Confirme backend ativo (ex.: python3 app/backend/consumo_preco/server.py).";
         return;
       }
 

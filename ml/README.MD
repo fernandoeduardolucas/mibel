@@ -12,7 +12,7 @@ Flow de MLflow para o domínio **producao_consumo**.
 
 ## Ficheiro principal
 
-- `03_ml_pipeline/producao_consumo_mlflow_flow.py`
+- `ml/producao_consumo_mlflow_flow.py`
 
 ## Execução local
 
@@ -23,7 +23,7 @@ python -m pip install pandas==2.2.3 scikit-learn==1.6.1 trino==0.336.0 mlflow==3
 ```
 
 ```bash
-python 03_ml_pipeline/producao_consumo_mlflow_flow.py
+python ml/producao_consumo_mlflow_flow.py
 ```
 
 Se estiveres fora de Docker (a correr Python diretamente no host), podes precisar de configurar endpoints explicitamente:
@@ -39,7 +39,7 @@ export MLFLOW_S3_ENDPOINT_URL=http://localhost:9000
 
 ```bash
 pyflyte run --remote -p flytesnacks -d development \
-  03_ml_pipeline/producao_consumo_mlflow_flow.py producao_consumo_training_wf
+  ml/producao_consumo_mlflow_flow.py producao_consumo_training_wf
 ```
 
 ## Configuração padrão usada no script
@@ -62,4 +62,4 @@ Se precisares, posso também criar um segundo flow para **re-treino agendado** +
 
 ### Para correr Flyte + Ml
 pyflyte run --remote -p flytesnacks -d development \
-  03_ml_pipeline/producao_consumo_mlflow_flow.py producao_consumo_training_wf
+  ml/producao_consumo_mlflow_flow.py producao_consumo_training_wf

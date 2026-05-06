@@ -2,14 +2,14 @@
 
 O provisioning do Grafana está em:
 
-- `01_bootstrap/tead_2.0_v1.2/grafana/provisioning/datasources/trino.yml`
-- `01_bootstrap/tead_2.0_v1.2/grafana/provisioning/dashboards/dashboards.yml`
-- `01_bootstrap/tead_2.0_v1.2/grafana/dashboards/producao_consumo_overview.json`
+- `infrastructure/grafana/provisioning/datasources/trino.yml`
+- `infrastructure/grafana/provisioning/dashboards/dashboards.yml`
+- `infrastructure/grafana/dashboards/producao_consumo_overview.json`
 
 ## Como iniciar
 
 ```bash
-cd 01_bootstrap/tead_2.0_v1.2
+cd infrastructure
 GRAFANA_PORT=3300 docker compose up -d trino grafana
 ```
 

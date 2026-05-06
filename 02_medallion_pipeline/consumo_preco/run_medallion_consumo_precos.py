@@ -198,7 +198,7 @@ def main() -> None:
     pipeline_root = Path(__file__).resolve().parent
     repo_root = pipeline_root.parent.parent
 
-    compose_file = repo_root / "01_bootstrap" / "tead_2.0_v1.2" / "docker-compose.yml"
+    compose_file = repo_root / "infrastructure" / "docker-compose.yml"
 
     bronze_dir = pipeline_root / "01_bronze"
     bronze_script = bronze_dir / "scripts" / "python" / "bronze_clean_upload_consumo_precos.py"

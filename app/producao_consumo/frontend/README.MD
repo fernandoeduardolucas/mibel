@@ -21,14 +21,14 @@ Frontend em **React (sem build step)** com arquitetura por camadas para consumo 
 1. Subir backend:
 
 ```bash
-cd 04_application/producao_consumo/backend
+cd app/producao_consumo/backend
 python3 server.py
 ```
 
 2. Servir frontend:
 
 ```bash
-cd 04_application/producao_consumo/frontend
+cd app/producao_consumo/frontend
 python3 -m http.server 4173
 ```
 

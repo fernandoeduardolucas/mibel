@@ -21,7 +21,7 @@ A conversão foi feita por **encapsulamento progressivo** (sem reescrever tudo d
 ## Pré-requisitos
 
 - Docker Engine ativo.
-- Stack em `01_bootstrap/tead_2.0_v1.2/docker-compose.yml` funcional.
+- Stack em `infrastructure/docker-compose.yml` funcional.
 - Python com Flyte instalado para execução com `pyflyte`.
 
 ## Execução local (sem Flyte remote)

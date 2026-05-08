@@ -714,6 +714,17 @@
           "refId": "A"
         }
       ]
+    },
+
+    {
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 80 },
+      "id": 54,
+      "options": {
+        "mode": "markdown",
+        "content": "## Modelo ML — preco_consumo_load_forecaster\n\n**Algoritmo:** GradientBoostingRegressor  \n**Tarefa:** Regressão — prever `consumo_next_hour` (MWh)  \n**Experimento MLflow:** `preco-consumo-forecasting`\n\n| Métrica | Valor |\n| --- | --- |\n| R² | 0.9829 |\n| MAPE | 1.55% |\n| MAE | 93.1 MWh |\n| RMSE | 160.3 MWh |\n\n🔗 [Ver no MLflow](http://localhost:15000/#/experiments)"
+      },
+      "title": "Modelo ML — preco_consumo_load_forecaster",
+      "type": "text"
     }
 
   ],

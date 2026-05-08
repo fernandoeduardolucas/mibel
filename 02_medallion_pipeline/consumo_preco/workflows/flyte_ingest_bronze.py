@@ -230,7 +230,139 @@ def ingest_preco(process_date: date) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Workflow: orquestra ambas as tarefas em paralelo
+# Task: ingestão completa de consumo (todos os dias)
+# ---------------------------------------------------------------------------
+@task(retries=3)
+def ingest_consumo_full() -> int:
+    """
+    Lê consumo-total-nacional.csv completo do MinIO e carrega em Bronze.
+    Insere data a data para evitar o limite de partições abertas do Iceberg.
+    process_date é derivado da coluna datahora de cada registo.
+    """
+    s3 = _s3_client()
+    obj = s3.get_object(Bucket=RAW_BUCKET, Key=CONSUMO_KEY)
+
+    df = pd.read_csv(
+        BytesIO(obj["Body"].read()),
+        encoding="utf-8-sig",
+        parse_dates=["datahora"],
+    )
+    df.columns = [c.strip().lower() for c in df.columns]
+    df["datahora"] = pd.to_datetime(df["datahora"], utc=True)
+    df["_date"] = df["datahora"].dt.date
+
+    def _float(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return "NULL"
+
+    def _int(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return "NULL"
+
+    conn = _trino_conn()
+    cur = conn.cursor()
+    _exec(cur, "DELETE FROM iceberg.bronze.consumo_raw WHERE 1=1")
+
+    cols = "datahora, dia, mes, ano, date_raw, time_raw, bt, mt, at, mat, total, process_date"
+    total = 0
+    for proc, df_day in df.groupby("_date"):
+        rows = []
+        for _, r in df_day.iterrows():
+            ts = r["datahora"]
+            ts_str = ts.strftime("%Y-%m-%d %H:%M:%S.000000 UTC")
+            rows.append(
+                f"(TIMESTAMP '{ts_str}', "
+                f"{_int(r.get('dia', 'NULL'))}, "
+                f"{_int(r.get('mes', 'NULL'))}, "
+                f"{_int(r.get('ano', 'NULL'))}, "
+                f"'{r.get('date', '')}', "
+                f"'{r.get('time', '')}', "
+                f"{_float(r.get('bt', 'NULL'))}, "
+                f"{_float(r.get('mt', 'NULL'))}, "
+                f"{_float(r.get('at', 'NULL'))}, "
+                f"{_float(r.get('mat', 'NULL'))}, "
+                f"{_float(r.get('total', 'NULL'))}, "
+                f"DATE '{proc}')"
+            )
+        total += _insert_batches(cur, "iceberg.bronze.consumo_raw", cols, rows)
+        print(f"[consumo_full] {proc}: {len(rows)} registos inseridos.")
+
+    conn.close()
+    print(f"[consumo_full] Total: {total} registos inseridos.")
+    return total
+
+
+# ---------------------------------------------------------------------------
+# Task: ingestão completa de preços (todos os dias)
+# ---------------------------------------------------------------------------
+@task(retries=3)
+def ingest_preco_full() -> int:
+    """
+    Lê o CSV de preços day-ahead completo do MinIO e carrega em Bronze.
+    Insere data a data para evitar o limite de partições abertas do Iceberg.
+    process_date é derivado da coluna date_raw de cada registo.
+    """
+    s3 = _s3_client()
+    obj = s3.get_object(Bucket=RAW_BUCKET, Key=PRECO_KEY)
+
+    df = pd.read_csv(
+        BytesIO(obj["Body"].read()),
+        sep=";",
+        skiprows=2,
+        encoding="utf-8-sig",
+    )
+    df.columns = [c.strip() for c in df.columns]
+
+    col_map = {c.lower(): c for c in df.columns}
+    df = df.rename(columns={
+        col_map.get("date", "Date"): "date_raw",
+        col_map.get("hour", "Hour"): "hour",
+        col_map.get("portugal", "Portugal"): "price_portugal_raw",
+        col_map.get("spain", "Spain"): "price_spain_raw",
+    })
+
+    conn = _trino_conn()
+    cur = conn.cursor()
+    _exec(cur, "DELETE FROM iceberg.bronze.preco_raw WHERE 1=1")
+
+    cols = "date_raw, hour, price_portugal_raw, price_spain_raw, process_date"
+    total = 0
+    for proc, df_day in df.groupby("date_raw"):
+        rows = []
+        for _, r in df_day.iterrows():
+            try:
+                hour_val = int(r["hour"])
+            except (TypeError, ValueError):
+                continue
+
+            try:
+                pt = float(r["price_portugal_raw"])
+            except (TypeError, ValueError):
+                pt = "NULL"
+
+            try:
+                es = float(r["price_spain_raw"])
+            except (TypeError, ValueError):
+                es = "NULL"
+
+            rows.append(
+                f"('{r['date_raw']}', {hour_val}, {pt}, {es}, DATE '{r['date_raw']}')"
+            )
+        if rows:
+            total += _insert_batches(cur, "iceberg.bronze.preco_raw", cols, rows)
+            print(f"[preco_full] {proc}: {len(rows)} registos inseridos.")
+
+    conn.close()
+    print(f"[preco_full] Total: {total} registos inseridos.")
+    return total
+
+
+# ---------------------------------------------------------------------------
+# Workflows
 # ---------------------------------------------------------------------------
 @workflow
 def ingest_bronze(process_date: date = date(2023, 1, 1)) -> None:
@@ -243,3 +375,16 @@ def ingest_bronze(process_date: date = date(2023, 1, 1)) -> None:
     """
     ingest_consumo(process_date=process_date)
     ingest_preco(process_date=process_date)
+
+
+@workflow
+def ingest_bronze_full() -> None:
+    """
+    Ingestão Bronze completa (todos os dados dos CSVs raw).
+    Trunca as tabelas Bronze e re-insere tudo.
+
+    Execução:
+        pyflyte run workflows/flyte_ingest_bronze.py ingest_bronze_full
+    """
+    ingest_consumo_full()
+    ingest_preco_full()

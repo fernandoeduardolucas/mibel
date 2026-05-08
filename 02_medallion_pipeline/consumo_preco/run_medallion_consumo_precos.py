@@ -278,7 +278,7 @@ def main() -> None:
     compose_file  = repo_root / "01_bootstrap" / "tead_2.0_v1.2" / "docker-compose.yml"
     workflows_dir = pipeline_root / "workflows"
 
-    bronze_sql = pipeline_root / "01_bronze" / "sql" / "bronze_consumo_precos_trino.sql"
+    bronze_sql = pipeline_root / "01_bronze" / "bronze_consumo_precos_trino.sql"
     silver_sql = pipeline_root / "02_silver" / "sql" / "silver_consumo_precos_trino.sql"
     gold_sql   = pipeline_root / "03_gold"   / "sql" / "gold_consumo_precos_trino.sql"
 

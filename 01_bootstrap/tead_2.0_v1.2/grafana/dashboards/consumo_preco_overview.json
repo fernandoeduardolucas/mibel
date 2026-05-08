@@ -1,0 +1,730 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "MIBEL — Consumo vs Preço Day-Ahead (Portugal) · Produto Gold: dp_energy_market_hourly",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "📊 KPIs — Consumo · Preço · Correlação",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 4000 },
+              { "color": "red", "value": 6000 }
+            ]
+          },
+          "unit": "kwatth",
+          "decimals": 0,
+          "mappings": []
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "reduceOptions": { "calcs": ["mean"] },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "title": "⚡ Consumo Médio Horário (MWh)",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT ROUND(AVG(consumo_total), 0) AS \"Consumo Médio (MWh)\"\nFROM iceberg.gold.dp_energy_market_hourly\nWHERE ts_utc >= CAST('$__timeFrom()' AS TIMESTAMP) AND ts_utc < CAST('$__timeTo()' AS TIMESTAMP)",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 150 }
+            ]
+          },
+          "unit": "currencyEUR",
+          "decimals": 2,
+          "mappings": []
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 2,
+      "options": {
+        "reduceOptions": { "calcs": ["mean"] },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "title": "💶 Preço Médio Day-Ahead PT (€/MWh)",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT ROUND(AVG(market_price_pt), 2) AS \"Preço Médio (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_hourly\nWHERE ts_utc >= CAST('$__timeFrom()' AS TIMESTAMP) AND ts_utc < CAST('$__timeTo()' AS TIMESTAMP)",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 4000 },
+              { "color": "green", "value": 5000 }
+            ]
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 3,
+      "options": {
+        "reduceOptions": { "calcs": ["max"] },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "title": "🔺 Pico de Consumo (MWh)",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT ROUND(MAX(consumo_total), 0) AS \"Pico de Consumo (MWh)\"\nFROM iceberg.gold.dp_energy_market_hourly\nWHERE ts_utc >= CAST('$__timeFrom()' AS TIMESTAMP) AND ts_utc < CAST('$__timeTo()' AS TIMESTAMP)",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 200 }
+            ]
+          },
+          "unit": "currencyEUR",
+          "decimals": 2
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 4,
+      "options": {
+        "reduceOptions": { "calcs": ["max"] },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "title": "🔺 Pico de Preço (€/MWh)",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT ROUND(MAX(market_price_pt), 2) AS \"Pico de Preço (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_hourly\nWHERE ts_utc >= CAST('$__timeFrom()' AS TIMESTAMP) AND ts_utc < CAST('$__timeTo()' AS TIMESTAMP)",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "📈 Séries Temporais — Consumo & Preço",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Preço PT (€/MWh)" },
+            "properties": [
+              { "id": "unit", "value": "currencyEUR" },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Consumo (MWh)" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#5794F2" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
+      "id": 10,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "title": "Consumo Horário (MWh) vs Preço Day-Ahead PT (€/MWh)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT\n  ts_utc AS \"time\",\n  ROUND(consumo_total, 1) AS \"Consumo (MWh)\",\n  ROUND(market_price_pt, 2) AS \"Preço PT (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_hourly\nWHERE ts_utc >= CAST('$__timeFrom()' AS TIMESTAMP)\n  AND ts_utc < CAST('$__timeTo()' AS TIMESTAMP)\nORDER BY ts_utc",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "id": 102,
+      "title": "📉 Médias Móveis 24h",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 5,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Média Móvel Consumo 24h (MWh)" },
+            "properties": [
+              { "id": "unit", "value": "kwatth" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#5794F2" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Média Móvel Preço 24h (€/MWh)" },
+            "properties": [
+              { "id": "unit", "value": "currencyEUR" },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 17 },
+      "id": 11,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "title": "Média Móvel 24h — Consumo & Preço",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT\n  ts_utc AS \"time\",\n  ROUND(rolling_avg_consumo_24h, 1) AS \"Média Móvel Consumo 24h (MWh)\",\n  ROUND(rolling_avg_price_24h, 2) AS \"Média Móvel Preço 24h (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_hourly\nWHERE ts_utc >= CAST('$__timeFrom()' AS TIMESTAMP)\n  AND ts_utc < CAST('$__timeTo()' AS TIMESTAMP)\n  AND rolling_avg_consumo_24h IS NOT NULL\nORDER BY ts_utc",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 103,
+      "title": "🕐 Perfil Horário & Padrão Semanal",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "fillOpacity": 60,
+            "lineWidth": 1
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        }
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 27 },
+      "id": 20,
+      "options": {
+        "tooltip": { "mode": "single" },
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "xField": "Hora"
+      },
+      "title": "Perfil Médio de Consumo por Hora do Dia (0–23h)",
+      "type": "barchart",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT\n  hora AS \"Hora\",\n  ROUND(AVG(consumo_total), 0) AS \"Consumo Médio (MWh)\"\nFROM iceberg.gold.dp_energy_market_hourly\nGROUP BY hora\nORDER BY hora",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "fillOpacity": 60,
+            "lineWidth": 1
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        }
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 27 },
+      "id": 21,
+      "options": {
+        "tooltip": { "mode": "single" },
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "xField": "Dia"
+      },
+      "title": "Consumo Médio por Dia da Semana (0=Seg … 6=Dom)",
+      "type": "barchart",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT\n  CASE dia_semana\n    WHEN 0 THEN '0-Seg'\n    WHEN 1 THEN '1-Ter'\n    WHEN 2 THEN '2-Qua'\n    WHEN 3 THEN '3-Qui'\n    WHEN 4 THEN '4-Sex'\n    WHEN 5 THEN '5-Sab'\n    WHEN 6 THEN '6-Dom'\n  END AS \"Dia\",\n  ROUND(AVG(consumo_total), 0) AS \"Consumo Médio (MWh)\"\nFROM iceberg.gold.dp_energy_market_hourly\nGROUP BY dia_semana\nORDER BY dia_semana",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 },
+      "id": 104,
+      "title": "📊 Agregação Diária & Mensal",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 15,
+            "showPoints": "never"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Consumo Total Diário (MWh)" },
+            "properties": [
+              { "id": "unit", "value": "kwatth" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#5794F2" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Preço Médio Diário (€/MWh)" },
+            "properties": [
+              { "id": "unit", "value": "currencyEUR" },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 37 },
+      "id": 30,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "title": "Consumo Total Diário (MWh) & Preço Médio Diário (€/MWh)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT\n  DATE_TRUNC('day', ts_utc) AS \"time\",\n  ROUND(SUM(consumo_total), 0) AS \"Consumo Total Diário (MWh)\",\n  ROUND(AVG(market_price_pt), 2) AS \"Preço Médio Diário (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_hourly\nWHERE ts_utc >= CAST('$__timeFrom()' AS TIMESTAMP)\n  AND ts_utc < CAST('$__timeTo()' AS TIMESTAMP)\nGROUP BY DATE_TRUNC('day', ts_utc)\nORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Consumo Total Mensal (MWh)" },
+            "properties": [
+              { "id": "unit", "value": "kwatth" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#5794F2" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Preço Médio Mensal (€/MWh)" },
+            "properties": [
+              { "id": "unit", "value": "currencyEUR" },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 46 },
+      "id": 31,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "title": "Consumo & Preço — Agregação Mensal",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT\n  DATE_TRUNC('month', ts_utc) AS \"time\",\n  ROUND(SUM(consumo_total), 0) AS \"Consumo Total Mensal (MWh)\",\n  ROUND(AVG(market_price_pt), 2) AS \"Preço Médio Mensal (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_hourly\nGROUP BY DATE_TRUNC('month', ts_utc)\nORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
+      "id": 105,
+      "title": "🏆 Top Horas — Picos de Consumo & Preço",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5500 },
+              { "color": "red", "value": 6000 }
+            ]
+          },
+          "unit": "kwatth",
+          "decimals": 0,
+          "custom": { "displayMode": "color-background" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Hora UTC" },
+            "properties": [{ "id": "custom.width", "value": 200 }]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 56 },
+      "id": 40,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Consumo (MWh)", "desc": true }]
+      },
+      "title": "Top 15 Horas por Consumo",
+      "type": "table",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT\n  CAST(ts_utc AS VARCHAR) AS \"Hora UTC\",\n  ROUND(consumo_total, 0) AS \"Consumo (MWh)\",\n  ROUND(market_price_pt, 2) AS \"Preço PT (€/MWh)\",\n  hora AS \"Hora do Dia\",\n  CASE is_weekend WHEN true THEN 'Sim' ELSE 'Não' END AS \"Fim Semana\"\nFROM iceberg.gold.dp_energy_market_hourly\nORDER BY consumo_total DESC\nLIMIT 15",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 200 }
+            ]
+          },
+          "unit": "currencyEUR",
+          "decimals": 2,
+          "custom": { "displayMode": "color-background" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Hora UTC" },
+            "properties": [{ "id": "custom.width", "value": 200 }]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 56 },
+      "id": 41,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Preço PT (€/MWh)", "desc": true }]
+      },
+      "title": "Top 15 Horas por Preço Day-Ahead",
+      "type": "table",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT\n  CAST(ts_utc AS VARCHAR) AS \"Hora UTC\",\n  ROUND(market_price_pt, 2) AS \"Preço PT (€/MWh)\",\n  ROUND(consumo_total, 0) AS \"Consumo (MWh)\",\n  hora AS \"Hora do Dia\",\n  CASE is_weekend WHEN true THEN 'Sim' ELSE 'Não' END AS \"Fim Semana\"\nFROM iceberg.gold.dp_energy_market_hourly\nORDER BY market_price_pt DESC\nLIMIT 15",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 66 },
+      "id": 106,
+      "title": "🤖 ML — Feature Table (Previsão de Consumo)",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "short",
+          "decimals": 0,
+          "mappings": []
+        }
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 67 },
+      "id": 50,
+      "options": {
+        "reduceOptions": { "calcs": ["sum"] },
+        "colorMode": "background",
+        "textMode": "auto"
+      },
+      "title": "Total de Exemplos ML (feat_load_forecasting)",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT COUNT(*) AS \"Exemplos ML\"\nFROM iceberg.gold.feat_load_forecasting_hourly",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        }
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 67 },
+      "id": 51,
+      "options": {
+        "reduceOptions": { "calcs": ["mean"] },
+        "colorMode": "background",
+        "textMode": "auto"
+      },
+      "title": "Target Médio — consumo_next_hour (MWh)",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT ROUND(AVG(consumo_next_hour), 0) AS \"Target Médio (MWh)\"\nFROM iceberg.gold.feat_load_forecasting_hourly",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "unit": "short",
+          "decimals": 0
+        }
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 67 },
+      "id": 52,
+      "options": {
+        "reduceOptions": { "calcs": ["sum"] },
+        "colorMode": "background",
+        "textMode": "auto"
+      },
+      "title": "Nulos no Target (deve ser 0)",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT SUM(CASE WHEN consumo_next_hour IS NULL THEN 1 ELSE 0 END) AS \"Nulos no Target\"\nFROM iceberg.gold.feat_load_forecasting_hourly",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Consumo Atual (MWh)" },
+            "properties": [
+              { "id": "unit", "value": "kwatth" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#5794F2" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Target: Próxima Hora (MWh)" },
+            "properties": [
+              { "id": "unit", "value": "kwatth" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 71 },
+      "id": 53,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "title": "Feature Table ML — Consumo Atual vs Target Próxima Hora",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "rawSql": "SELECT\n  ts_utc AS \"time\",\n  ROUND(consumo_total, 1) AS \"Consumo Atual (MWh)\",\n  ROUND(consumo_next_hour, 1) AS \"Target: Próxima Hora (MWh)\"\nFROM iceberg.gold.feat_load_forecasting_hourly\nWHERE ts_utc >= CAST('$__timeFrom()' AS TIMESTAMP)\n  AND ts_utc < CAST('$__timeTo()' AS TIMESTAMP)\nORDER BY ts_utc",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    }
+
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["mibel", "consumo", "preco", "gold", "iceberg"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30d", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "MIBEL — Consumo vs Preço Day-Ahead (PT)",
+  "uid": "mibel-consumo-preco-v1",
+  "version": 1
+}

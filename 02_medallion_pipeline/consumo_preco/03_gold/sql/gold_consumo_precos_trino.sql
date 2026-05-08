@@ -1,0 +1,120 @@
+-- =============================================================================
+-- Gold DDL — consumo_preco
+-- Tabelas Iceberg nativas, particionadas por year/month.
+-- Carregadas via workflow Flyte (flyte_silver_to_gold.py).
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- Schema
+-- -----------------------------------------------------------------------------
+CREATE SCHEMA IF NOT EXISTS iceberg.gold;
+
+-- -----------------------------------------------------------------------------
+-- Tabela 1: dp_energy_market_hourly
+-- Produto analítico principal: consumo + preço + features temporais e de lag.
+-- Origem upstream: silver.consumo_hourly + silver.preco_hourly (join por ts_utc)
+-- Consumidores: dashboard, API, exploração analítica, base para ML
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS iceberg.gold.dp_energy_market_hourly (
+    ts_utc                   TIMESTAMP(6) WITH TIME ZONE,  -- chave de negócio (UTC)
+    consumo_total            DOUBLE,                        -- consumo horário em MWh
+    market_price_pt          DOUBLE,                        -- preço PT em €/MWh
+    hora                     INTEGER,                       -- hora do dia (0-23)
+    dia_semana               INTEGER,                       -- dia da semana (0=Seg … 6=Dom)
+    is_weekend               BOOLEAN,                       -- indicador fim de semana
+    consumo_lag_1h           DOUBLE,                        -- consumo da hora anterior
+    consumo_lag_24h          DOUBLE,                        -- consumo da mesma hora dia anterior
+    price_lag_1h             DOUBLE,                        -- preço da hora anterior
+    rolling_avg_consumo_24h  DOUBLE,                        -- média móvel consumo 24h
+    rolling_avg_price_24h    DOUBLE,                        -- média móvel preço 24h
+    process_date             DATE,                          -- data lógica da execução
+    year                     INTEGER,                       -- ano (partição)
+    month                    INTEGER                        -- mês (partição)
+)
+WITH (
+    format = 'PARQUET',
+    partitioning = ARRAY['year', 'month'],
+    extra_properties = MAP(
+        ARRAY['layer', 'data_product', 'schema_version', 'product_version', 'deprecated', 'domain', 'grain'],
+        ARRAY['gold', 'dp_energy_market_hourly', '1', 'v1', 'false', 'consumo_preco', 'hourly']
+    ),
+    location = 's3a://warehouse/gold/dp_energy_market_hourly/'
+);
+
+ALTER TABLE iceberg.gold.dp_energy_market_hourly
+SET PROPERTIES
+    format_version = 2,
+    object_store_layout_enabled = true,
+    extra_properties = MAP(
+        ARRAY['layer', 'data_product', 'schema_version', 'product_version', 'deprecated', 'domain', 'grain'],
+        ARRAY['gold', 'dp_energy_market_hourly', '1', 'v1', 'false', 'consumo_preco', 'hourly']
+    );
+
+COMMENT ON TABLE iceberg.gold.dp_energy_market_hourly IS
+'Produto Gold principal: consumo elétrico nacional horário integrado com preço day-ahead MIBEL PT. Inclui features temporais e de lag para análise e serving.';
+
+COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.ts_utc IS 'Chave de negócio: timestamp UTC canónico da hora.';
+COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.consumo_total IS 'Consumo elétrico nacional horário em MWh.';
+COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.market_price_pt IS 'Preço day-ahead MIBEL Portugal em €/MWh.';
+COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.hora IS 'Hora do dia derivada de ts_utc (0-23).';
+COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.dia_semana IS 'Dia da semana derivado de ts_utc (0=Segunda … 6=Domingo).';
+COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.is_weekend IS 'True se dia_semana >= 5 (Sábado ou Domingo).';
+COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.consumo_lag_1h IS 'Consumo observado na hora anterior a ts_utc.';
+COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.consumo_lag_24h IS 'Consumo observado 24 horas antes de ts_utc.';
+COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.price_lag_1h IS 'Preço observado na hora anterior a ts_utc.';
+COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.rolling_avg_consumo_24h IS 'Média móvel do consumo nas últimas 24 horas (janela de 24 registos).';
+COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.rolling_avg_price_24h IS 'Média móvel do preço nas últimas 24 horas (janela de 24 registos).';
+COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.process_date IS 'Data lógica da execução do workflow Silver → Gold.';
+
+-- -----------------------------------------------------------------------------
+-- Tabela 2: feat_load_forecasting_hourly
+-- Feature table para ML: subconjunto do produto analítico + target consumo_next_hour.
+-- Origem upstream: gold.dp_energy_market_hourly
+-- Consumidores: workflow de treino ML, MLflow
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS iceberg.gold.feat_load_forecasting_hourly (
+    ts_utc                   TIMESTAMP(6) WITH TIME ZONE,  -- chave temporal
+    consumo_total            DOUBLE,                        -- feature: consumo atual
+    market_price_pt          DOUBLE,                        -- feature: preço atual
+    hora                     INTEGER,                       -- feature: hora do dia
+    dia_semana               INTEGER,                       -- feature: dia da semana
+    is_weekend               BOOLEAN,                       -- feature: fim de semana
+    consumo_lag_1h           DOUBLE,                        -- feature: lag 1h consumo
+    consumo_lag_24h          DOUBLE,                        -- feature: lag 24h consumo
+    price_lag_1h             DOUBLE,                        -- feature: lag 1h preço
+    rolling_avg_consumo_24h  DOUBLE,                        -- feature: rolling avg consumo
+    rolling_avg_price_24h    DOUBLE,                        -- feature: rolling avg preço
+    consumo_next_hour        DOUBLE,                        -- TARGET: consumo da hora seguinte
+    process_date             DATE,                          -- data lógica da execução
+    year                     INTEGER,                       -- ano (partição)
+    month                    INTEGER                        -- mês (partição)
+)
+WITH (
+    format = 'PARQUET',
+    partitioning = ARRAY['year', 'month'],
+    extra_properties = MAP(
+        ARRAY['layer', 'data_product', 'schema_version', 'feature_schema_version', 'product_version', 'deprecated', 'upstream_table'],
+        ARRAY['gold', 'feat_load_forecasting_hourly', '1', '1', 'v1', 'false', 'gold.dp_energy_market_hourly']
+    ),
+    location = 's3a://warehouse/gold/feat_load_forecasting_hourly/'
+);
+
+ALTER TABLE iceberg.gold.feat_load_forecasting_hourly
+SET PROPERTIES
+    format_version = 2,
+    object_store_layout_enabled = true,
+    extra_properties = MAP(
+        ARRAY['layer', 'data_product', 'schema_version', 'feature_schema_version', 'product_version', 'deprecated', 'upstream_table'],
+        ARRAY['gold', 'feat_load_forecasting_hourly', '1', '1', 'v1', 'false', 'gold.dp_energy_market_hourly']
+    );
+
+COMMENT ON TABLE iceberg.gold.feat_load_forecasting_hourly IS
+'Feature table Gold para treino de modelos de previsão de consumo horário. Derivada do produto analítico principal com adição do target consumo_next_hour.';
+
+COMMENT ON COLUMN iceberg.gold.feat_load_forecasting_hourly.ts_utc IS 'Chave temporal: timestamp UTC canónico da hora.';
+COMMENT ON COLUMN iceberg.gold.feat_load_forecasting_hourly.consumo_next_hour IS 'TARGET de supervised learning: consumo da hora seguinte (LEAD de consumo_total).';
+COMMENT ON COLUMN iceberg.gold.feat_load_forecasting_hourly.consumo_lag_1h IS 'Feature: consumo observado na hora anterior.';
+COMMENT ON COLUMN iceberg.gold.feat_load_forecasting_hourly.consumo_lag_24h IS 'Feature: consumo observado 24 horas antes.';
+COMMENT ON COLUMN iceberg.gold.feat_load_forecasting_hourly.price_lag_1h IS 'Feature: preço observado na hora anterior.';
+COMMENT ON COLUMN iceberg.gold.feat_load_forecasting_hourly.rolling_avg_consumo_24h IS 'Feature: média móvel de consumo nas últimas 24 horas.';
+COMMENT ON COLUMN iceberg.gold.feat_load_forecasting_hourly.rolling_avg_price_24h IS 'Feature: média móvel de preço nas últimas 24 horas.';

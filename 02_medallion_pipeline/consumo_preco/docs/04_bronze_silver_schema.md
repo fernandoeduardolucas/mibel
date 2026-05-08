@@ -1,8 +1,6 @@
 # 1. Objetivo
 
-Este documento define o schema técnico das tabelas Bronze e Silver do projeto, incluindo colunas, tipos de dados, papel de cada campo e principais regras de transformação entre camadas.
-
-O objetivo é garantir consistência de implementação no lakehouse e preparar a construção posterior das tabelas Gold.
+Este documento define o schema técnico real (alinhado com o DDL implementado) das tabelas Bronze e Silver do projeto, incluindo colunas, tipos de dados, papel de cada campo e principais regras de transformação entre camadas.
 
 ---
 
@@ -10,64 +8,84 @@ O objetivo é garantir consistência de implementação no lakehouse e preparar 
 
 ## 2.1 `bronze.consumo_raw`
 
-**Origem:** `consumo-total-nacional.csv`  
+**Tabela Iceberg:** `iceberg.bronze.consumo_raw`  
+**Localização MinIO:** `s3a://warehouse/bronze/consumo_raw/`  
+**Origem:** `consumo-total-nacional.csv` (fonte REN)  
 **Granularidade de origem:** 15 minutos  
-**Função:** preservar a estrutura da fonte de consumo com metadados de ingestão.
+**Formato:** Parquet (Iceberg format_version=2)  
+**Particionamento:** `process_date`  
+**Função:** Preservar a estrutura da fonte de consumo com metadados de ingestão mínimos. Sem transformações semânticas.
 
 ### Colunas
 
-| Coluna         | Tipo       | Obrigatória | Origem / Derivação | Descrição |
-|----------------|------------|-------------|--------------------|-----------|
-| ingestion_ts   | TIMESTAMP  | Sim         | Derivada           | Timestamp técnico da ingestão |
-| process_date   | DATE       | Sim         | Derivada           | Data lógica da execução / ingestão |
-| source_file    | VARCHAR    | Sim         | Derivada           | Nome do ficheiro de origem |
-| row_num        | BIGINT     | Sim         | Derivada           | Número sequencial da linha no ficheiro |
-| datahora_raw   | VARCHAR    | Sim         | Fonte (`datahora`) | Valor temporal original da fonte |
-| dia            | INT        | Não         | Fonte              | Dia presente no ficheiro |
-| mes            | INT        | Não         | Fonte              | Mês presente no ficheiro |
-| ano            | INT        | Não         | Fonte              | Ano presente no ficheiro |
-| date_raw       | VARCHAR    | Não         | Fonte (`date`)     | Campo de data original |
-| time_raw       | VARCHAR    | Não         | Fonte (`time`)     | Campo de hora original |
-| bt             | DOUBLE     | Não         | Fonte              | Consumo em BT |
-| mt             | DOUBLE     | Não         | Fonte              | Consumo em MT |
-| at             | DOUBLE     | Não         | Fonte              | Consumo em AT |
-| mat            | DOUBLE     | Não         | Fonte              | Consumo em MAT |
-| total          | DOUBLE     | Sim         | Fonte              | Valor total de consumo da linha |
+| Coluna       | Tipo                        | Obrigatória | Origem          | Descrição |
+|--------------|-----------------------------|-------------|-----------------|-----------|
+| datahora     | TIMESTAMP(6) WITH TIME ZONE | Sim         | Fonte           | Timestamp original da fonte (UTC) para o registo de 15 min |
+| dia          | INTEGER                     | Não         | Fonte           | Dia do mês (campo redundante da fonte, preservado para rastreabilidade) |
+| mes          | INTEGER                     | Não         | Fonte           | Mês (campo redundante da fonte) |
+| ano          | INTEGER                     | Não         | Fonte           | Ano (campo redundante da fonte) |
+| date_raw     | VARCHAR                     | Não         | Fonte           | Campo `date` original em string |
+| time_raw     | VARCHAR                     | Não         | Fonte           | Campo `time` original em string |
+| bt           | DOUBLE                      | Não         | Fonte           | Consumo Baixa Tensão (kW) |
+| mt           | DOUBLE                      | Não         | Fonte           | Consumo Média Tensão (kW) |
+| at           | DOUBLE                      | Não         | Fonte           | Consumo Alta Tensão (kW) |
+| mat          | DOUBLE                      | Não         | Fonte           | Consumo Muito Alta Tensão (kW) |
+| total        | DOUBLE                      | Sim         | Fonte           | Consumo total nacional no intervalo de 15 min (kW) |
+| process_date | DATE                        | Sim         | Derivada        | Data lógica de ingestão — chave de partição e idempotência |
+
+### Propriedades Iceberg (catálogo)
+
+| Propriedade     | Valor          |
+|-----------------|----------------|
+| layer           | bronze         |
+| domain          | consumo_preco  |
+| schema_version  | 1              |
+| retention_policy| indefinite     |
+| source_system   | ren_csv        |
 
 ### Regras
-- preservar o valor original das colunas da fonte
-- não eliminar redundâncias nesta camada
-- não converter a granularidade temporal
-- não aplicar regras de negócio nesta camada
+- Preservar o valor original de todas as colunas da fonte sem transformação semântica
+- `datahora` é ingerido como TIMESTAMP WITH TIME ZONE (já interpretado como UTC pelo script de limpeza)
+- Não agregar nem converter granularidade nesta camada
+- `process_date` é a chave de partição — permite DELETE + INSERT idempotente por dia
 
 ---
 
 ## 2.2 `bronze.preco_raw`
 
-**Origem:** `Day-ahead Market Prices_20230101_20260311.csv`  
-**Granularidade de origem:** horária  
-**Função:** preservar os dados tabulares do ficheiro MIBEL e respetivos metadados técnicos.
+**Tabela Iceberg:** `iceberg.bronze.preco_raw`  
+**Localização MinIO:** `s3a://warehouse/bronze/preco_raw/`  
+**Origem:** `Day-ahead Market Prices_*.csv` (fonte OMIE)  
+**Granularidade de origem:** horária (horas 1–25)  
+**Formato:** Parquet (Iceberg format_version=2)  
+**Particionamento:** `process_date`  
+**Função:** Preservar os dados tabulares MIBEL sem interpretar semanticamente a numeração de horas.
 
 ### Colunas
 
-| Coluna           | Tipo       | Obrigatória | Origem / Derivação   | Descrição |
-|------------------|------------|-------------|----------------------|-----------|
-| ingestion_ts     | TIMESTAMP  | Sim         | Derivada             | Timestamp técnico da ingestão |
-| process_date     | DATE       | Sim         | Derivada             | Data lógica da execução / ingestão |
-| source_file      | VARCHAR    | Sim         | Derivada             | Nome do ficheiro de origem |
-| row_num          | BIGINT     | Sim         | Derivada             | Número sequencial da linha útil |
-| unit_raw         | VARCHAR    | Não         | Metadata ficheiro    | Unidade indicada na fonte |
-| accessed_on_raw  | VARCHAR    | Não         | Metadata ficheiro    | Momento textual de acesso à informação |
-| date_raw         | VARCHAR    | Sim         | Fonte (`Date`)       | Data original da linha |
-| hour_raw         | INT        | Sim         | Fonte (`Hour`)       | Hora original da linha |
-| portugal_price   | DOUBLE     | Sim         | Fonte (`Portugal`)   | Preço de Portugal |
-| spain_price      | DOUBLE     | Não         | Fonte (`Spain`)      | Preço de Espanha |
+| Coluna              | Tipo    | Obrigatória | Origem   | Descrição |
+|---------------------|---------|-------------|----------|-----------|
+| date_raw            | VARCHAR | Sim         | Fonte    | Data original da linha em string (fonte OMIE) |
+| hour                | INTEGER | Sim         | Fonte    | Hora original OMIE (1–24 normal; 25 em mudança DST de outono) |
+| price_portugal_raw  | DOUBLE  | Sim         | Fonte    | Preço day-ahead de Portugal (€/MWh) |
+| price_spain_raw     | DOUBLE  | Não         | Fonte    | Preço day-ahead de Espanha (€/MWh) — preservado para referência futura |
+| process_date        | DATE    | Sim         | Derivada | Data lógica de ingestão — chave de partição e idempotência |
+
+### Propriedades Iceberg (catálogo)
+
+| Propriedade     | Valor          |
+|-----------------|----------------|
+| layer           | bronze         |
+| domain          | consumo_preco  |
+| schema_version  | 1              |
+| retention_policy| indefinite     |
+| source_system   | omie_csv       |
 
 ### Regras
-- ignorar as linhas de metadata no corpo tabular da ingestão
-- preservar a metadata relevante do ficheiro em colunas próprias, quando aplicável
-- não interpretar semanticamente `hour_raw` nesta camada
-- não remover a coluna `spain_price` nesta camada
+- Não interpretar semanticamente `hour` nesta camada (a conversão para UTC só acontece em Silver)
+- A coluna `price_spain_raw` é preservada mesmo não sendo usada no data product final
+- Linhas de metadata do ficheiro CSV são descartadas no processo de ingestão antes de chegar a esta tabela
+- `process_date` é a chave de partição — permite DELETE + INSERT idempotente por dia
 
 ---
 
@@ -75,123 +93,131 @@ O objetivo é garantir consistência de implementação no lakehouse e preparar 
 
 ## 3.1 `silver.consumo_hourly`
 
+**Tabela Iceberg:** `iceberg.silver.consumo_hourly`  
+**Localização MinIO:** `s3a://warehouse/silver/consumo_hourly/`  
 **Origem upstream:** `bronze.consumo_raw`  
 **Granularidade de saída:** horária  
-**Função:** normalizar e agregar o consumo para representação horária canónica.
+**Formato:** Parquet (Iceberg format_version=2)  
+**Particionamento:** `year`, `month`  
+**Função:** Agregar consumo de 15 min para granularidade horária e normalizar para UTC canónico.
 
 ### Colunas
 
-| Coluna         | Tipo       | Obrigatória | Origem / Derivação | Descrição |
-|----------------|------------|-------------|--------------------|-----------|
-| timestamp_utc  | TIMESTAMP  | Sim         | Derivada           | Timestamp horário normalizado em UTC |
-| year           | INT        | Sim         | Derivada           | Ano derivado de `timestamp_utc` |
-| month          | INT        | Sim         | Derivada           | Mês derivado de `timestamp_utc` |
-| day            | INT        | Sim         | Derivada           | Dia derivado de `timestamp_utc` |
-| hour           | INT        | Sim         | Derivada           | Hora derivada de `timestamp_utc` |
-| consumo_total  | DOUBLE     | Sim         | Agregada (`total`) | Consumo total agregado à hora |
-| source_min_ts  | TIMESTAMP  | Não         | Derivada           | Menor timestamp de origem agregado |
-| source_max_ts  | TIMESTAMP  | Não         | Derivada           | Maior timestamp de origem agregado |
-| source_rows    | INT        | Não         | Derivada           | Número de registos de origem agregados |
-| process_date   | DATE       | Sim         | Derivada           | Data lógica do processamento |
+| Coluna     | Tipo                        | Obrigatória | Origem / Derivação          | Descrição |
+|------------|-----------------------------|-------------|-----------------------------|-----------|
+| ts_utc     | TIMESTAMP(6) WITH TIME ZONE | Sim         | Derivada de `datahora`      | Timestamp UTC canónico que representa o início da hora |
+| total_mwh  | DOUBLE                      | Sim         | `SUM(total) / 1000`         | Consumo nacional horário agregado em MWh |
+| year       | INTEGER                     | Sim         | `YEAR(ts_utc)`              | Ano — coluna de partição |
+| month      | INTEGER                     | Sim         | `MONTH(ts_utc)`             | Mês — coluna de partição |
+
+### Propriedades Iceberg (catálogo)
+
+| Propriedade    | Valor                |
+|----------------|----------------------|
+| layer          | silver               |
+| domain         | consumo_preco        |
+| schema_version | 1                    |
+| grain          | hourly               |
+| upstream_table | bronze.consumo_raw   |
 
 ### Regras de transformação
-- parse de `datahora_raw`
-- validação do timestamp de origem
-- normalização temporal para `timestamp_utc`
-- agregação por hora sobre a métrica `total`
-- criação de colunas de calendário (`year`, `month`, `day`, `hour`)
-- cálculo de colunas técnicas de controlo (`source_min_ts`, `source_max_ts`, `source_rows`)
+- Truncar `datahora` à hora para formar `ts_utc`
+- Agregar `total` (kW) por hora e dividir por 1000 → `total_mwh` (MWh)
+- Particionamento por `year`/`month` — DELETE + INSERT por dia garante idempotência
 
 ### Regras de qualidade
-- `timestamp_utc` único
-- `consumo_total` >= 0
-- `source_rows` esperado próximo de 4 por hora, salvo falhas na origem
-- ausência de nulos em `timestamp_utc` e `consumo_total`
+- `ts_utc` NOT NULL e único por tabela
+- `total_mwh` >= 0
+- Expectativa de ~4 registos Bronze por hora (intervalo 15 min)
+- Sem nulos em `ts_utc` ou `total_mwh`
 
 ---
 
 ## 3.2 `silver.preco_hourly`
 
+**Tabela Iceberg:** `iceberg.silver.preco_hourly`  
+**Localização MinIO:** `s3a://warehouse/silver/preco_hourly/`  
 **Origem upstream:** `bronze.preco_raw`  
 **Granularidade de saída:** horária  
-**Função:** normalizar o preço horário de Portugal para representação consistente em UTC.
+**Formato:** Parquet (Iceberg format_version=2)  
+**Particionamento:** `year`, `month`  
+**Função:** Converter a numeração OMIE de horas (1–24) para timestamp UTC canónico e normalizar preços.
 
 ### Colunas
 
-| Coluna           | Tipo       | Obrigatória | Origem / Derivação    | Descrição |
-|------------------|------------|-------------|------------------------|-----------|
-| timestamp_utc    | TIMESTAMP  | Sim         | Derivada               | Timestamp horário normalizado em UTC |
-| year             | INT        | Sim         | Derivada               | Ano derivado de `timestamp_utc` |
-| month            | INT        | Sim         | Derivada               | Mês derivado de `timestamp_utc` |
-| day              | INT        | Sim         | Derivada               | Dia derivado de `timestamp_utc` |
-| hour             | INT        | Sim         | Derivada               | Hora derivada de `timestamp_utc` |
-| market_price_pt  | DOUBLE     | Sim         | Derivada (`portugal_price`) | Preço horário PT |
-| source_date_raw  | VARCHAR    | Não         | Fonte                  | Data original da linha para auditoria |
-| source_hour_raw  | INT        | Não         | Fonte                  | Hora original da linha para auditoria |
-| process_date     | DATE       | Sim         | Derivada               | Data lógica do processamento |
+| Coluna                | Tipo                        | Obrigatória | Origem / Derivação                  | Descrição |
+|-----------------------|-----------------------------|-------------|-------------------------------------|-----------|
+| ts_utc                | TIMESTAMP(6) WITH TIME ZONE | Sim         | `date_raw + (hour - 1) horas`       | Timestamp UTC canónico que representa o início da hora |
+| price_portugal_eur_mwh| DOUBLE                      | Sim         | `price_portugal_raw`                | Preço day-ahead de Portugal em €/MWh |
+| price_spain_eur_mwh   | DOUBLE                      | Não         | `price_spain_raw`                   | Preço day-ahead de Espanha em €/MWh — preservado para análise comparativa PT vs ES |
+| year                  | INTEGER                     | Sim         | `YEAR(ts_utc)`                      | Ano — coluna de partição |
+| month                 | INTEGER                     | Sim         | `MONTH(ts_utc)`                     | Mês — coluna de partição |
+
+### Propriedades Iceberg (catálogo)
+
+| Propriedade    | Valor              |
+|----------------|--------------------|
+| layer          | silver             |
+| domain         | consumo_preco      |
+| schema_version | 1                  |
+| grain          | hourly             |
+| upstream_table | bronze.preco_raw   |
 
 ### Regras de transformação
-- parse de `date_raw`
-- validação de `hour_raw`
-- interpretação da hora original segundo a lógica da fonte
-- tratamento de casos especiais (ex.: hora 25)
-- construção de `timestamp_utc`
-- criação de colunas de calendário (`year`, `month`, `day`, `hour`)
-- seleção da métrica PT (`portugal_price`)
+- `ts_utc = CAST(date_raw AS DATE) + INTERVAL (hour - 1) HOURS` (hora OMIE começa em 1)
+- Hora 25 (dia com mudança DST de outono) é descartada — não tem correspondência UTC direta válida
+- `price_spain_eur_mwh` mantido para análise comparativa PT/ES, apesar de não fazer parte do data product principal
 
 ### Regras de qualidade
-- `timestamp_utc` único
-- ausência de nulos em `timestamp_utc` e `market_price_pt`
-- `market_price_pt` dentro de intervalo plausível
-- coerência entre `source_date_raw`, `source_hour_raw` e `timestamp_utc`
+- `ts_utc` NOT NULL e único por tabela
+- `price_portugal_eur_mwh` NOT NULL
+- `ts_utc` deve estar alinhado com limite da hora (minuto=0, segundo=0)
+- `price_portugal_eur_mwh` dentro de intervalo plausível (–500 a 3000 €/MWh)
+- Coerência entre `date_raw`, `hour` Bronze e `ts_utc` Silver
 
 ---
 
 # 4. Campos preservados vs descartados
 
 ## Bronze → Silver (consumo)
+
 ### Preservados semanticamente
-- timestamp de origem
-- métrica `total`
+- `datahora` → normalizado para `ts_utc`
+- `total` → agregado e convertido para `total_mwh`
 
-### Descartados na representação Silver
-- `dia`
-- `mes`
-- `ano`
-- `date_raw`
-- `time_raw`
-- `bt`
-- `mt`
-- `at`
-- `mat`
+### Descartados em Silver
+- `dia`, `mes`, `ano` — redundantes (deriváveis de `ts_utc`)
+- `date_raw`, `time_raw` — redundantes após parse de `datahora`
+- `bt`, `mt`, `at`, `mat` — decomposição por tensão não necessária para o data product atual
+- `process_date` — descartado (partição é por `year`/`month` em Silver)
 
-**Justificação:** não são necessários para o data product definido neste elemento do projeto.
+**Justificação:** Silver expõe apenas as colunas necessárias para integração temporal com preços e construção da Gold.
 
 ---
 
 ## Bronze → Silver (preço)
+
 ### Preservados semanticamente
-- data original
-- hora original
-- preço PT
+- `date_raw` + `hour` → convertidos para `ts_utc`
+- `price_portugal_raw` → renomeado para `price_portugal_eur_mwh`
+- `price_spain_raw` → renomeado para `price_spain_eur_mwh` (preservado para análise futura)
 
-### Descartados na representação Silver
-- `spain_price`
-- `unit_raw`
-- `accessed_on_raw`
+### Descartados em Silver
+- `process_date` — descartado (partição passa a ser por `year`/`month`)
+- Linhas com `hour = 25` (DST) — descartadas
 
-**Justificação:** a tabela Silver prepara apenas o dataset necessário à integração temporal com consumo e ao data product final.
+**Justificação:** Silver prepara o dataset para join temporal 1:1 com consumo. Coluna Espanha mantida para valor analítico adicional.
 
 ---
 
 # 5. Resultado esperado após Silver
 
-Após a camada Silver, o projeto deverá dispor de duas tabelas horárias consistentes em UTC:
+Após a camada Silver, o projeto dispõe de duas tabelas horárias consistentes em UTC:
 
-- `silver.consumo_hourly`
-- `silver.preco_hourly`
+- `silver.consumo_hourly` — consumo horário nacional em MWh
+- `silver.preco_hourly` — preço horário PT e ES em €/MWh
 
-Estas tabelas devem permitir:
-- join temporal 1:1 por `timestamp_utc`
-- construção segura das features em Gold
-- rastreabilidade suficiente até à camada Bronze
+Estas tabelas permitem:
+- Join temporal 1:1 por `ts_utc`
+- Construção segura das features em Gold
+- Rastreabilidade até à camada Bronze via `upstream_table` property

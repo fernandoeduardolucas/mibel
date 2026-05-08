@@ -2,204 +2,210 @@
 
 Este documento define as regras de transformação entre as camadas Bronze, Silver e Gold do lakehouse, detalhando os passos necessários para garantir consistência temporal, qualidade de dados e preparação para consumo analítico e machine learning.
 
+Todos os nomes de colunas referenciados neste documento correspondem ao DDL implementado nas tabelas Iceberg.
+
 ---
 
 # 2. Bronze → Silver (Consumo)
 
 ## Origem
-- `bronze.consumo_raw`
+`iceberg.bronze.consumo_raw`
 
 ## Destino
-- `silver.consumo_hourly`
+`iceberg.silver.consumo_hourly`
 
 ## Passos de transformação
 
-### 1. Parsing do timestamp
-- converter `datahora_raw` para tipo TIMESTAMP
-- validar formato e consistência
+### 1. Truncagem temporal
+- Truncar `datahora` (TIMESTAMP WITH TIME ZONE) à hora: `DATE_TRUNC('hour', datahora)`
+- O resultado torna-se `ts_utc` em Silver — chave horária canónica em UTC
 
-### 2. Normalização temporal
-- garantir que o timestamp está corretamente interpretado
-- definir como `timestamp_utc`
+### 2. Agregação temporal
+- Agrupar por `ts_utc` (hora truncada)
+- `total_mwh = SUM(total) / 1000`
+  - `total` em Bronze está em kW (intervalos de 15 min)
+  - Dividir por 1000 converte para MWh
 
-### 3. Agregação temporal
-- agrupar por hora (`timestamp_utc` truncado à hora)
-- calcular:
-  - `consumo_total = SUM(total)`
+### 3. Derivação de colunas de partição
+- `year = YEAR(ts_utc)`
+- `month = MONTH(ts_utc)`
 
-### 4. Derivação de colunas de calendário
-- `year`, `month`, `day`, `hour`
+### 4. Idempotência
+- DELETE das linhas da partição `year`/`month` antes de INSERT
+- Garante reprocessamento seguro
 
-### 5. Colunas de controlo
-- `source_min_ts = MIN(timestamp_origem)`
-- `source_max_ts = MAX(timestamp_origem)`
-- `source_rows = COUNT(*)`
+## Regras de qualidade pós-transformação
+- Cada hora deve ter ~4 registos de origem (intervalo 15 min)
+- `total_mwh >= 0`
+- `ts_utc` único após agregação
+- Sem nulos em `ts_utc` ou `total_mwh`
 
-### 6. Metadados técnicos
-- adicionar `process_date`
-
----
-
-## Regras de qualidade
-
-- cada hora deve ter aproximadamente 4 registos de origem (15 min)
-- `consumo_total >= 0`
-- ausência de timestamps duplicados após agregação
-- identificação de horas incompletas
+## Colunas descartadas
+`dia`, `mes`, `ano`, `date_raw`, `time_raw`, `bt`, `mt`, `at`, `mat`, `process_date`
 
 ---
 
 # 3. Bronze → Silver (Preço)
 
 ## Origem
-- `bronze.preco_raw`
+`iceberg.bronze.preco_raw`
 
 ## Destino
-- `silver.preco_hourly`
+`iceberg.silver.preco_hourly`
 
 ## Passos de transformação
 
-### 1. Limpeza inicial
-- ignorar linhas inválidas ou metadata não tabular
-- garantir que `date_raw` e `hour_raw` são válidos
+### 1. Filtragem de horas especiais DST
+- Excluir linhas com `hour = 25` (hora extra em mudança DST de outono — sem correspondência UTC válida)
 
-### 2. Parsing da data
-- converter `date_raw` para DATE
+### 2. Construção do timestamp UTC
+- `ts_utc = CAST(date_raw AS DATE) + INTERVAL (hour - 1) HOURS`
+- A numeração OMIE começa em 1 (hora 1 = 00:00 UTC), por isso subtrai-se 1
 
-### 3. Interpretação da hora
-- `hour_raw` representa hora no intervalo:
-  - normal: 1–24
-  - casos especiais: 25 (mudança DST)
+### 3. Seleção de métricas
+- `price_portugal_eur_mwh = price_portugal_raw`
+- `price_spain_eur_mwh = price_spain_raw` (mantido para análise comparativa)
 
-### 4. Construção do timestamp
-- `timestamp_local = date_raw + (hour_raw - 1) horas`
-- tratar casos especiais:
-  - hora 25 → duplicação controlada ou ajuste
-- converter para `timestamp_utc`
+### 4. Derivação de colunas de partição
+- `year = YEAR(ts_utc)`
+- `month = MONTH(ts_utc)`
 
-### 5. Seleção de métricas
-- `market_price_pt = portugal_price`
+### 5. Idempotência
+- DELETE das linhas da partição `year`/`month` antes de INSERT
 
-### 6. Derivação de colunas de calendário
-- `year`, `month`, `day`, `hour`
+## Regras de qualidade pós-transformação
+- `ts_utc` único e no limite da hora (minuto=0, segundo=0)
+- `price_portugal_eur_mwh` NOT NULL
+- Coerência entre `date_raw`/`hour` Bronze e `ts_utc` Silver
 
-### 7. Metadados técnicos
-- `process_date`
-
----
-
-## Regras de qualidade
-
-- `timestamp_utc` único
-- ausência de valores nulos em `market_price_pt`
-- valores dentro de intervalo plausível
-- coerência entre data/hora original e timestamp final
+## Colunas descartadas
+`process_date` (partição passa a ser por `year`/`month`)
 
 ---
 
 # 4. Silver → Gold (Produto Analítico)
 
 ## Origem
-- `silver.consumo_hourly`
-- `silver.preco_hourly`
+- `iceberg.silver.consumo_hourly`
+- `iceberg.silver.preco_hourly`
 
 ## Destino
-- `gold.dp_energy_market_hourly`
+`iceberg.gold.dp_energy_market_hourly`
 
 ## Passos de transformação
 
 ### 1. Join temporal
-- join INNER por `timestamp_utc`
+- `INNER JOIN silver.consumo_hourly c ON c.ts_utc = p.ts_utc`
+- Apenas horas com dados em ambas as tabelas são incluídas
 
-### 2. Validação do join
-- garantir correspondência 1:1
-- identificar e analisar perdas de registos
+### 2. Derivação de colunas de calendário
+- `hora = HOUR(ts_utc)`  (0–23)
+- `dia_semana = DAY_OF_WEEK(ts_utc) - 1`  (0=Segunda … 6=Domingo)
+- `is_weekend = (dia_semana >= 5)`
 
-### 3. Derivação de colunas de calendário
-- `date`
-- `day_of_week`
-- `is_weekend`
+### 3. Cálculo de lags (window functions sobre Silver completo)
+- As window functions são calculadas sobre o histórico Silver completo (sem filtro de data) para garantir valores corretos nas fronteiras de partição:
+  ```sql
+  LAG(consumo_total, 1)  OVER (ORDER BY ts_utc) AS consumo_lag_1h
+  LAG(consumo_total, 24) OVER (ORDER BY ts_utc) AS consumo_lag_24h
+  LAG(market_price_pt, 1) OVER (ORDER BY ts_utc) AS price_lag_1h
+  ```
 
-### 4. Cálculo de lags
-- ordenar por `timestamp_utc`
-- calcular:
-  - `consumo_lag_1h`
-  - `consumo_lag_24h`
-  - `price_lag_1h`
+### 4. Cálculo de rolling averages (window functions sobre Silver completo)
+  ```sql
+  AVG(consumo_total)   OVER (ORDER BY ts_utc ROWS BETWEEN 23 PRECEDING AND CURRENT ROW) AS rolling_avg_consumo_24h
+  AVG(market_price_pt) OVER (ORDER BY ts_utc ROWS BETWEEN 23 PRECEDING AND CURRENT ROW) AS rolling_avg_price_24h
+  ```
 
-### 5. Cálculo de rolling averages
-- janelas móveis de 24h:
-  - `rolling_avg_consumo_24h`
-  - `rolling_avg_price_24h`
+### 5. Metadados técnicos
+- `process_date = CURRENT_DATE`
+- `year = YEAR(ts_utc)`, `month = MONTH(ts_utc)` (partição)
 
-### 6. Metadados técnicos
-- adicionar `process_date`
+### 6. Idempotência
+- DELETE por `year`/`month` antes de INSERT
 
----
+## Renomeações Silver → Gold
 
-## Regras de qualidade
+| Silver                        | Gold               |
+|-------------------------------|--------------------|
+| `total_mwh`                   | `consumo_total`    |
+| `price_portugal_eur_mwh`      | `market_price_pt`  |
 
-- ausência de duplicações após join
-- correspondência temporal completa entre datasets
-- validação de valores nulos nas métricas principais
-- coerência dos valores derivados
+## Regras de qualidade pós-transformação
+- `ts_utc` NOT NULL e único
+- `consumo_total` e `market_price_pt` NOT NULL
+- `hora` em [0, 23], `dia_semana` em [0, 6]
+- Nulos em lags/rolling são válidos nas primeiras observações da série
 
 ---
 
 # 5. Gold → Gold (Feature Table ML)
 
 ## Origem
-- `gold.dp_energy_market_hourly`
+`iceberg.gold.dp_energy_market_hourly`
 
 ## Destino
-- `gold.feat_load_forecasting_hourly`
+`iceberg.gold.feat_load_forecasting_hourly`
 
 ## Passos de transformação
 
-### 1. Seleção de colunas
-- selecionar apenas features relevantes
+### 1. Derivação do target
+```sql
+LEAD(consumo_total, 1) OVER (ORDER BY ts_utc) AS consumo_next_hour
+```
 
-### 2. Criação do target
-- `consumo_next_hour = consumo_total` deslocado -1h
+### 2. Filtragem de registos inválidos
+- Remover linhas com `consumo_next_hour IS NULL` (última hora de cada partição)
+- Remover linhas com nulos em qualquer feature de lag/rolling (primeiras 24h da série)
 
-### 3. Filtragem
-- remover:
-  - última linha (sem target)
-  - linhas com nulos nas features
+### 3. Seleção de colunas
+- Todas as colunas do `dp_energy_market_hourly` mais `consumo_next_hour`
+- Colunas excluídas: nenhuma (a feature table é um superset do dp com o target adicionado)
 
 ### 4. Ordenação
-- ordenar por `timestamp_utc`
+- Ordenar por `ts_utc` crescente
 
-### 5. Metadados técnicos
-- manter `process_date`
+### 5. Idempotência
+- DELETE por `year`/`month` antes de INSERT
 
----
-
-## Regras de qualidade
-
-- ausência de nulos nas features finais
-- target consistente com série temporal
-- correspondência correta entre features e target
-- dataset pronto para treino sem pré-processamento adicional
+## Regras de qualidade pós-transformação
+- `consumo_next_hour` NOT NULL em todos os registos
+- Ausência de nulos em todas as 11 features
+- `ts_utc` único
+- Paridade com `dp_energy_market_hourly` com diferença ≤ 48 linhas
 
 ---
 
 # 6. Fluxo global
 
-## Sequência de execução
-
-1. Ingestão → Bronze
-2. Bronze → Silver (consumo)
-3. Bronze → Silver (preço)
-4. Silver → Gold (produto analítico)
-5. Gold → Gold (feature table)
+```
+CSV REN (consumo 15min)  ──┐
+                            ├─[bronze_clean_upload]──► bronze.consumo_raw
+CSV OMIE (preços horários) ─┘                                │
+                                                             │
+bronze.preco_raw ◄──────────────────────────────────────────┘
+        │
+        ├─[flyte_bronze_to_silver]─► silver.consumo_hourly (ts_utc, total_mwh)
+        │                             silver.preco_hourly  (ts_utc, price_portugal_eur_mwh, price_spain_eur_mwh)
+        │
+        ├─[quality_gate_silver]────► checks: null, unique, boundary, join coverage
+        │
+        ├─[flyte_silver_to_gold]──► gold.dp_energy_market_hourly
+        │                             (ts_utc, consumo_total, market_price_pt, hora, dia_semana, ...)
+        │                            gold.feat_load_forecasting_hourly
+        │                             (+ consumo_next_hour)
+        │
+        └─[quality_gate_gold]─────► checks: null, unique, lag consistency, row parity
+```
 
 ---
 
 # 7. Princípios de transformação
 
-- transformar o mínimo necessário em cada camada
-- garantir consistência temporal antes de qualquer join
-- separar claramente limpeza, integração e consumo
-- evitar lógica de negócio na camada Bronze
-- manter reprodutibilidade e determinismo das transformações
+- Transformar o mínimo necessário em cada camada
+- Garantir consistência temporal (UTC canónico) antes de qualquer join
+- Separar claramente limpeza (Silver), integração e feature engineering (Gold)
+- Evitar lógica de negócio na camada Bronze
+- Calcular window functions sobre histórico completo para evitar erros nas fronteiras de partição
+- Garantir idempotência: DELETE + INSERT por partição natural de cada camada
+- Manter reprodutibilidade: o mesmo `process_date` deve produzir o mesmo resultado

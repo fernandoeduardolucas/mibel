@@ -39,7 +39,8 @@ RAW_BUCKET       = os.getenv("RAW_BUCKET", "warehouse")
 CONSUMO_KEY      = "raw/consumo-total-nacional.csv"
 PRECO_KEY        = os.getenv("PRECO_KEY", "raw/Day-ahead Market Prices_20230101_20260311.csv")
 
-BATCH_SIZE = 500  # linhas por INSERT para evitar payloads excessivos
+BATCH_SIZE = 5000  # linhas por INSERT para evitar payloads excessivos
+MAX_PARTITIONS_PER_INSERT = 60  # abaixo do limite habitual do Trino/Iceberg
 
 
 def _trino_conn() -> trino.dbapi.Connection:
@@ -69,6 +70,54 @@ def _insert_batches(cur, table: str, columns: str, rows: list[str]) -> int:
         cur.execute(f"INSERT INTO {table} ({columns}) VALUES {', '.join(batch)}")
         cur.fetchall()
         inserted += len(batch)
+    return inserted
+
+
+def _insert_partition_batches(
+    cur,
+    table: str,
+    columns: str,
+    daily_rows: list[tuple[date | str, list[str]]],
+) -> int:
+    """
+    Executa INSERTs agrupando vários dias por statement.
+
+    Mantém o número de partições por INSERT controlado para evitar o limite de
+    writers do Trino/Iceberg, mas reduz bastante o número de commits face a
+    inserir dia a dia.
+    """
+    inserted = 0
+    batch_rows: list[str] = []
+    batch_partitions: set[str] = set()
+
+    def flush() -> None:
+        nonlocal inserted, batch_rows, batch_partitions
+        if not batch_rows:
+            return
+        cur.execute(f"INSERT INTO {table} ({columns}) VALUES {', '.join(batch_rows)}")
+        cur.fetchall()
+        inserted += len(batch_rows)
+        print(
+            f"[insert] {table}: {len(batch_rows)} linhas, "
+            f"{len(batch_partitions)} partições"
+        )
+        batch_rows = []
+        batch_partitions = set()
+
+    for partition, rows in daily_rows:
+        partition_key = str(partition)
+        would_exceed_partitions = (
+            partition_key not in batch_partitions
+            and len(batch_partitions) >= MAX_PARTITIONS_PER_INSERT
+        )
+        would_exceed_rows = len(batch_rows) + len(rows) > BATCH_SIZE
+        if would_exceed_partitions or would_exceed_rows:
+            flush()
+
+        batch_partitions.add(partition_key)
+        batch_rows.extend(rows)
+
+    flush()
     return inserted
 
 
@@ -268,7 +317,7 @@ def ingest_consumo_full() -> int:
     _exec(cur, "DELETE FROM iceberg.bronze.consumo_raw WHERE 1=1")
 
     cols = "datahora, dia, mes, ano, date_raw, time_raw, bt, mt, at, mat, total, process_date"
-    total = 0
+    daily_rows: list[tuple[date, list[str]]] = []
     for proc, df_day in df.groupby("_date"):
         rows = []
         for _, r in df_day.iterrows():
@@ -288,8 +337,10 @@ def ingest_consumo_full() -> int:
                 f"{_float(r.get('total', 'NULL'))}, "
                 f"DATE '{proc}')"
             )
-        total += _insert_batches(cur, "iceberg.bronze.consumo_raw", cols, rows)
-        print(f"[consumo_full] {proc}: {len(rows)} registos inseridos.")
+        daily_rows.append((proc, rows))
+        print(f"[consumo_full] preparado {proc}: {len(rows)} registos.")
+
+    total = _insert_partition_batches(cur, "iceberg.bronze.consumo_raw", cols, daily_rows)
 
     conn.close()
     print(f"[consumo_full] Total: {total} registos inseridos.")
@@ -330,7 +381,7 @@ def ingest_preco_full() -> int:
     _exec(cur, "DELETE FROM iceberg.bronze.preco_raw WHERE 1=1")
 
     cols = "date_raw, hour, price_portugal_raw, price_spain_raw, process_date"
-    total = 0
+    daily_rows: list[tuple[str, list[str]]] = []
     for proc, df_day in df.groupby("date_raw"):
         rows = []
         for _, r in df_day.iterrows():
@@ -353,8 +404,10 @@ def ingest_preco_full() -> int:
                 f"('{r['date_raw']}', {hour_val}, {pt}, {es}, DATE '{r['date_raw']}')"
             )
         if rows:
-            total += _insert_batches(cur, "iceberg.bronze.preco_raw", cols, rows)
-            print(f"[preco_full] {proc}: {len(rows)} registos inseridos.")
+            daily_rows.append((proc, rows))
+            print(f"[preco_full] preparado {proc}: {len(rows)} registos.")
+
+    total = _insert_partition_batches(cur, "iceberg.bronze.preco_raw", cols, daily_rows)
 
     conn.close()
     print(f"[preco_full] Total: {total} registos inseridos.")

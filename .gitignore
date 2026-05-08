@@ -1,43 +1,43 @@
-# Python virtual environments
-.venv/
+# Virtual environments
+.venv*/
 venv/
 env/
 ENV/
-*/.venv/
 
-# Python bytecode and caches
+# Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
 *.so
+
+# Tooling
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .ipynb_checkpoints/
+.python-version
 
-# Build and packaging
+# Coverage
+.coverage
+htmlcov/
+coverage/
+
+# Packaging
 build/
 dist/
 *.egg-info/
 .eggs/
 
-# Logs and local databases
+# Logs / local DB
 *.log
 *.sqlite3
 
-# IDE and editor files
+# IDEs
 .idea/
 .vscode/
 
-# OS-generated files
+# OS
 .DS_Store
 Thumbs.db
 
-# Project-specific
-/02_medallion_pipeline/producao_consumo/.venv_medallion/
-/02_medallion_pipeline/consumo_preco/.venv_medallion/
-
-# Local clean data outputs
-/02_medallion_pipeline/producao_consumo/01_bronze/data/clean/
-/02_medallion_pipeline/consumo_preco/01_bronze/data/clean/
+# Generated data
+**/data/clean/

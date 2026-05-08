@@ -2,27 +2,26 @@
 """
 Orquestrador completo da pipeline Medallion — consumo_preco (Opção B: Flyte + Iceberg nativo).
 
-Fluxo:
+Fluxo (modo --full, sem parâmetros de data):
   1. Verifica pré-requisitos (Docker, Flyte sandbox, Python)
   2. Sobe stack Docker Compose (se não estiver a correr)
   3. Espera Trino disponível
   4. Cria/instala venv local com dependências Flyte
   5. Aplica DDL via Trino CLI (cria schemas e tabelas Iceberg se não existirem)
-  6. Executa ingestão Bronze por data (pyflyte run flyte_ingest_bronze.py)
-  7. Quality gate Bronze
-  8. Executa transformação Silver por mês (pyflyte run flyte_bronze_to_silver.py)
-  9. Quality gate Silver
- 10. Executa transformação Gold por mês (pyflyte run flyte_silver_to_gold.py)
- 11. Quality gate Gold
- 12. Validação final: COUNT das tabelas Gold
+  6. Executa ingestão Bronze COMPLETA (ingest_bronze_full — lê CSVs na íntegra)
+  7. Deteta automaticamente os meses presentes no Bronze
+  8. Para cada mês: Bronze → Silver → Gold
+  9. Quality gates finais (Bronze, Silver, Gold)
+ 10. Validação final: COUNT das tabelas Gold
 
-Execução rápida (um mês):
-    python run_medallion_consumo_precos.py --year 2023 --month 1 --date 2023-01-01
+Execução rápida (tudo de uma vez):
+    python run_medallion_consumo_precos.py --full --skip-docker --skip-ddl
 
-Execução de múltiplos meses (loop externo):
-    python run_medallion_consumo_precos.py --year 2023 --month 1 --date 2023-01-01
-    python run_medallion_consumo_precos.py --year 2023 --month 2 --date 2023-02-01
-    ...
+Execução completa (inclui Docker e DDL):
+    python run_medallion_consumo_precos.py --full
+
+Execução de um mês específico:
+    python run_medallion_consumo_precos.py --year 2023 --month 1
 
 Flags úteis:
     --skip-docker   não faz compose up (stack já a correr)
@@ -36,6 +35,7 @@ from __future__ import annotations
 import argparse
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -163,16 +163,17 @@ def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
 def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str) -> None:
     print(f"\n>>> DDL {stage_name}: {sql_file.name}")
     sql_text = sql_file.read_text(encoding="utf-8")
+    # Remove comentários de linha para evitar caracteres Unicode problemáticos no Windows
+    sql_clean = re.sub(r'--[^\n]*', '', sql_text)
     # Divide em statements individuais e executa cada um (Trino CLI executa 1 statement por vez)
-    statements = [s.strip() for s in sql_text.split(";") if s.strip()]
+    statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
     for stmt in statements:
         subprocess.run(
             [
                 "docker", "compose", "-f", str(compose_file),
                 "exec", "-T", "trino", "trino",
             ],
-            input=stmt + ";",
-            text=True,
+            input=(stmt + ";").encode("utf-8"),
             capture_output=True,  # DDL é idempotente (IF NOT EXISTS); ignora erros menores
         )
     print(f"    DDL {stage_name} aplicado.")
@@ -202,6 +203,48 @@ def pyflyte_run(
 
 
 # ---------------------------------------------------------------------------
+# Trino helper — deteta meses presentes na Bronze
+# ---------------------------------------------------------------------------
+
+def detect_months_from_bronze(compose_file: Path) -> list[tuple[int, int]]:
+    """
+    Consulta o Trino para obter a lista de (year, month) distintos
+    presentes em iceberg.bronze.consumo_raw.
+    Retorna lista ordenada de tuplos (year, month).
+    """
+    sql = (
+        "SELECT DISTINCT YEAR(process_date) AS y, MONTH(process_date) AS m "
+        "FROM iceberg.bronze.consumo_raw "
+        "ORDER BY y, m;"
+    )
+    result = subprocess.run(
+        [
+            "docker", "compose", "-f", str(compose_file),
+            "exec", "-T", "trino", "trino",
+            "--output-format", "TSV_HEADER",
+            "--execute", sql,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    months = []
+    if result.returncode != 0:
+        print(f"[AVISO] Não foi possível detetar meses no Bronze: {result.stderr.strip()}")
+        return months
+
+    lines = result.stdout.strip().splitlines()
+    # Primeira linha é o cabeçalho (y\tm)
+    for line in lines[1:]:
+        parts = line.strip().split("\t")
+        if len(parts) == 2:
+            try:
+                months.append((int(parts[0]), int(parts[1])))
+            except ValueError:
+                continue
+    return months
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -209,11 +252,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Orquestrador Medallion consumo_preco (Opção B: Flyte + Iceberg nativo)"
     )
-    parser.add_argument("--year",  type=int, required=True, help="Ano a processar (ex: 2023)")
-    parser.add_argument("--month", type=int, required=True, help="Mês a processar (1-12)")
+    parser.add_argument("--full", action="store_true",
+                        help="Carrega a totalidade dos dados raw (sem indicar datas)")
+    parser.add_argument("--year",  type=int, help="Ano a processar (ex: 2023) — ignorado com --full")
+    parser.add_argument("--month", type=int, help="Mês a processar (1-12) — ignorado com --full")
     parser.add_argument(
         "--date", type=str,
-        help="Data de ingestão Bronze no formato YYYY-MM-DD (padrão: primeiro dia do mês)"
+        help="Data de ingestão Bronze YYYY-MM-DD (ignorado com --full)"
     )
     parser.add_argument("--build",        action="store_true", help="faz --build no compose up")
     parser.add_argument("--skip-docker",  action="store_true", help="salta o compose up")
@@ -221,9 +266,11 @@ def main() -> None:
     parser.add_argument("--no-quality",   action="store_true", help="salta os quality gates")
     args = parser.parse_args()
 
-    year  = args.year
-    month = args.month
-    process_date = args.date or f"{year}-{month:02d}-01"
+    if not args.full and (args.year is None or args.month is None):
+        raise SystemExit(
+            "Erro: usa --full para carregar tudo automaticamente, "
+            "ou indica --year e --month para um mês específico."
+        )
 
     pipeline_root = Path(__file__).resolve().parent
     repo_root     = pipeline_root.parent.parent
@@ -261,8 +308,7 @@ def main() -> None:
     if requirements.exists():
         run([str(venv_python), "-m", "pip", "install", "-r", str(requirements), "-q"])
     else:
-        # fallback: instala pacotes mínimos
-        run([str(venv_python), "-m", "pip", "install", "flytekit", "trino", "boto3", "-q"])
+        run([str(venv_python), "-m", "pip", "install", "flytekit", "trino", "boto3", "pandas", "-q"])
 
     # --- Docker compose up ---
     if not args.skip_docker:
@@ -286,7 +332,119 @@ def main() -> None:
     else:
         print("\n>>> --skip-ddl: DDL ignorado.")
 
-    # --- Bronze ingest ---
+    # =========================================================================
+    # MODO --full : lê os CSVs na íntegra, sem especificar datas
+    # =========================================================================
+    if args.full:
+        # --- Fase 1: Bronze ingest COMPLETO ---
+        print("\n" + "=" * 60)
+        print("FASE 1 — Bronze ingest COMPLETO (todos os dados raw)")
+        print("=" * 60)
+        pyflyte_run(
+            venv_python, workflows_dir,
+            "flyte_ingest_bronze.py", "ingest_bronze_full",
+            {},
+        )
+
+        # --- Quality gate Bronze ---
+        if not args.no_quality:
+            print("\n" + "=" * 60)
+            print("QUALITY GATE — Bronze")
+            print("=" * 60)
+            pyflyte_run(
+                venv_python, workflows_dir,
+                "flyte_quality_checks.py", "quality_gate_bronze",
+                {},
+            )
+
+        # --- Deteta meses no Bronze ---
+        print("\n>>> A detetar meses presentes no Bronze...")
+        months = detect_months_from_bronze(compose_file)
+        if not months:
+            raise SystemExit(
+                "Erro: não foi possível detetar meses no Bronze. "
+                "Verifica se a ingestão correu corretamente."
+            )
+        print(f">>> {len(months)} meses encontrados: "
+              f"{months[0][0]}-{months[0][1]:02d} → {months[-1][0]}-{months[-1][1]:02d}")
+
+        # --- Fase 2 + 3: Silver e Gold mês a mês ---
+        for idx, (year, month) in enumerate(months, 1):
+            process_date = f"{year}-{month:02d}-01"
+            print("\n" + "=" * 60)
+            print(f"[{idx}/{len(months)}] Silver + Gold  {year}-{month:02d}")
+            print("=" * 60)
+
+            pyflyte_run(
+                venv_python, workflows_dir,
+                "flyte_bronze_to_silver.py", "bronze_to_silver",
+                {"process_date": process_date},
+            )
+            pyflyte_run(
+                venv_python, workflows_dir,
+                "flyte_silver_to_gold.py", "silver_to_gold",
+                {"year": str(year), "month": str(month)},
+            )
+
+        # --- Quality gates Silver e Gold ---
+        if not args.no_quality:
+            print("\n" + "=" * 60)
+            print("QUALITY GATE — Silver")
+            print("=" * 60)
+            pyflyte_run(
+                venv_python, workflows_dir,
+                "flyte_quality_checks.py", "quality_gate_silver",
+                {},
+            )
+            print("\n" + "=" * 60)
+            print("QUALITY GATE — Gold")
+            print("=" * 60)
+            pyflyte_run(
+                venv_python, workflows_dir,
+                "flyte_quality_checks.py", "quality_gate_gold",
+                {},
+            )
+
+        # --- Validação final ---
+        print("\n" + "=" * 60)
+        print("VALIDAÇÃO FINAL — contagem Gold (total)")
+        print("=" * 60)
+        validation_sql = (
+            "SELECT 'dp_energy_market_hourly' AS tabela, COUNT(*) AS total_linhas "
+            "FROM iceberg.gold.dp_energy_market_hourly "
+            "UNION ALL "
+            "SELECT 'feat_load_forecasting_hourly', COUNT(*) "
+            "FROM iceberg.gold.feat_load_forecasting_hourly;"
+        )
+        subprocess.run(
+            [
+                "docker", "compose", "-f", str(compose_file),
+                "exec", "-T", "trino", "trino",
+                "--execute", validation_sql,
+            ],
+            text=True,
+        )
+
+        first_year,  first_month  = months[0]
+        last_year,   last_month   = months[-1]
+        print(f"\n{'=' * 60}")
+        print(f"Pipeline Medallion consumo_preco concluída com sucesso!")
+        print(f"  Período  : {first_year}-{first_month:02d} → {last_year}-{last_month:02d}")
+        print(f"  Meses    : {len(months)}")
+        print(f"  Bronze   : bronze.consumo_raw + bronze.preco_raw")
+        print(f"  Silver   : silver.consumo_hourly + silver.preco_hourly")
+        print(f"  Gold     : gold.dp_energy_market_hourly + gold.feat_load_forecasting_hourly")
+        print(f"{'=' * 60}\n")
+        return
+
+    # =========================================================================
+    # MODO mês específico (--year / --month)
+    # =========================================================================
+    year  = args.year
+    month = args.month
+    process_date = args.date or f"{year}-{month:02d}-01"
+
+    # --- Bronze ingest (um dia / data de referência) ---
     print("\n" + "=" * 60)
     print(f"FASE 1 — Bronze ingest  (date={process_date})")
     print("=" * 60)
@@ -353,22 +511,21 @@ def main() -> None:
     print("\n" + "=" * 60)
     print("VALIDAÇÃO FINAL — contagem Gold")
     print("=" * 60)
-    validation_sql = f"""
-SELECT 'dp_energy_market_hourly'    AS tabela, COUNT(*) AS total_linhas
-FROM iceberg.gold.dp_energy_market_hourly
-WHERE year = {year} AND month = {month}
-UNION ALL
-SELECT 'feat_load_forecasting_hourly', COUNT(*)
-FROM iceberg.gold.feat_load_forecasting_hourly
-WHERE year = {year} AND month = {month};
-""".strip()
-
+    validation_sql = (
+        f"SELECT 'dp_energy_market_hourly' AS tabela, COUNT(*) AS total_linhas "
+        f"FROM iceberg.gold.dp_energy_market_hourly "
+        f"WHERE year = {year} AND month = {month} "
+        f"UNION ALL "
+        f"SELECT 'feat_load_forecasting_hourly', COUNT(*) "
+        f"FROM iceberg.gold.feat_load_forecasting_hourly "
+        f"WHERE year = {year} AND month = {month};"
+    )
     subprocess.run(
         [
             "docker", "compose", "-f", str(compose_file),
             "exec", "-T", "trino", "trino",
+            "--execute", validation_sql,
         ],
-        input=validation_sql,
         text=True,
     )
 

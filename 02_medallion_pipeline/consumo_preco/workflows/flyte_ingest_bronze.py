@@ -28,10 +28,10 @@ from flytekit import task, workflow
 # ---------------------------------------------------------------------------
 # Configuração (via variáveis de ambiente para portabilidade)
 # ---------------------------------------------------------------------------
-TRINO_HOST       = os.getenv("TRINO_HOST", "host.docker.internal")
+TRINO_HOST       = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT       = int(os.getenv("TRINO_PORT", "8080"))
 
-MINIO_ENDPOINT   = os.getenv("MINIO_ENDPOINT", "http://host.docker.internal:9000")
+MINIO_ENDPOINT   = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 RAW_BUCKET       = os.getenv("RAW_BUCKET", "warehouse")

@@ -24,7 +24,7 @@ from datetime import date
 import trino
 from flytekit import task, workflow
 
-TRINO_HOST = os.getenv("TRINO_HOST", "host.docker.internal")
+TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
 

@@ -25,7 +25,7 @@ import trino
 from flytekit import task, workflow
 from flytekit.exceptions.user import FlyteRecoverableException
 
-TRINO_HOST = os.getenv("TRINO_HOST", "host.docker.internal")
+TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
 # Ficheiros SQL em 04_quality/sql/ relativo à raiz do sub-pipeline consumo_preco

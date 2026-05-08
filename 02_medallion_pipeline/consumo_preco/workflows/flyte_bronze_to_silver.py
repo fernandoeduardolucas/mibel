@@ -5,8 +5,11 @@ Agrega consumo de 15 min para horário (kW → MWh) e normaliza preços
 para timestamp UTC. Ambas as tarefas são parametrizadas por process_date
 e são idempotentes ao nível diário (DELETE + INSERT no mesmo dia lógico).
 
-Execução:
+Execução diária:
     pyflyte run workflows/flyte_bronze_to_silver.py bronze_to_silver --process_date 2023-01-01
+
+Execução completa:
+    pyflyte run workflows/flyte_bronze_to_silver.py bronze_to_silver_full
 
 Backfill (exemplo em bash):
     for d in $(seq 0 364); do
@@ -168,7 +171,86 @@ def transform_preco_silver(process_date: date) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Workflow
+# Task 3: consumo Bronze → Silver completo
+# ---------------------------------------------------------------------------
+@task(retries=3)
+def transform_consumo_silver_full() -> int:
+    """
+    Agrega todo o histórico de consumo Bronze para Silver.
+
+    Idempotente para execução full: limpa a tabela Silver de consumo e volta a
+    materializar todas as horas disponíveis no ficheiro raw de consumo.
+    """
+    conn = _trino_conn()
+    cur = conn.cursor()
+
+    _exec(cur, "DELETE FROM iceberg.silver.consumo_hourly WHERE 1=1")
+
+    _exec(cur, """
+        INSERT INTO iceberg.silver.consumo_hourly (ts_utc, total_mwh, year, month)
+        SELECT
+            DATE_TRUNC('hour', datahora)        AS ts_utc,
+            SUM(total) / 1000.0                 AS total_mwh,
+            YEAR(DATE_TRUNC('hour', datahora))  AS year,
+            MONTH(DATE_TRUNC('hour', datahora)) AS month
+        FROM iceberg.bronze.consumo_raw
+        GROUP BY DATE_TRUNC('hour', datahora)
+    """)
+
+    cur.execute("SELECT COUNT(*) FROM iceberg.silver.consumo_hourly")
+    n = cur.fetchone()[0]
+    conn.close()
+    print(f"[silver consumo full] {n} horas inseridas.")
+    return n
+
+
+# ---------------------------------------------------------------------------
+# Task 4: preços Bronze → Silver completo
+# ---------------------------------------------------------------------------
+@task(retries=3)
+def transform_preco_silver_full() -> int:
+    """
+    Normaliza todo o histórico de preços Bronze para Silver.
+
+    Idempotente para execução full: limpa a tabela Silver de preços e volta a
+    materializar todas as horas disponíveis no ficheiro raw de preços.
+    """
+    conn = _trino_conn()
+    cur = conn.cursor()
+
+    _exec(cur, "DELETE FROM iceberg.silver.preco_hourly WHERE 1=1")
+
+    _exec(cur, """
+        INSERT INTO iceberg.silver.preco_hourly
+            (ts_utc, price_portugal_eur_mwh, price_spain_eur_mwh, year, month)
+        SELECT
+            ts_utc,
+            ROUND(AVG(price_portugal_raw), 2) AS price_portugal_eur_mwh,
+            ROUND(AVG(price_spain_raw), 2)    AS price_spain_eur_mwh,
+            YEAR(ts_utc)                      AS year,
+            MONTH(ts_utc)                     AS month
+        FROM (
+            SELECT
+                date_add('hour', hour - 1,
+                    CAST(DATE_PARSE(date_raw, '%Y-%m-%d') AS TIMESTAMP(6))
+                ) AT TIME ZONE 'UTC'  AS ts_utc,
+                price_portugal_raw,
+                price_spain_raw
+            FROM iceberg.bronze.preco_raw
+            WHERE hour BETWEEN 1 AND 24
+        ) AS normalized
+        GROUP BY ts_utc
+    """)
+
+    cur.execute("SELECT COUNT(*) FROM iceberg.silver.preco_hourly")
+    n = cur.fetchone()[0]
+    conn.close()
+    print(f"[silver preco full] {n} horas inseridas.")
+    return n
+
+
+# ---------------------------------------------------------------------------
+# Workflows
 # ---------------------------------------------------------------------------
 @workflow
 def bronze_to_silver(process_date: date = date(2023, 1, 1)) -> None:
@@ -181,3 +263,15 @@ def bronze_to_silver(process_date: date = date(2023, 1, 1)) -> None:
     """
     transform_consumo_silver(process_date=process_date)
     transform_preco_silver(process_date=process_date)
+
+
+@workflow
+def bronze_to_silver_full() -> None:
+    """
+    Transforma Bronze → Silver para todo o período disponível nos dois raw files.
+
+    Execução:
+        pyflyte run workflows/flyte_bronze_to_silver.py bronze_to_silver_full
+    """
+    transform_consumo_silver_full()
+    transform_preco_silver_full()

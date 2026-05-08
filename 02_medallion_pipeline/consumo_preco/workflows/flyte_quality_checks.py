@@ -19,6 +19,7 @@ Execução standalone:
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import trino
@@ -67,8 +68,12 @@ def _run_checks(layer: str) -> list[dict]:
 
     raw_sql = sql_path.read_text(encoding="utf-8")
 
-    # Extrai apenas o primeiro statement (bloco UNION ALL com ORDER BY final)
-    summary_sql = raw_sql.split(";", 1)[0].strip()
+    # Extrai apenas o primeiro statement (bloco UNION ALL com ORDER BY final).
+    # Usa versão sem comentários para localizar o ';' real — evita falsos positivos
+    # em linhas de comentário (ex: "-- aceite como extra; threshold de 23").
+    sql_no_comments = re.sub(r"--[^\n]*", "", raw_sql)
+    first_semi = sql_no_comments.find(";")
+    summary_sql = (sql_no_comments[:first_semi] if first_semi != -1 else sql_no_comments).strip()
 
     conn = _trino_conn()
     cur = conn.cursor()

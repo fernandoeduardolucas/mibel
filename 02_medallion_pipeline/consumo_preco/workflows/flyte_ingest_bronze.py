@@ -104,6 +104,54 @@ def _insert_partition_batches(
     return inserted
 
 
+def _insert_partition_batches(
+    cur,
+    table: str,
+    columns: str,
+    daily_rows: list[tuple[date | str, list[str]]],
+) -> int:
+    """
+    Executa INSERTs agrupando vários dias por statement.
+
+    Mantém o número de partições por INSERT controlado para evitar o limite de
+    writers do Trino/Iceberg, mas reduz bastante o número de commits face a
+    inserir dia a dia.
+    """
+    inserted = 0
+    batch_rows: list[str] = []
+    batch_partitions: set[str] = set()
+
+    def flush() -> None:
+        nonlocal inserted, batch_rows, batch_partitions
+        if not batch_rows:
+            return
+        cur.execute(f"INSERT INTO {table} ({columns}) VALUES {', '.join(batch_rows)}")
+        cur.fetchall()
+        inserted += len(batch_rows)
+        print(
+            f"[insert] {table}: {len(batch_rows)} linhas, "
+            f"{len(batch_partitions)} partições"
+        )
+        batch_rows = []
+        batch_partitions = set()
+
+    for partition, rows in daily_rows:
+        partition_key = str(partition)
+        would_exceed_partitions = (
+            partition_key not in batch_partitions
+            and len(batch_partitions) >= MAX_PARTITIONS_PER_INSERT
+        )
+        would_exceed_rows = len(batch_rows) + len(rows) > BATCH_SIZE
+        if would_exceed_partitions or would_exceed_rows:
+            flush()
+
+        batch_partitions.add(partition_key)
+        batch_rows.extend(rows)
+
+    flush()
+    return inserted
+
+
 def _exec(cur, sql: str) -> None:
     cur.execute(sql)
     cur.fetchall()

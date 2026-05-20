@@ -71,7 +71,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./trino/etc:/etc/trino:ro
+      - ./trino/etc:/etc/trino
       - trino-data:/data/trino
       - ./kafka_config:/etc/trino/kafka
 

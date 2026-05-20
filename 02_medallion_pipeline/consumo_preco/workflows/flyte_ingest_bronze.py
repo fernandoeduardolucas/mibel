@@ -160,7 +160,15 @@ def _exec(cur, sql: str) -> None:
 # ---------------------------------------------------------------------------
 # Task: ingestão completa de consumo (todos os dias)
 # ---------------------------------------------------------------------------
-@task(retries=3)
+_FLYTE_ENV = {
+    "TRINO_HOST": "host.docker.internal",
+    "MINIO_ENDPOINT": "http://host.docker.internal:9000",
+    "MINIO_ACCESS_KEY": "minioadmin",
+    "MINIO_SECRET_KEY": "minioadmin",
+}
+
+
+@task(retries=3, environment=_FLYTE_ENV)
 def ingest_consumo_full() -> int:
     """
     Lê consumo-total-nacional.csv completo do MinIO e carrega em Bronze.
@@ -229,7 +237,7 @@ def ingest_consumo_full() -> int:
 # ---------------------------------------------------------------------------
 # Task: ingestão completa de preços (todos os dias)
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, environment=_FLYTE_ENV)
 def ingest_preco_full() -> int:
     """
     Lê o CSV de preços day-ahead completo do MinIO e carrega em Bronze.

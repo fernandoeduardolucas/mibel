@@ -29,6 +29,8 @@ from flytekit.exceptions.user import FlyteRecoverableException
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
+_FLYTE_ENV = {"TRINO_HOST": "host.docker.internal"}
+
 # Ficheiros SQL em 04_quality/sql/ relativo à raiz do sub-pipeline consumo_preco
 _SQL_DIR = Path(__file__).parent.parent / "04_quality" / "sql"
 
@@ -84,7 +86,7 @@ def _run_checks(layer: str) -> list[dict]:
     return rows
 
 
-@task(retries=2)
+@task(retries=2, environment=_FLYTE_ENV)
 def quality_gate(layer: str) -> int:
     """
     Gate de qualidade para a camada indicada ('bronze', 'silver' ou 'gold').

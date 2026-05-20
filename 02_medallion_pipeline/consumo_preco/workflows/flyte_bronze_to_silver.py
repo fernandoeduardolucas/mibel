@@ -29,6 +29,8 @@ from flytekit import task, workflow
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
+_FLYTE_ENV = {"TRINO_HOST": "host.docker.internal"}
+
 
 def _trino_conn() -> trino.dbapi.Connection:
     return trino.dbapi.connect(
@@ -58,7 +60,7 @@ def _day_bounds(process_date: date) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 # Task 1: consumo Bronze → Silver
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, environment=_FLYTE_ENV)
 def transform_consumo_silver(process_date: date) -> int:
     """
     Agrega os registos de 15 min do Bronze num único registo horário UTC.
@@ -108,7 +110,7 @@ def transform_consumo_silver(process_date: date) -> int:
 # ---------------------------------------------------------------------------
 # Task 2: preços Bronze → Silver
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, environment=_FLYTE_ENV)
 def transform_preco_silver(process_date: date) -> int:
     """
     Normaliza preços day-ahead para timestamp UTC.
@@ -173,7 +175,7 @@ def transform_preco_silver(process_date: date) -> int:
 # ---------------------------------------------------------------------------
 # Task 3: consumo Bronze → Silver completo
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, environment=_FLYTE_ENV)
 def transform_consumo_silver_full() -> int:
     """
     Agrega todo o histórico de consumo Bronze para Silver.
@@ -207,7 +209,7 @@ def transform_consumo_silver_full() -> int:
 # ---------------------------------------------------------------------------
 # Task 4: preços Bronze → Silver completo
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, environment=_FLYTE_ENV)
 def transform_preco_silver_full() -> int:
     """
     Normaliza todo o histórico de preços Bronze para Silver.

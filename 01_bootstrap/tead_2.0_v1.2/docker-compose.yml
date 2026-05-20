@@ -100,22 +100,9 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
 
-  # --- Workflow orchestration (K3s inside Docker) ---
-  flyte-sandbox:
-    build:
-      context: flyte
-      dockerfile: Dockerfile
-    image: tead-flyte:latest
-    privileged: true
-    depends_on: [minio, mc]
-    ports:
-      - "30080:30080"   # Flyte UI / Console
-      - "30081:30081"   # gRPC endpoint
-      - "30082:30082"   # HTTP proxy
-    volumes:
-      - flyte-data:/var/lib/docker
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+  # NOTE: Flyte Sandbox runs as a separate external container via flytectl.
+  # Run independently: flytectl demo start
+  # UI: http://localhost:30080
 
   mlflow:
     build:
@@ -141,4 +128,3 @@ volumes:
   mlflow-db:
   trino-data:
   grafana-data:
-  flyte-data:

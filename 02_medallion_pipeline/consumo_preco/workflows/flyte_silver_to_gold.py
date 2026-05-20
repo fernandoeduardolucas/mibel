@@ -22,6 +22,8 @@ from flytekit import task, workflow
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
+_FLYTE_ENV = {"TRINO_HOST": "host.docker.internal"}
+
 
 def _trino_conn() -> trino.dbapi.Connection:
     return trino.dbapi.connect(
@@ -41,7 +43,7 @@ def _exec(cur, sql: str) -> None:
 # ---------------------------------------------------------------------------
 # Task 1: produto analítico principal — histórico completo
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, environment=_FLYTE_ENV)
 def build_dp_energy_market_full() -> int:
     """
     Constrói gold.dp_energy_market_hourly para todo o histórico Silver.
@@ -115,7 +117,7 @@ def build_dp_energy_market_full() -> int:
 # ---------------------------------------------------------------------------
 # Task 2: feature table ML — histórico completo
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, environment=_FLYTE_ENV)
 def build_feat_load_forecasting_full(upstream_rows: int) -> int:
     """
     Constrói gold.feat_load_forecasting_hourly para todo o histórico Gold.

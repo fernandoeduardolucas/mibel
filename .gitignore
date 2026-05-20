@@ -1,13 +1,18 @@
 # Virtual environments
 .venv*/
+**/.venv*/
 venv/
 env/
 ENV/
 
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
+*.pyc
+*.pyo
 *.so
+*.pyd
 
 # Tooling
 .pytest_cache/
@@ -39,5 +44,10 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Generated data
+# Generated data (raw inputs e outputs processados — não pertencem ao repo)
+**/data/raw/
 **/data/clean/
+**/*.parquet
+
+# Claude Code (configuração local do assistente)
+.claude/

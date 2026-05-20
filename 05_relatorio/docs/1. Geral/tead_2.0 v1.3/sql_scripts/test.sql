@@ -1,0 +1,1 @@
+select count(*) from gold.titanic_ml_features

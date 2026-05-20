@@ -200,8 +200,10 @@ def pyflyte_run(
     params: dict[str, str],
 ) -> None:
     """Invoca pyflyte run no venv local."""
+    # flytekit 1.x instala 'pyflyte' como console script, não como módulo invocável
+    pyflyte_bin = venv_python.parent / ("pyflyte.exe" if os.name == "nt" else "pyflyte")
     cmd = [
-        str(venv_python), "-m", "flytekit.clis.sdk_in_container.pyflyte",
+        str(pyflyte_bin),
         "run",
         str(workflows_dir / workflow_file),
         workflow_name,

@@ -19,8 +19,14 @@ from __future__ import annotations
 import json
 import os
 import socket
+import sys
 import tempfile
 from typing import List
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 try:
     from flytekit import ImageSpec, Resources, task, workflow
@@ -59,16 +65,16 @@ image_spec = ImageSpec(
     ],
 )
 
-TRINO_HOST    = os.getenv("TRINO_HOST",    "host.docker.internal")
+TRINO_HOST    = os.getenv("TRINO_HOST",    "localhost")
 TRINO_PORT    = int(os.getenv("TRINO_PORT", "8080"))
 TRINO_USER    = os.getenv("TRINO_USER",    "tead")
 TRINO_CATALOG = os.getenv("TRINO_CATALOG", "iceberg")
 TRINO_SCHEMA  = os.getenv("TRINO_SCHEMA",  "gold")
 TRINO_TABLE   = os.getenv("TRINO_TABLE",   "dp_meteo_producao_daily_features")
 
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://host.docker.internal:15000")
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:15000")
 
-os.environ.setdefault("MLFLOW_S3_ENDPOINT_URL",  "http://host.docker.internal:9000")
+os.environ.setdefault("MLFLOW_S3_ENDPOINT_URL",  "http://localhost:9000")
 os.environ.setdefault("AWS_ACCESS_KEY_ID",        "minioadmin")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY",    "minioadmin")
 os.environ.setdefault("AWS_DEFAULT_REGION",       "us-east-1")

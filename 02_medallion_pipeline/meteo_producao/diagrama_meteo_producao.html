@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <title>DP-03 — Arquitetura Meteo Producao</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #f0f5fb;
+      padding: 32px;
+      color: #0f1e33;
+    }
+    h1 {
+      font-size: 22px;
+      margin-bottom: 6px;
+      color: #0b3556;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #5c6f87;
+      margin-bottom: 28px;
+    }
+    .diagram-wrap {
+      background: #fff;
+      border: 1px solid #d8e2f0;
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 8px 24px rgba(15,23,42,0.07);
+      overflow: auto;
+    }
+    .mermaid { max-width: 100%; }
+    .legend {
+      margin-top: 24px;
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      font-size: 12px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-dot {
+      width: 14px; height: 14px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>DP-03 — Arquitetura Meteo Producao</h1>
+  <p class="subtitle">Pipeline Medallion (Bronze → Silver → Gold) + ML (MLflow) + Aplicacao (API + Frontend + Grafana)</p>
+
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+
+    %% ── Fonte de dados ──────────────────────────────────────────────────────
+    subgraph SRC["☁  Fonte de Dados"]
+        direction TB
+        API["🌤  Open-Meteo Archive API\n(sem chave)\nlat=38.72  lon=-9.14\n2023-01-01 → hoje"]
+        DP01["DP-01\niceberg.gold\n.producao_vs_consumo_hourly\n(producao + consumo)"]
+        DP02["DP-02\niceberg.gold\n.dp_energy_market_hourly\n(preco spot day-ahead)"]
+    end
+
+    %% ── Bronze ──────────────────────────────────────────────────────────────
+    subgraph BRONZE["🥉  Camada Bronze"]
+        direction TB
+        FETCH["fetch_open_meteo.py\nVariaveis horarias:\ntemperatura · precipitacao\nvento · radiacao · nuvens"]
+        MINIO[("MinIO S3\ns3://warehouse/bronze/\nclean/meteo_open_meteo/\n(Parquet)")]
+        HIVE["hive.bronze_stage\n.meteo_open_meteo_clean\nExternal Parquet"]
+        BICE["iceberg.bronze\n.meteo_open_meteo_hourly\nIceberg gerido\nParticionado year/month"]
+    end
+
+    %% ── Silver ──────────────────────────────────────────────────────────────
+    subgraph SILVER["🥈  Camada Silver"]
+        direction TB
+        SICE["iceberg.silver\n.meteo_open_meteo_hourly\nDedup por ts_utc (ROW_NUMBER)\nValidacao intervalos fisicos PT\n_quality_flag: ok | out_of_range | null_values\nParticionado year/month"]
+    end
+
+    %% ── Gold ────────────────────────────────────────────────────────────────
+    subgraph GOLD["🥇  Camada Gold — DP-03"]
+        direction TB
+        GICE["iceberg.gold\n.dp_meteo_producao_daily_features\nGrao diario · 1 linha/dia\n━━━━━━━━━━━━━━━━━━━━━━━━━\nAgregacoes meteo (avg/min/max/sum)\nProducao + Consumo + Saldo\nPreco spot (avg/max/min)\nLag D-1  (temp wind rad prod preco)\nRolling 7d avg (4 variaveis)\nFeatures temporais (DOW season weekend)\n━━━━━━━━━━━━━━━━━━━━━━━━━\n~1 236 dias  |  2023-01-01 → hoje"]
+    end
+
+    %% ── ML ──────────────────────────────────────────────────────────────────
+    subgraph ML["🤖  Pipeline ML (MLflow)"]
+        direction LR
+        MA["Modelo A\nRandomForestRegressor\nn_estimators=300 max_depth=8\nTarget: producao_total_daily_mwh\nMAE ≈ 12 353 MWh  R² = 0.31"]
+        MB["Modelo B\nGradientBoostingRegressor\nn_estimators=300 lr=0.05\nTarget: preco_spot_medio_eur_mwh\nMAE ≈ 14.99 EUR/MWh  R² = 0.64"]
+        MLFLOW[("MLflow\nlocalhost:15000\nmodelo A: meteo_producao_\nproducao_forecaster\nmodelo B: meteo_producao_\npreco_impact")]
+    end
+
+    %% ── Aplicacao ───────────────────────────────────────────────────────────
+    subgraph APP["🖥  Aplicacao"]
+        direction LR
+        BACK["Backend API\nlocalhost:8083\npython -m app.main\nEndpoints:\n/api/v1/meteo-producao/daily\n/api/v1/meteo-producao/analytics\n/api/v1/meteo-producao/latest"]
+        FRONT["Frontend React\nindex.html (CDN, sem build)\nKPI Grid · Scatter · TimeSeries\nCorrelacao · Feature Importance"]
+        GRAF["Grafana\nlocalhost:3300\nDP-03 Dashboard\n6 KPI stats · 3 timeseries\n1 tabela · 2 bar charts"]
+    end
+
+    %% ── Fluxo ───────────────────────────────────────────────────────────────
+    API -->|HTTP fetch horario| FETCH
+    FETCH -->|upload Parquet| MINIO
+    MINIO -->|external table| HIVE
+    HIVE -->|INSERT INTO Iceberg| BICE
+    BICE -->|CTAS dedup+validate| SICE
+    SICE -->|JOIN + agregacao diaria| GICE
+    DP01 -->|JOIN producao/consumo| GICE
+    DP02 -->|JOIN preco spot| GICE
+    GICE -->|features meteo+temporal| MA
+    GICE -->|features meteo+prod+tempo| MB
+    MA -->|log_model + register| MLFLOW
+    MB -->|log_model + register| MLFLOW
+    GICE -->|Trino SQL| BACK
+    BACK -->|JSON REST| FRONT
+    GICE -->|Trino datasource| GRAF
+
+    %% ── Estilos ─────────────────────────────────────────────────────────────
+    classDef src     fill:#e0f2fe,stroke:#0369a1,color:#0c4a6e
+    classDef bronze  fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef silver  fill:#f0fdf4,stroke:#16a34a,color:#14532d
+    classDef gold    fill:#fefce8,stroke:#ca8a04,color:#713f12
+    classDef ml      fill:#fdf4ff,stroke:#9333ea,color:#581c87
+    classDef app     fill:#eff6ff,stroke:#2563eb,color:#1e3a8a
+    classDef store   fill:#f1f5f9,stroke:#64748b,color:#1e293b
+
+    class API,DP01,DP02 src
+    class FETCH bronze
+    class MINIO,MLFLOW store
+    class HIVE,BICE bronze
+    class SICE silver
+    class GICE gold
+    class MA,MB ml
+    class BACK,FRONT,GRAF app
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#e0f2fe;border:1px solid #0369a1"></div>Fontes de dados</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fef3c7;border:1px solid #d97706"></div>Bronze (ingestao raw)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f0fdf4;border:1px solid #16a34a"></div>Silver (limpeza + validacao)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fefce8;border:1px solid #ca8a04"></div>Gold (DP-03 features)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fdf4ff;border:1px solid #9333ea"></div>ML (MLflow)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#eff6ff;border:1px solid #2563eb"></div>Aplicacao (API + UI + Grafana)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f1f5f9;border:1px solid #64748b"></div>Armazenamento (MinIO / MLflow)</div>
+    </div>
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      themeVariables: {
+        fontFamily: "'Segoe UI', Arial, sans-serif",
+        fontSize: "13px",
+        primaryColor: "#dbeafe",
+        primaryTextColor: "#0f1e33",
+        primaryBorderColor: "#93c5fd",
+        lineColor: "#94a3b8",
+        edgeLabelBackground: "#f8fafc",
+        clusterBkg: "#f8fafc",
+        clusterBorder: "#cbd5e1"
+      },
+      flowchart: {
+        curve: "basis",
+        padding: 20,
+        nodeSpacing: 40,
+        rankSpacing: 60
+      }
+    });
+  </script>
+</body>
+</html>

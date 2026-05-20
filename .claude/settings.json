@@ -23,7 +23,8 @@
       "Bash(curl -s \"http://localhost:8083/api/v1/meteo-producao/correlations\")",
       "Bash(curl -s \"http://localhost:8083/api/v1/meteo-producao/latest\")",
       "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(r['data_dia'], 'temp=', r['temperature_mean_c'], 'prod=', r['producao_total_daily_mwh'], 'preco=', r['preco_spot_medio_eur_mwh']\\) for r in d['data'][:5]]\")",
-      "Bash(start \"c:\\\\Users\\\\Avelino\\\\Documents\\\\GitHub\\\\mibel\\\\04_application\\\\meteo_producao\\\\frontend\\\\index.html\")"
+      "Bash(start \"c:\\\\Users\\\\Avelino\\\\Documents\\\\GitHub\\\\mibel\\\\04_application\\\\meteo_producao\\\\frontend\\\\index.html\")",
+      "Bash(curl -s http://admin:admin@localhost:3300/api/health)"
     ]
   }
 }

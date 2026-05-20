@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -X POST http://admin:admin@localhost:3300/api/ds/query -H 'Content-Type: application/json' -d '{ *)"
+    ]
+  }
+}

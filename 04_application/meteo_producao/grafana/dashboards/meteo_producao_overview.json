@@ -1,0 +1,194 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "datasource", "id": "trino", "name": "Trino", "version": "1.0.0" }
+  ],
+  "annotations": { "list": [] },
+  "description": "DP-03 — Meteorologia vs Produção Elétrica vs Preço Spot MIBEL PT",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Temperatura Média (°C)",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "value", "graphMode": "area", "orientation": "auto" },
+      "fieldConfig": {
+        "defaults": { "unit": "celsius", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }, { "color": "orange", "value": 20 }, { "color": "red", "value": 30 }] } }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT data_dia AS time, temperature_mean_c AS value FROM iceberg.gold.dp_meteo_producao_daily_features ORDER BY data_dia",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Preço Spot Médio (€/MWh)",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyEUR", "decimals": 1, "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 60 }, { "color": "red", "value": 100 }] } }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT data_dia AS time, preco_spot_medio_eur_mwh AS value FROM iceberg.gold.dp_meteo_producao_daily_features ORDER BY data_dia",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Produção Total Média (MWh/dia)",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": {
+        "defaults": { "unit": "megwatt", "decimals": 0, "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }, { "color": "green", "value": 50000 }] } }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT data_dia AS time, producao_total_daily_mwh AS value FROM iceberg.gold.dp_meteo_producao_daily_features ORDER BY data_dia",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Precipitação Média (mm/dia)",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "lengthmm", "decimals": 1 } },
+      "targets": [
+        {
+          "rawSql": "SELECT data_dia AS time, precipitation_total_mm AS value FROM iceberg.gold.dp_meteo_producao_daily_features ORDER BY data_dia",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Vento Médio (m/s)",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "velocityms", "decimals": 1 } },
+      "targets": [
+        {
+          "rawSql": "SELECT data_dia AS time, wind_speed_mean_ms AS value FROM iceberg.gold.dp_meteo_producao_daily_features ORDER BY data_dia",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Radiação Média (W/m²)",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "watt", "decimals": 0 } },
+      "targets": [
+        {
+          "rawSql": "SELECT data_dia AS time, radiation_mean_wm2 AS value FROM iceberg.gold.dp_meteo_producao_daily_features ORDER BY data_dia",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Temperatura e Preço Spot ao Longo do Tempo",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 4 },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 2, "fillOpacity": 10 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "temperature_mean_c" }, "properties": [{ "id": "unit", "value": "celsius" }, { "id": "custom.axisPlacement", "value": "left" }] },
+          { "matcher": { "id": "byName", "options": "preco_spot_medio_eur_mwh" }, "properties": [{ "id": "unit", "value": "currencyEUR" }, { "id": "custom.axisPlacement", "value": "right" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+        ]
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT data_dia AS time, temperature_mean_c, preco_spot_medio_eur_mwh FROM iceberg.gold.dp_meteo_producao_daily_features ORDER BY data_dia",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Vento e Produção Elétrica ao Longo do Tempo",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 4 },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 2, "fillOpacity": 10 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "wind_speed_mean_ms" }, "properties": [{ "id": "unit", "value": "velocityms" }, { "id": "custom.axisPlacement", "value": "left" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }] },
+          { "matcher": { "id": "byName", "options": "producao_total_daily_mwh" }, "properties": [{ "id": "unit", "value": "megwatt" }, { "id": "custom.axisPlacement", "value": "right" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT data_dia AS time, wind_speed_mean_ms, producao_total_daily_mwh FROM iceberg.gold.dp_meteo_producao_daily_features ORDER BY data_dia",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Radiação Solar e Preço Spot",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 1.5, "fillOpacity": 8 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "radiation_mean_wm2" }, "properties": [{ "id": "unit", "value": "watt" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "preco_spot_medio_eur_mwh" }, "properties": [{ "id": "unit", "value": "currencyEUR" }, { "id": "custom.axisPlacement", "value": "right" }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] }
+        ]
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT data_dia AS time, radiation_mean_wm2, preco_spot_medio_eur_mwh FROM iceberg.gold.dp_meteo_producao_daily_features ORDER BY data_dia",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "table",
+      "title": "Tabela DP-03 — Últimos 30 Dias",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "rawSql": "SELECT CAST(data_dia AS VARCHAR) AS Dia, ROUND(temperature_mean_c,1) AS \"Temp (°C)\", ROUND(precipitation_total_mm,1) AS \"Precip (mm)\", ROUND(wind_speed_mean_ms,1) AS \"Vento (m/s)\", ROUND(radiation_mean_wm2,0) AS \"Rad (W/m²)\", ROUND(producao_total_daily_mwh,0) AS \"Produção (MWh)\", ROUND(preco_spot_medio_eur_mwh,2) AS \"Preço (€/MWh)\" FROM iceberg.gold.dp_meteo_producao_daily_features ORDER BY data_dia DESC LIMIT 30",
+          "format": "table"
+        }
+      ]
+    }
+  ],
+  "refresh": "1h",
+  "schemaVersion": 38,
+  "tags": ["energia", "meteorologia", "mibel", "dp-03"],
+  "templating": { "list": [] },
+  "time": { "from": "now-90d", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Meteorologia vs Produção vs Preço (DP-03)",
+  "uid": "meteo-producao-dp03",
+  "version": 1
+}

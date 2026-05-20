@@ -1,0 +1,201 @@
+:root {
+  --bg: #f0f5fb;
+  --surface: #ffffff;
+  --surface-strong: #f6faff;
+  --text: #0f1e33;
+  --muted: #5c6f87;
+  --primary: #1d4ed8;
+  --accent-green: #15803d;
+  --accent-amber: #b45309;
+  --accent-sky: #0369a1;
+  --border: #d8e2f0;
+  --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--text);
+  background: radial-gradient(circle at top right, #cfe8ff 0%, var(--bg) 28%, var(--bg) 100%);
+}
+
+.dashboard-shell {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+}
+
+.hero, .panel, .kpi-card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  border-radius: 16px;
+}
+
+.hero {
+  padding: 28px;
+  background: linear-gradient(120deg, #0b3556 0%, #1d6fa8 100%);
+  color: #eef8ff;
+}
+
+.badge {
+  display: inline-flex;
+  margin: 0;
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid rgba(238, 248, 255, 0.35);
+  padding: 6px 12px;
+}
+
+.hero h1 { margin: 14px 0 10px; }
+.subtitle { margin: 0; color: #c8e8ff; }
+
+.controls {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  grid-template-columns: 1fr 1fr 200px auto;
+  align-items: end;
+}
+
+.field {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+input, select, button {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.primary-button {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.primary-button:disabled { cursor: wait; opacity: 0.7; }
+
+.kpi-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.kpi-card { padding: 16px; }
+
+.kpi-label {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.kpi-value {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.kpi-unit {
+  font-size: 13px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+
+.grid-2col {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+}
+
+.panel { padding: 18px; }
+.panel h2 { margin: 0 0 14px; font-size: 16px; }
+
+/* Correlation table */
+.corr-table-wrap { overflow: auto; border-radius: 10px; border: 1px solid var(--border); }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface-strong);
+}
+
+th, td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.align-left { text-align: left; }
+
+/* Sparkline / bar charts */
+.bar-chart { display: flex; flex-direction: column; gap: 6px; }
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.bar-label { width: 170px; color: var(--muted); text-align: right; flex-shrink: 0; }
+.bar-track { flex: 1; height: 14px; background: #e5ecf8; border-radius: 8px; overflow: hidden; }
+.bar-fill  { height: 100%; border-radius: 8px; transition: width 0.4s ease; }
+.bar-value { width: 70px; font-weight: 700; }
+
+.positive  { color: var(--accent-green); }
+.negative  { color: #b91c1c; }
+.neutral   { color: var(--accent-sky); }
+
+/* Time-series simple sparkline */
+.sparkline-wrap { overflow: auto; }
+svg.sparkline { width: 100%; height: 120px; }
+
+.scatter-wrap { overflow: auto; }
+svg.scatter   { width: 100%; height: 220px; }
+
+.status-bar {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 12px 16px;
+}
+
+.ok, .error { margin: 0; }
+.error { color: #b91c1c; }
+
+@media (max-width: 920px) {
+  .controls { grid-template-columns: 1fr; }
+  .dashboard-shell { padding: 16px; }
+}

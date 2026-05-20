@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"c:\\\\Users\\\\Avelino\\\\Documents\\\\GitHub\\\\mibel\" log --oneline)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Avelino\\\\Documents\\\\GitHub\\\\mibel\\\\02_medallion_pipeline\\\\meteo_producao\" -Recurse)",
+      "Bash(Select-Object -Property FullName, Name)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(curl -s http://localhost:8080/v1/info)",
+      "Bash(python 02_medallion_pipeline/meteo_producao/run_medallion_meteo_producao.py --skip-docker)",
+      "Bash(python -c \"import re; content=open\\(r'c:\\\\Users\\\\Avelino\\\\Documents\\\\GitHub\\\\mibel\\\\02_medallion_pipeline\\\\meteo_producao\\\\run_medallion_meteo_producao.py', encoding='utf-8'\\).read\\(\\); matches=[\\(i+1, l\\) for i,l in enumerate\\(content.splitlines\\(\\)\\) if any\\(ord\\(c\\)>127 for c in l\\)]; [print\\(f'Line {n}: {l}'\\) for n,l in matches[:20]]\")",
+      "Bash(docker compose *)"
+    ]
+  }
+}

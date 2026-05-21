@@ -20,10 +20,6 @@ CREATE TABLE iceberg.silver.consumo_total_nacional_15min
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['ano', 'mes'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
-        ARRAY['silver', 'producao_consumo', '1', '15min', 'bronze.consumo_total_nacional']
-    ),
     location = 's3a://warehouse/silver/producao_consumo/consumo_total_nacional_15min/'
 ) AS
 WITH ranked AS (
@@ -78,11 +74,7 @@ WHERE silver_pick_rank = 1;
 ALTER TABLE iceberg.silver.consumo_total_nacional_15min
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
-        ARRAY['silver', 'producao_consumo', '1', '15min', 'bronze.consumo_total_nacional']
-    );
+    object_store_layout_enabled = true
 
 COMMENT ON TABLE iceberg.silver.consumo_total_nacional_15min IS
 'Tabela Silver com consumo elétrico nacional a 15 minutos. Deduplicada por timestamp_utc (registo de melhor qualidade por janela), com flags de componentes e consistência interna.';
@@ -102,10 +94,6 @@ CREATE TABLE iceberg.silver.energia_produzida_total_nacional_15min
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['ano', 'mes'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
-        ARRAY['silver', 'producao_consumo', '1', '15min', 'bronze.energia_produzida_total_nacional']
-    ),
     location = 's3a://warehouse/silver/producao_consumo/energia_produzida_total_nacional_15min/'
 ) AS
 WITH ranked AS (
@@ -156,11 +144,7 @@ WHERE silver_pick_rank = 1;
 ALTER TABLE iceberg.silver.energia_produzida_total_nacional_15min
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
-        ARRAY['silver', 'producao_consumo', '1', '15min', 'bronze.energia_produzida_total_nacional']
-    );
+    object_store_layout_enabled = true
 
 COMMENT ON TABLE iceberg.silver.energia_produzida_total_nacional_15min IS
 'Tabela Silver com energia produzida total nacional a 15 minutos. Deduplicada por timestamp_utc, preserva componentes DGM e PRE com flags de consistência interna.';

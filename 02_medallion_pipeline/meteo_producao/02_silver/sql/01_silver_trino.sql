@@ -105,11 +105,7 @@ FROM validated;
 ALTER TABLE iceberg.silver.meteo_open_meteo_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
-        ARRAY['silver', 'meteo_producao', '1', 'hourly', 'bronze.meteo_open_meteo_hourly']
-    );
+    object_store_layout_enabled = true
 
 COMMENT ON TABLE iceberg.silver.meteo_open_meteo_hourly IS
 'Tabela Silver com dados meteorológicos horários para Portugal Continental. Deduplicada por ts_utc, com validação de intervalos físicos e flag de qualidade (_quality_flag).';

@@ -34,21 +34,13 @@ CREATE TABLE iceberg.gold.dp_energia_balance_hourly (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['ano', 'mes'],
-    extra_properties = MAP(
-        ARRAY['layer', 'data_product', 'schema_version', 'product_version', 'deprecated', 'domain', 'grain'],
-        ARRAY['gold', 'dp_energia_balance_hourly', '1', 'v1', 'false', 'producao_consumo', 'hourly']
-    ),
     location = 's3a://warehouse/gold/dp_energia_balance_hourly/'
 );
 
 ALTER TABLE iceberg.gold.dp_energia_balance_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'data_product', 'schema_version', 'product_version', 'deprecated', 'domain', 'grain'],
-        ARRAY['gold', 'dp_energia_balance_hourly', '1', 'v1', 'false', 'producao_consumo', 'hourly']
-    );
+    object_store_layout_enabled = true
 
 COMMENT ON TABLE iceberg.gold.dp_energia_balance_hourly IS
 'DP-01: Saldo horário entre produção e consumo elétrico nacional (REN/ERSE). Agrega dados a 15 minutos para granularidade horária UTC. Consumidores: dashboard operacional, API HTTP, pipeline ML de classificação de défice.';

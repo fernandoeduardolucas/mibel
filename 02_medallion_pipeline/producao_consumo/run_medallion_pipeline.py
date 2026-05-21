@@ -182,13 +182,23 @@ def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str) -> None:
     sql_text = sql_file.read_text(encoding="utf-8")
     sql_clean = re.sub(r"--[^\n]*", "", sql_text)
     statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
-    for stmt in statements:
-        subprocess.run(
+    for i, stmt in enumerate(statements, 1):
+        result = subprocess.run(
             ["docker", "compose", "-f", str(compose_file), "exec", "-T", "trino", "trino"],
             input=(stmt + ";").encode("utf-8"),
             capture_output=True,
         )
-    print(f"    DDL {stage_name} aplicado.")
+        if result.returncode != 0:
+            stderr = result.stderr.decode("utf-8", errors="replace").strip()
+            stdout = result.stdout.decode("utf-8", errors="replace").strip()
+            preview = (stmt[:120] + "...") if len(stmt) > 120 else stmt
+            raise SystemExit(
+                f"\nDDL {stage_name} falhou no statement {i}:\n"
+                f"  SQL: {preview}\n"
+                f"  STDOUT: {stdout}\n"
+                f"  STDERR: {stderr}"
+            )
+    print(f"    DDL {stage_name} aplicado ({len(statements)} statements).")
 
 
 # ---------------------------------------------------------------------------

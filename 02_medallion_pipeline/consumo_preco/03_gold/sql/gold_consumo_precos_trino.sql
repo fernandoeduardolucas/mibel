@@ -34,21 +34,13 @@ CREATE TABLE IF NOT EXISTS iceberg.gold.dp_energy_market_hourly (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['year', 'month'],
-    extra_properties = MAP(
-        ARRAY['layer', 'data_product', 'schema_version', 'product_version', 'deprecated', 'domain', 'grain'],
-        ARRAY['gold', 'dp_energy_market_hourly', '1', 'v1', 'false', 'consumo_preco', 'hourly']
-    ),
     location = 's3a://warehouse/gold/dp_energy_market_hourly/'
 );
 
 ALTER TABLE iceberg.gold.dp_energy_market_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'data_product', 'schema_version', 'product_version', 'deprecated', 'domain', 'grain'],
-        ARRAY['gold', 'dp_energy_market_hourly', '1', 'v1', 'false', 'consumo_preco', 'hourly']
-    );
+    object_store_layout_enabled = true
 
 COMMENT ON TABLE iceberg.gold.dp_energy_market_hourly IS
 'Produto Gold principal: consumo elétrico nacional horário integrado com preço day-ahead MIBEL PT. Inclui features temporais e de lag para análise e serving.';
@@ -92,21 +84,13 @@ CREATE TABLE IF NOT EXISTS iceberg.gold.feat_load_forecasting_hourly (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['year', 'month'],
-    extra_properties = MAP(
-        ARRAY['layer', 'data_product', 'schema_version', 'feature_schema_version', 'product_version', 'deprecated', 'upstream_table'],
-        ARRAY['gold', 'feat_load_forecasting_hourly', '1', '1', 'v1', 'false', 'gold.dp_energy_market_hourly']
-    ),
     location = 's3a://warehouse/gold/feat_load_forecasting_hourly/'
 );
 
 ALTER TABLE iceberg.gold.feat_load_forecasting_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'data_product', 'schema_version', 'feature_schema_version', 'product_version', 'deprecated', 'upstream_table'],
-        ARRAY['gold', 'feat_load_forecasting_hourly', '1', '1', 'v1', 'false', 'gold.dp_energy_market_hourly']
-    );
+    object_store_layout_enabled = true
 
 COMMENT ON TABLE iceberg.gold.feat_load_forecasting_hourly IS
 'Feature table Gold para treino de modelos de previsão de consumo horário. Derivada do produto analítico principal com adição do target consumo_next_hour.';

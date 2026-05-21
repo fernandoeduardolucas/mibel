@@ -31,21 +31,13 @@ CREATE TABLE IF NOT EXISTS iceberg.bronze.consumo_raw (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['process_date'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'consumo_preco', '1', 'indefinite', 'ren_csv']
-    ),
     location = 's3a://warehouse/bronze/consumo_raw/'
 );
 
 ALTER TABLE iceberg.bronze.consumo_raw
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'consumo_preco', '1', 'indefinite', 'ren_csv']
-    );
+    object_store_layout_enabled = true
 
 COMMENT ON TABLE iceberg.bronze.consumo_raw IS
 'Tabela Bronze com consumo elétrico nacional a 15 minutos, ingerida do CSV REN. Preserva todas as colunas da fonte sem transformação.';
@@ -69,21 +61,13 @@ CREATE TABLE IF NOT EXISTS iceberg.bronze.preco_raw (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['process_date'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'consumo_preco', '1', 'indefinite', 'omie_csv']
-    ),
     location = 's3a://warehouse/bronze/preco_raw/'
 );
 
 ALTER TABLE iceberg.bronze.preco_raw
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'consumo_preco', '1', 'indefinite', 'omie_csv']
-    );
+    object_store_layout_enabled = true
 
 COMMENT ON TABLE iceberg.bronze.preco_raw IS
 'Tabela Bronze com preços day-ahead OMIE/MIBEL. Preserva numeração original das horas (1-25) sem interpretação UTC.';

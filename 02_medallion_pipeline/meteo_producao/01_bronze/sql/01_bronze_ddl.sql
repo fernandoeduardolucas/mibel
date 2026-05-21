@@ -106,21 +106,13 @@ CREATE TABLE iceberg.bronze.meteo_open_meteo_hourly (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['year', 'month'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'meteo_producao', '1', 'indefinite', 'open_meteo_api']
-    ),
     location = 's3a://warehouse/bronze/meteo_producao/meteo_open_meteo_hourly/'
 );
 
 ALTER TABLE iceberg.bronze.meteo_open_meteo_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'meteo_producao', '1', 'indefinite', 'open_meteo_api']
-    );
+    object_store_layout_enabled = true
 
 COMMENT ON TABLE iceberg.bronze.meteo_open_meteo_hourly IS
 'Tabela Bronze com dados meteorológicos horários para Portugal Continental, ingeridos da API Open-Meteo. Preserva todas as variáveis horárias sem transformação semântica.';

@@ -62,10 +62,6 @@ WITH (
     partitioning = ARRAY['year', 'month'],
     format_version = 2,
     object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'data_product', 'schema_version', 'product_version', 'deprecated', 'domain', 'grain'],
-        ARRAY['gold', 'dp_meteo_producao_daily_features', '1', 'v1', 'false', 'meteo_producao', 'daily']
-    ),
     location = 's3a://warehouse/gold/dp_meteo_producao_daily_features/'
 );
 

@@ -171,21 +171,13 @@ CREATE TABLE iceberg.bronze.consumo_total_nacional (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['ano', 'mes'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'producao_consumo', '1', 'indefinite', 'ren_csv']
-    ),
     location = 's3a://warehouse/bronze/producao_consumo/consumo_total_nacional/'
 );
 
 ALTER TABLE iceberg.bronze.consumo_total_nacional
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'producao_consumo', '1', 'indefinite', 'ren_csv']
-    );
+    object_store_layout_enabled = true
 
 COMMENT ON TABLE iceberg.bronze.consumo_total_nacional IS
 'Tabela Bronze com consumo elétrico nacional a 15 minutos, ingerida do CSV REN (ERSE). Preserva todas as colunas da fonte com flags de qualidade sem transformação semântica.';
@@ -248,21 +240,13 @@ CREATE TABLE iceberg.bronze.energia_produzida_total_nacional (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['ano', 'mes'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'producao_consumo', '1', 'indefinite', 'ren_csv']
-    ),
     location = 's3a://warehouse/bronze/producao_consumo/energia_produzida_total_nacional/'
 );
 
 ALTER TABLE iceberg.bronze.energia_produzida_total_nacional
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'producao_consumo', '1', 'indefinite', 'ren_csv']
-    );
+    object_store_layout_enabled = true
 
 COMMENT ON TABLE iceberg.bronze.energia_produzida_total_nacional IS
 'Tabela Bronze com energia produzida total nacional a 15 minutos, ingerida do CSV REN. Preserva colunas DGM e PRE com flags de qualidade sem transformação semântica.';

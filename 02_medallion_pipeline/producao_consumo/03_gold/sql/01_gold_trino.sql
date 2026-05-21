@@ -40,7 +40,7 @@ WITH (
 ALTER TABLE iceberg.gold.dp_energia_balance_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.gold.dp_energia_balance_hourly IS
 'DP-01: Saldo horário entre produção e consumo elétrico nacional (REN/ERSE). Agrega dados a 15 minutos para granularidade horária UTC. Consumidores: dashboard operacional, API HTTP, pipeline ML de classificação de défice.';

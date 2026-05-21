@@ -74,7 +74,7 @@ WHERE silver_pick_rank = 1;
 ALTER TABLE iceberg.silver.consumo_total_nacional_15min
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.silver.consumo_total_nacional_15min IS
 'Tabela Silver com consumo elétrico nacional a 15 minutos. Deduplicada por timestamp_utc (registo de melhor qualidade por janela), com flags de componentes e consistência interna.';
@@ -144,7 +144,7 @@ WHERE silver_pick_rank = 1;
 ALTER TABLE iceberg.silver.energia_produzida_total_nacional_15min
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.silver.energia_produzida_total_nacional_15min IS
 'Tabela Silver com energia produzida total nacional a 15 minutos. Deduplicada por timestamp_utc, preserva componentes DGM e PRE com flags de consistência interna.';

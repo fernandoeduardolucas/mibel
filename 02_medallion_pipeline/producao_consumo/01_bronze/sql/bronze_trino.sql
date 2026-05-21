@@ -177,7 +177,7 @@ WITH (
 ALTER TABLE iceberg.bronze.consumo_total_nacional
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.bronze.consumo_total_nacional IS
 'Tabela Bronze com consumo elétrico nacional a 15 minutos, ingerida do CSV REN (ERSE). Preserva todas as colunas da fonte com flags de qualidade sem transformação semântica.';
@@ -246,7 +246,7 @@ WITH (
 ALTER TABLE iceberg.bronze.energia_produzida_total_nacional
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.bronze.energia_produzida_total_nacional IS
 'Tabela Bronze com energia produzida total nacional a 15 minutos, ingerida do CSV REN. Preserva colunas DGM e PRE com flags de qualidade sem transformação semântica.';

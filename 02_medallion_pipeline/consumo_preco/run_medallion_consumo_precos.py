@@ -198,16 +198,16 @@ def pyflyte_run(
     workflow_file: str,
     workflow_name: str,
     params: dict[str, str],
+    *,
+    remote: bool = False,
 ) -> None:
-    """Invoca pyflyte run no venv local."""
+    """Invoca pyflyte run no venv local ou no cluster Flyte externo."""
     # flytekit 1.x instala 'pyflyte' como console script, não como módulo invocável
     pyflyte_bin = venv_python.parent / ("pyflyte.exe" if os.name == "nt" else "pyflyte")
-    cmd = [
-        str(pyflyte_bin),
-        "run",
-        str(workflows_dir / workflow_file),
-        workflow_name,
-    ]
+    cmd = [str(pyflyte_bin), "run"]
+    if remote:
+        cmd += ["--remote", "-p", "flytesnacks", "-d", "development"]
+    cmd += [str(workflows_dir / workflow_file), workflow_name]
     for key, value in params.items():
         cmd += [f"--{key}", value]
     run(cmd, cwd=workflows_dir)
@@ -310,6 +310,10 @@ def main() -> None:
     parser.add_argument("--skip-docker",  action="store_true", help="salta o compose up")
     parser.add_argument("--skip-ddl",     action="store_true", help="salta a aplicação de DDL")
     parser.add_argument("--no-quality",   action="store_true", help="salta os quality gates")
+    parser.add_argument(
+        "--remote", action="store_true",
+        help="submete workflows ao cluster Flyte externo (requer flytectl demo start)",
+    )
     args = parser.parse_args()
 
     if not args.full:
@@ -393,7 +397,7 @@ def main() -> None:
         pyflyte_run(
             venv_python, workflows_dir,
             "flyte_ingest_bronze.py", "ingest_bronze_full",
-            {},
+            {}, remote=args.remote,
         )
 
         # --- Quality gate Bronze ---
@@ -404,7 +408,7 @@ def main() -> None:
             pyflyte_run(
                 venv_python, workflows_dir,
                 "flyte_quality_checks.py", "quality_gate_bronze",
-                {},
+                {}, remote=args.remote,
             )
 
         # --- Fase 2: Silver transform COMPLETO ---
@@ -414,7 +418,7 @@ def main() -> None:
         pyflyte_run(
             venv_python, workflows_dir,
             "flyte_bronze_to_silver.py", "bronze_to_silver_full",
-            {},
+            {}, remote=args.remote,
         )
 
         # --- Quality gate Silver ---
@@ -425,7 +429,7 @@ def main() -> None:
             pyflyte_run(
                 venv_python, workflows_dir,
                 "flyte_quality_checks.py", "quality_gate_silver",
-                {},
+                {}, remote=args.remote,
             )
 
         # --- Fase 3: Gold transform COMPLETO ---
@@ -435,7 +439,7 @@ def main() -> None:
         pyflyte_run(
             venv_python, workflows_dir,
             "flyte_silver_to_gold.py", "silver_to_gold_full",
-            {},
+            {}, remote=args.remote,
         )
 
         # --- Quality gate Gold ---
@@ -446,7 +450,7 @@ def main() -> None:
             pyflyte_run(
                 venv_python, workflows_dir,
                 "flyte_quality_checks.py", "quality_gate_gold",
-                {},
+                {}, remote=args.remote,
             )
 
         # --- Validação final ---
@@ -494,7 +498,7 @@ def main() -> None:
     pyflyte_run(
         venv_python, workflows_dir,
         "flyte_ingest_bronze.py", "ingest_bronze",
-        {"process_date": process_date},
+        {"process_date": process_date}, remote=args.remote,
     )
 
     # --- Quality gate Bronze ---
@@ -505,7 +509,7 @@ def main() -> None:
         pyflyte_run(
             venv_python, workflows_dir,
             "flyte_quality_checks.py", "quality_gate_bronze",
-            {},
+            {}, remote=args.remote,
         )
 
     # --- Silver transform ---
@@ -515,7 +519,7 @@ def main() -> None:
     pyflyte_run(
         venv_python, workflows_dir,
         "flyte_bronze_to_silver.py", "bronze_to_silver",
-        {"process_date": process_date},
+        {"process_date": process_date}, remote=args.remote,
     )
 
     # --- Quality gate Silver ---
@@ -526,7 +530,7 @@ def main() -> None:
         pyflyte_run(
             venv_python, workflows_dir,
             "flyte_quality_checks.py", "quality_gate_silver",
-            {},
+            {}, remote=args.remote,
         )
 
     # --- Gold transform ---
@@ -536,7 +540,7 @@ def main() -> None:
     pyflyte_run(
         venv_python, workflows_dir,
         "flyte_silver_to_gold.py", "silver_to_gold_full",
-        {},
+        {}, remote=args.remote,
     )
 
     # --- Quality gate Gold ---
@@ -547,7 +551,7 @@ def main() -> None:
         pyflyte_run(
             venv_python, workflows_dir,
             "flyte_quality_checks.py", "quality_gate_gold",
-            {},
+            {}, remote=args.remote,
         )
 
     # --- Validação final ---

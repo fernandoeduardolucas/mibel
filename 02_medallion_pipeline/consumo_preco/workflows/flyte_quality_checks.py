@@ -122,10 +122,10 @@ def quality_gate(layer: str) -> int:
         print(f"  [PASS] {r['check_name']}")
 
     for r in warns:
-        print(f"  [WARN] {r['check_name']} → {r.get('detalhe', '')}")
+        print(f"  [WARN] {r['check_name']} -> {r.get('detalhe', '')}")
 
     for r in fails:
-        print(f"  [FAIL] {r['check_name']} → {r.get('detalhe', '')}")
+        print(f"  [FAIL] {r['check_name']} -> {r.get('detalhe', '')}")
 
     if fails:
         fail_names = "; ".join(r["check_name"] for r in fails)
@@ -134,7 +134,7 @@ def quality_gate(layer: str) -> int:
             f"{len(fails)} check(s) FAIL: {fail_names}"
         )
 
-    print(f"  → Gate APROVADO para camada {layer}.\n")
+    print(f"  -> Gate APROVADO para camada {layer}.\n")
     return len(passes)
 
 

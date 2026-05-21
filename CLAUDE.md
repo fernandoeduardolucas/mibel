@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MIBEL is a local-first energy analytics platform for Portugal's electricity market. It implements a **medallion data architecture** (Bronze → Silver → Gold) with three independent data products (DPs), ML pipelines, and HTTP API + React frontend layers. All infrastructure runs via Docker Compose.
+MIBEL is a local-first energy analytics platform for Portugal's electricity market. It implements a **medallion data architecture** (Bronze → Silver → Gold) with three independent data products (DPs), ML pipelines, and HTTP API + static HTML frontend layers. All infrastructure runs via Docker Compose.
 
 ## Infrastructure
 
@@ -18,7 +18,7 @@ MIBEL is a local-first energy analytics platform for Portugal's electricity mark
 
 ### Docker Compose Stack
 
-Services: MinIO, Hive Metastore (MariaDB backend), Trino, MLflow (Postgres backend), Grafana.
+Services: MinIO, Hive Metastore (MariaDB backend), Trino, MLflow (Postgres backend), Grafana, Redpanda (Kafka-compatible streaming).
 
 MinIO buckets created on startup: `warehouse` (Trino/Hive data) and `mlflow` (artifact store).
 
@@ -80,8 +80,8 @@ Flyte config files: `01_docker_stack/flyte/Dockerfile` + `flyte-core-overrides.y
 Each data product has its own Python orchestrator. Always pass `--skip-docker` if the stack is already running:
 
 ```powershell
-# DP-01: Production vs Consumption
-python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py --skip-docker
+# DP-01: Production vs Consumption (no --skip-docker flag; manages Docker internally)
+python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py
 
 # DP-02: Consumption vs Price
 python 02_medallion_pipeline/consumo_preco/run_medallion_consumo_precos.py --skip-docker
@@ -99,22 +99,26 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install pandas scikit-learn trino mlflow boto3
 
-python 03_ml_pipeline/meteo_producao_mlflow_flow.py   # DP-03: RF production forecast + GB price impact
-python 03_ml_pipeline/preco_consumo_mlflow_flow.py    # DP-02: GB load forecasting
-python 03_ml_pipeline/producao_consumao_mlflow_flow.py  # DP-01: RF deficit classification
+python 03_ml_pipeline/producao_consumo_mlflow_flow.py   # DP-01: RF deficit classifier
+python 03_ml_pipeline/preco_consumo_mlflow_flow.py      # DP-02: GB load forecasting
+python 03_ml_pipeline/meteo_producao_mlflow_flow.py     # DP-03: RF production forecast + GB price impact
 ```
 
 Results visible at http://localhost:15000.
 
 ## Application Backends
 
-No framework — backends use raw Python `BaseHTTPRequestHandler`. Install the Trino client first:
+No framework — backends use raw Python `BaseHTTPRequestHandler`. Set env vars before starting (see ML Training section for values). Run from each backend's own directory:
 
 ```powershell
-pip install trino
-python 04_application/producao_consumo/backend/app/main.py   # port 8081
-python 04_application/backend/consumo_preco/server.py        # port 8000
-python 04_application/meteo_producao/backend/app/main.py     # port 8083
+# DP-01 (port 8081) — has server.py wrapper at backend root
+cd 04_application/producao_consumo/backend && python server.py
+
+# DP-02 (port 8000)
+cd 04_application/backend/consumo_preco && python server.py
+
+# DP-03 (port 8083) — no server.py; use -m to resolve app imports
+cd 04_application/meteo_producao/backend && python -m app.main
 ```
 
 Open frontends directly in a browser (static HTML files under `04_application/*/frontend/index.html`).

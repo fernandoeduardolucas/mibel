@@ -1,4 +1,4 @@
-# Requisitos do Projeto Prático — TEAD 2025/2026
+r# Requisitos do Projeto Prático — TEAD 2025/2026
 
 **UC:** Tecnologias Escaláveis para Análise de Dados  
 **Curso:** Mestrado em Engenharia Informática  

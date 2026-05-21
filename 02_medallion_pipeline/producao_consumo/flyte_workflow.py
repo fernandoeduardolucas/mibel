@@ -1,15 +1,20 @@
-"""Workflows Flyte para orquestrar as pipelines Medallion deste repositório.
+"""Workflows Flyte para orquestrar a pipeline Medallion de producao_consumo.
 
 Objetivo:
-- Reutilizar os runners já existentes para `producao_consumo` e `consumo_preco`.
+- Reutilizar o runner run_medallion_pipeline.py já existente.
 - Permitir execução local (`python`) e com Flyte (`pyflyte run`).
 
 Execução local:
     python 02_medallion_pipeline/producao_consumo/flyte_workflow.py
 
 Execução Flyte (remoto):
-    pyflyte run --remote -p flytesnacks -d development \
+    pyflyte run --remote -p flytesnacks -d development \\
       02_medallion_pipeline/producao_consumo/flyte_workflow.py medallion_full_wf
+
+Backfill de intervalo específico:
+    pyflyte run --remote -p flytesnacks -d development \\
+      02_medallion_pipeline/producao_consumo/flyte_workflow.py medallion_backfill_wf \\
+      --date_from 2023-01-01 --date_to 2023-06-30
 """
 
 from __future__ import annotations
@@ -40,37 +45,52 @@ except ModuleNotFoundError:
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+RUNNER    = REPO_ROOT / "02_medallion_pipeline" / "producao_consumo" / "run_medallion_pipeline.py"
 
 
-def _run_python(script_path: Path, *, build: bool = False) -> str:
-    cmd = [sys.executable, str(script_path)]
-    if build:
-        cmd.append("--build")
-
+def _run_runner(extra_args: list[str]) -> str:
+    cmd = [sys.executable, str(RUNNER), "--skip-docker"] + extra_args
+    print(f"\n>>> {' '.join(cmd)}")
     result = subprocess.run(
         cmd,
         cwd=str(REPO_ROOT),
         text=True,
         capture_output=True,
     )
-
+    if result.stdout:
+        print(result.stdout)
     if result.returncode != 0:
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
         raise RuntimeError(
-            f"Falha ao executar {script_path}\n"
+            f"Falha ao executar runner producao_consumo\n"
             f"stdout:\n{result.stdout}\n"
             f"stderr:\n{result.stderr}"
         )
+    return f"OK: {RUNNER.name}"
 
-    return f"OK: {script_path.name}"
 
-
-@task
+@task(retries=3)
 def run_producao_consumo_medallion(build: bool = False) -> str:
-    script = REPO_ROOT / "02_medallion_pipeline" / "producao_consumo" / "run_medallion_pipeline.py"
-    return _run_python(script, build=build)
+    extra: list[str] = []
+    if build:
+        extra.append("--build")
+    return _run_runner(extra)
 
 
-@task
+@task(retries=3)
+def run_producao_consumo_backfill(
+    date_from: str = "2023-01-01",
+    date_to:   str = "2023-12-31",
+) -> str:
+    return _run_runner([
+        "--skip-ddl",
+        "--date-from", date_from,
+        "--date-to",   date_to,
+    ])
+
+
+@task(retries=3)
 def run_consumo_preco_medallion(build: bool = False) -> str:
     script = (
         REPO_ROOT
@@ -78,84 +98,40 @@ def run_consumo_preco_medallion(build: bool = False) -> str:
         / "consumo_preco"
         / "run_medallion_consumo_precos.py"
     )
-    return _run_python(script, build=build)
-
-
-@task(retries=2)
-def run_producao_consumo_backfill(days: int = 1, build: bool = False) -> str:
-    """Executa reruns simples da pipeline como estratégia de backfill.
-
-    Nota: o runner atual ainda não recebe janela temporal; por isso o backfill
-    é implementado como reruns idempotentes para recuperar falhas recentes.
-    """
-    if days < 1:
-        raise ValueError("days tem de ser >= 1")
-
-    outputs: list[str] = []
-    for day_index in range(days):
-        result = run_producao_consumo_medallion(build=build)
-        outputs.append(f"d-{day_index}: {result}")
-    return " | ".join(outputs)
-
-
-@task
-def run_selected_pipelines(
-    run_producao_consumo: bool = True,
-    run_consumo_preco: bool = True,
-    build_images: bool = False,
-    producao_consumo_backfill_days: int = 0,
-) -> str:
-    outputs: list[str] = []
-
-    if run_producao_consumo:
-        outputs.append(_run_python(
-            REPO_ROOT / "02_medallion_pipeline" / "producao_consumo" / "run_medallion_pipeline.py",
-            build=build_images,
-        ))
-
-    if run_consumo_preco:
-        outputs.append(_run_python(
-            REPO_ROOT / "02_medallion_pipeline" / "consumo_preco" / "run_medallion_consumo_precos.py",
-            build=build_images,
-        ))
-
-    if producao_consumo_backfill_days > 0:
-        if producao_consumo_backfill_days < 1:
-            raise ValueError("producao_consumo_backfill_days tem de ser >= 1")
-
-        for day_index in range(producao_consumo_backfill_days):
-            result = _run_python(
-                REPO_ROOT / "02_medallion_pipeline" / "producao_consumo" / "run_medallion_pipeline.py",
-                build=build_images,
-            )
-            outputs.append(f"backfill_d-{day_index}: {result}")
-
-    if not outputs:
-        return "Nada para executar: ativa pelo menos uma pipeline."
-
-    return " | ".join(outputs)
+    cmd = [sys.executable, str(script), "--skip-docker"]
+    if build:
+        cmd.append("--build")
+    print(f"\n>>> {' '.join(cmd)}")
+    result = subprocess.run(cmd, cwd=str(REPO_ROOT), text=True, capture_output=True)
+    if result.stdout:
+        print(result.stdout)
+    if result.returncode != 0:
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
+        raise RuntimeError(
+            f"Falha ao executar runner consumo_preco\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+    return f"OK: {script.name}"
 
 
 @workflow
-def medallion_full_wf(
-    run_producao_consumo: bool = True,
-    run_consumo_preco: bool = True,
-    build_images: bool = False,
-    producao_consumo_backfill_days: int = 0,
+def medallion_full_wf(build_images: bool = False) -> str:
+    """Executa as duas pipelines sequencialmente (producao_consumo → consumo_preco)."""
+    result_pc = run_producao_consumo_medallion(build=build_images)
+    result_cp = run_consumo_preco_medallion(build=build_images)
+    return result_pc + " | " + result_cp
+
+
+@workflow
+def medallion_backfill_wf(
+    date_from: str = "2023-01-01",
+    date_to:   str = "2023-12-31",
 ) -> str:
-    return run_selected_pipelines(
-        run_producao_consumo=run_producao_consumo,
-        run_consumo_preco=run_consumo_preco,
-        build_images=build_images,
-        producao_consumo_backfill_days=producao_consumo_backfill_days,
-    )
+    """Executa backfill incremental Gold para o intervalo especificado."""
+    return run_producao_consumo_backfill(date_from=date_from, date_to=date_to)
 
 
 if __name__ == "__main__":
-    print(
-        medallion_full_wf(
-            run_producao_consumo=True,
-            run_consumo_preco=True,
-            build_images=False,
-        )
-    )
+    print(medallion_full_wf(build_images=False))

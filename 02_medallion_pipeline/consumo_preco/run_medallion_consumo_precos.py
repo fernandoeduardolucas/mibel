@@ -177,14 +177,20 @@ def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str) -> None:
     # Divide em statements individuais e executa cada um (Trino CLI executa 1 statement por vez)
     statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
     for stmt in statements:
-        subprocess.run(
+        result = subprocess.run(
             [
                 "docker", "compose", "-f", str(compose_file),
                 "exec", "-T", "trino", "trino",
             ],
-            input=(stmt + ";").encode("utf-8"),
-            capture_output=True,  # DDL é idempotente (IF NOT EXISTS); ignora erros menores
+            input=stmt + ";",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
+        if result.returncode != 0:
+            first_word = stmt.strip().split()[0].upper() if stmt.strip() else ""
+            msg = (result.stderr or result.stdout).strip()[:300]
+            print(f"  [DDL AVISO] {first_word}: {msg}")
     print(f"    DDL {stage_name} aplicado.")
 
 
@@ -405,6 +411,7 @@ def main() -> None:
             print("\n" + "=" * 60)
             print("QUALITY GATE — Bronze")
             print("=" * 60)
+            wait_for_trino(compose_file)
             pyflyte_run(
                 venv_python, workflows_dir,
                 "flyte_quality_checks.py", "quality_gate_bronze",
@@ -426,6 +433,7 @@ def main() -> None:
             print("\n" + "=" * 60)
             print("QUALITY GATE — Silver")
             print("=" * 60)
+            wait_for_trino(compose_file)
             pyflyte_run(
                 venv_python, workflows_dir,
                 "flyte_quality_checks.py", "quality_gate_silver",
@@ -447,6 +455,7 @@ def main() -> None:
             print("\n" + "=" * 60)
             print("QUALITY GATE — Gold")
             print("=" * 60)
+            wait_for_trino(compose_file)
             pyflyte_run(
                 venv_python, workflows_dir,
                 "flyte_quality_checks.py", "quality_gate_gold",
@@ -506,6 +515,7 @@ def main() -> None:
         print("\n" + "=" * 60)
         print("QUALITY GATE — Bronze")
         print("=" * 60)
+        wait_for_trino(compose_file)
         pyflyte_run(
             venv_python, workflows_dir,
             "flyte_quality_checks.py", "quality_gate_bronze",
@@ -527,6 +537,7 @@ def main() -> None:
         print("\n" + "=" * 60)
         print("QUALITY GATE — Silver")
         print("=" * 60)
+        wait_for_trino(compose_file)
         pyflyte_run(
             venv_python, workflows_dir,
             "flyte_quality_checks.py", "quality_gate_silver",
@@ -548,6 +559,7 @@ def main() -> None:
         print("\n" + "=" * 60)
         print("QUALITY GATE — Gold")
         print("=" * 60)
+        wait_for_trino(compose_file)
         pyflyte_run(
             venv_python, workflows_dir,
             "flyte_quality_checks.py", "quality_gate_gold",

@@ -67,6 +67,7 @@ services:
 
   trino:
     image: trinodb/trino:468
+    restart: unless-stopped
     depends_on: [hive-metastore, redpanda]
     ports:
       - "8080:8080"

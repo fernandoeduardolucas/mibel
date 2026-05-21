@@ -40,7 +40,7 @@ WITH (
 ALTER TABLE iceberg.gold.dp_energy_market_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.gold.dp_energy_market_hourly IS
 'Produto Gold principal: consumo elétrico nacional horário integrado com preço day-ahead MIBEL PT. Inclui features temporais e de lag para análise e serving.';
@@ -90,7 +90,7 @@ WITH (
 ALTER TABLE iceberg.gold.feat_load_forecasting_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.gold.feat_load_forecasting_hourly IS
 'Feature table Gold para treino de modelos de previsão de consumo horário. Derivada do produto analítico principal com adição do target consumo_next_hour.';
@@ -129,7 +129,7 @@ WITH (
 ALTER TABLE iceberg.gold.quality_log
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.gold.quality_log IS
 'Histórico de execuções dos quality gates. Cada linha representa um check individual (PASS/WARN/FAIL) registado por flyte_quality_checks.quality_gate().';

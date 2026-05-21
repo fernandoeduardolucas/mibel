@@ -37,7 +37,7 @@ WITH (
 ALTER TABLE iceberg.bronze.consumo_raw
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.bronze.consumo_raw IS
 'Tabela Bronze com consumo elétrico nacional a 15 minutos, ingerida do CSV REN. Preserva todas as colunas da fonte sem transformação.';
@@ -67,7 +67,7 @@ WITH (
 ALTER TABLE iceberg.bronze.preco_raw
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.bronze.preco_raw IS
 'Tabela Bronze com preços day-ahead OMIE/MIBEL. Preserva numeração original das horas (1-25) sem interpretação UTC.';

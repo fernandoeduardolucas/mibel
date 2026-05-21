@@ -48,6 +48,7 @@ def _trino_conn() -> trino.dbapi.Connection:
         user="admin",
         catalog="iceberg",
         schema="bronze",
+        request_timeout=300,
     )
 
 

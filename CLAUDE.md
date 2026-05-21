@@ -8,7 +8,7 @@ MIBEL is a local-first energy analytics platform for Portugal's electricity mark
 
 ## Infrastructure
 
-> **Reference stack:** The teacher-provided guide is TEAD 2.0 v1.3 (`05_relatorio/docs/1. Geral/tead_2.0 v1.3/README.md`). The project currently runs v1.2 (`01_bootstrap/tead_2.0_v1.2/`). The key addition in v1.3 is **Flyte Sandbox** for workflow orchestration.
+> **Reference stack:** The teacher-provided guide is TEAD 2.0 v1.3 (`05_relatorio/docs/1. Geral/tead_2.0 v1.3/README.md`). The key addition in v1.3 is **Flyte Sandbox** for workflow orchestration.
 
 ### Prerequisites
 
@@ -25,7 +25,7 @@ MinIO buckets created on startup: `warehouse` (Trino/Hive data) and `mlflow` (ar
 Start the full stack:
 
 ```powershell
-cd 01_bootstrap/tead_2.0_v1.2
+cd 01_docker_stack
 docker compose up -d --build
 # Verify (~30s startup): docker compose ps
 # Test Trino: docker compose exec trino trino --execute "SHOW CATALOGS;"
@@ -73,7 +73,7 @@ AWS_SECRET_ACCESS_KEY=minioadmin
 
 > On Linux, start the Flyte sandbox with `--add-host host.docker.internal:host-gateway`. On Windows/macOS (Docker Desktop) this works out of the box.
 
-Flyte config files: `01_bootstrap/tead_2.0_v1.2/flyte/Dockerfile` + `flyte-core-overrides.yaml`.
+Flyte config files: `01_docker_stack/flyte/Dockerfile` + `flyte-core-overrides.yaml`.
 
 ## Data Pipeline Commands
 
@@ -162,7 +162,7 @@ All SQL runs on **Trino** with two catalogs:
 - `hive` — external tables (raw Parquet/CSV on MinIO)
 - `iceberg` — managed tables (Silver and Gold layers)
 
-Trino catalog configs: `01_bootstrap/tead_2.0_v1.2/trino/etc/catalog/`.
+Trino catalog configs: `01_docker_stack/trino/etc/catalog/`.
 
 ### Data Product Contracts
 

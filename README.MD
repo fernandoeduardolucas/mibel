@@ -83,7 +83,7 @@ Plataforma de análise do mercado energético ibérico (MIBEL — Portugal), con
 ### 1. Iniciar o stack Docker
 
 ```bash
-cd 01_bootstrap/tead_2.0_v1.2
+cd 01_docker_stack
 docker compose up -d
 ```
 
@@ -237,7 +237,7 @@ start 02_medallion_pipeline/meteo_producao/diagrama_meteo_producao.html
 ## Estrutura do Repositório
 
 ```
-01_bootstrap/tead_2.0_v1.2/        ← Docker Compose stack (Trino, MinIO, MLflow, Grafana)
+01_docker_stack/                       ← Docker Compose stack (Trino, MinIO, MLflow, Grafana)
 02_medallion_pipeline/
   producao_consumo/                 ← Pipeline DP-01
   consumo_preco/                    ← Pipeline DP-02

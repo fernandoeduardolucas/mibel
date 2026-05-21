@@ -22,10 +22,10 @@ pip install -r 02_medallion_pipeline/consumo_preco/01_bronze/scripts/python/requ
 
 ## Local Stack (Docker)
 
-All services are defined in `01_bootstrap/tead_2.0_v1.2/docker-compose.yml`:
+All services are defined in `01_docker_stack/docker-compose.yml`:
 
 ```bash
-cd 01_bootstrap/tead_2.0_v1.2
+cd 01_docker_stack
 docker compose up -d          # start stack
 docker compose down           # stop stack
 docker compose up -d --build  # rebuild images (e.g. after MLflow Dockerfile change)
@@ -78,7 +78,7 @@ pyflyte run --remote -p flytesnacks -d development \
 ### Folder Structure
 
 ```
-01_bootstrap/tead_2.0_v1.2/   # Docker Compose stack (MinIO, Hive, Trino, MLflow, Grafana)
+01_docker_stack/   # Docker Compose stack (MinIO, Hive, Trino, MLflow, Grafana)
 02_medallion_pipeline/
   consumo_preco/               # Consumption vs. market prices pipeline (primary)
     01_bronze/                 # Raw CSV ingest → Iceberg
@@ -286,12 +286,12 @@ Frontend: `04_application/producao_consumo/frontend/` — static HTML/CSS/JS (`s
 
 ## Grafana
 
-Dashboard files: `01_bootstrap/tead_2.0_v1.2/grafana/dashboards/`
+Dashboard files: `01_docker_stack/grafana/dashboards/`
 
 - `consumo_preco_overview.json` — queries `gold.dp_energy_market_hourly` + `gold.feat_load_forecasting_hourly`
 - `producao_consumo_overview.json` — queries `gold.producao_vs_consumo_hourly`
 
-Datasource provisioning: `01_bootstrap/tead_2.0_v1.2/grafana/provisioning/datasources/trino.yml`
+Datasource provisioning: `01_docker_stack/grafana/provisioning/datasources/trino.yml`
 uid: `trino-iceberg`, catalog: `iceberg`, schema: `gold`, user: `grafana`
 
 ### Grafana Known Issues

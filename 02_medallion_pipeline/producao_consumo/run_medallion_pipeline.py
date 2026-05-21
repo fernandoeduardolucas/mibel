@@ -113,7 +113,7 @@ def main() -> None:
     pipeline_root = Path(__file__).resolve().parent
     repo_root = pipeline_root.parent.parent
 
-    compose_file = repo_root / "01_bootstrap" / "tead_2.0_v1.2" / "docker-compose.yml"
+    compose_file = repo_root / "01_docker_stack" / "docker-compose.yml"
     bronze_dir = pipeline_root / "01_bronze"
     bronze_sql = bronze_dir / "sql" / "bronze_trino.sql"
     silver_sql = pipeline_root / "02_silver" / "sql" / "01_silver_trino.sql"

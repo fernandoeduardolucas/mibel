@@ -1,185 +1,184 @@
 -- =============================================================================
 -- CHECKS DE QUALIDADE — CAMADA SILVER (consumo_preco)
--- Executa no Trino. Retorna uma linha por verificação com colunas:
+-- Cada tabela é varrida uma única vez via CTE para reduzir pressão de memória.
+-- Retorna uma linha por verificação:
 --   check_name | status (PASS/FAIL/WARN) | valor_pct | threshold_pct | detalhe
 -- =============================================================================
 
--- -----------------------------------------------------------------------------
--- 1. TAXA DE NULOS — ts_utc em consumo_hourly (chave temporal crítica)
--- -----------------------------------------------------------------------------
+WITH
+consumo_stats AS (
+    SELECT
+        COUNT(*)                                                                       AS total,
+        SUM(CASE WHEN ts_utc IS NULL                                   THEN 1 ELSE 0 END) AS null_ts_utc,
+        SUM(CASE WHEN total_mwh IS NULL                                THEN 1 ELSE 0 END) AS null_total_mwh,
+        SUM(CASE WHEN total_mwh <= 0                                   THEN 1 ELSE 0 END) AS nonpos_mwh,
+        SUM(CASE WHEN MINUTE(ts_utc) <> 0 OR SECOND(ts_utc) <> 0     THEN 1 ELSE 0 END) AS bad_temporal
+    FROM iceberg.silver.consumo_hourly
+),
+preco_stats AS (
+    SELECT
+        COUNT(*)                                                                       AS total,
+        SUM(CASE WHEN ts_utc IS NULL                   THEN 1 ELSE 0 END)             AS null_ts_utc,
+        SUM(CASE WHEN price_portugal_eur_mwh IS NULL   THEN 1 ELSE 0 END)             AS null_price_pt,
+        SUM(CASE WHEN price_spain_eur_mwh IS NULL      THEN 1 ELSE 0 END)             AS null_price_es,
+        SUM(CASE WHEN price_portugal_eur_mwh < 0       THEN 1 ELSE 0 END)             AS negative_price
+    FROM iceberg.silver.preco_hourly
+),
+consumo_dups AS (
+    SELECT SUM(CASE WHEN cnt > 1 THEN 1 ELSE 0 END) AS dup_groups
+    FROM (
+        SELECT ts_utc, COUNT(*) AS cnt
+        FROM iceberg.silver.consumo_hourly
+        GROUP BY ts_utc
+    ) AS g
+),
+preco_dups AS (
+    SELECT SUM(CASE WHEN cnt > 1 THEN 1 ELSE 0 END) AS dup_groups
+    FROM (
+        SELECT ts_utc, COUNT(*) AS cnt
+        FROM iceberg.silver.preco_hourly
+        GROUP BY ts_utc
+    ) AS g
+),
+join_stats AS (
+    SELECT
+        COUNT(c.ts_utc)                                                          AS total_consumo,
+        COUNT(p.ts_utc)                                                          AS matched,
+        ROUND(100.0 * COUNT(p.ts_utc) / NULLIF(COUNT(c.ts_utc), 0), 2)         AS coverage_pct
+    FROM iceberg.silver.consumo_hourly AS c
+    LEFT JOIN iceberg.silver.preco_hourly AS p ON c.ts_utc = p.ts_utc
+),
+consumo_daily AS (
+    SELECT SUM(CASE WHEN cnt < 23 THEN 1 ELSE 0 END) AS days_low
+    FROM (
+        SELECT CAST(ts_utc AS DATE) AS dt, COUNT(*) AS cnt
+        FROM iceberg.silver.consumo_hourly
+        GROUP BY CAST(ts_utc AS DATE)
+    ) AS g
+),
+preco_daily AS (
+    SELECT SUM(CASE WHEN cnt < 23 THEN 1 ELSE 0 END) AS days_low
+    FROM (
+        SELECT CAST(ts_utc AS DATE) AS dt, COUNT(*) AS cnt
+        FROM iceberg.silver.preco_hourly
+        GROUP BY CAST(ts_utc AS DATE)
+    ) AS g
+)
+
+-- 1. null_rate: ts_utc em consumo_hourly
 SELECT
-    'silver.consumo_hourly » null_rate » ts_utc'           AS check_name,
-    CASE WHEN SUM(CASE WHEN ts_utc IS NULL THEN 1 ELSE 0 END) = 0
-         THEN 'PASS' ELSE 'FAIL' END                       AS status,
-    ROUND(100.0 * SUM(CASE WHEN ts_utc IS NULL THEN 1 ELSE 0 END)
-          / NULLIF(COUNT(*), 0), 2)                        AS valor_pct,
-    0.0                                                    AS threshold_pct,
-    CONCAT(CAST(SUM(CASE WHEN ts_utc IS NULL THEN 1 ELSE 0 END) AS VARCHAR),
-           ' nulos em ', CAST(COUNT(*) AS VARCHAR), ' linhas') AS detalhe
-FROM iceberg.silver.consumo_hourly
+    'silver.consumo_hourly » null_rate » ts_utc'                        AS check_name,
+    CASE WHEN null_ts_utc = 0 THEN 'PASS' ELSE 'FAIL' END              AS status,
+    ROUND(100.0 * null_ts_utc / NULLIF(total, 0), 2)                   AS valor_pct,
+    0.0                                                                 AS threshold_pct,
+    CONCAT(CAST(null_ts_utc AS VARCHAR), ' nulos em ',
+           CAST(total AS VARCHAR), ' linhas')                           AS detalhe
+FROM consumo_stats
 
 UNION ALL
 
--- -----------------------------------------------------------------------------
--- 2. TAXA DE NULOS — total_mwh em consumo_hourly (métrica de consumo agregada)
--- -----------------------------------------------------------------------------
+-- 2. null_rate: total_mwh
 SELECT
     'silver.consumo_hourly » null_rate » total_mwh',
-    CASE WHEN SUM(CASE WHEN total_mwh IS NULL THEN 1 ELSE 0 END) = 0
-         THEN 'PASS' ELSE 'FAIL' END,
-    ROUND(100.0 * SUM(CASE WHEN total_mwh IS NULL THEN 1 ELSE 0 END)
-          / NULLIF(COUNT(*), 0), 2),
+    CASE WHEN null_total_mwh = 0 THEN 'PASS' ELSE 'FAIL' END,
+    ROUND(100.0 * null_total_mwh / NULLIF(total, 0), 2),
     0.0,
-    CONCAT(CAST(SUM(CASE WHEN total_mwh IS NULL THEN 1 ELSE 0 END) AS VARCHAR),
-           ' nulos em ', CAST(COUNT(*) AS VARCHAR), ' linhas')
-FROM iceberg.silver.consumo_hourly
+    CONCAT(CAST(null_total_mwh AS VARCHAR), ' nulos em ', CAST(total AS VARCHAR), ' linhas')
+FROM consumo_stats
 
 UNION ALL
 
--- -----------------------------------------------------------------------------
--- 3. TAXA DE NULOS — ts_utc em preco_hourly
--- -----------------------------------------------------------------------------
+-- 3. null_rate: ts_utc em preco_hourly
 SELECT
     'silver.preco_hourly » null_rate » ts_utc',
-    CASE WHEN SUM(CASE WHEN ts_utc IS NULL THEN 1 ELSE 0 END) = 0
-         THEN 'PASS' ELSE 'FAIL' END,
-    ROUND(100.0 * SUM(CASE WHEN ts_utc IS NULL THEN 1 ELSE 0 END)
-          / NULLIF(COUNT(*), 0), 2),
+    CASE WHEN null_ts_utc = 0 THEN 'PASS' ELSE 'FAIL' END,
+    ROUND(100.0 * null_ts_utc / NULLIF(total, 0), 2),
     0.0,
-    CONCAT(CAST(SUM(CASE WHEN ts_utc IS NULL THEN 1 ELSE 0 END) AS VARCHAR),
-           ' nulos em ', CAST(COUNT(*) AS VARCHAR), ' linhas')
-FROM iceberg.silver.preco_hourly
+    CONCAT(CAST(null_ts_utc AS VARCHAR), ' nulos em ', CAST(total AS VARCHAR), ' linhas')
+FROM preco_stats
 
 UNION ALL
 
--- -----------------------------------------------------------------------------
--- 4. TAXA DE NULOS — price_portugal_eur_mwh em preco_hourly
--- -----------------------------------------------------------------------------
+-- 4. null_rate: price_portugal_eur_mwh
 SELECT
     'silver.preco_hourly » null_rate » price_portugal_eur_mwh',
-    CASE WHEN SUM(CASE WHEN price_portugal_eur_mwh IS NULL THEN 1 ELSE 0 END) = 0
-         THEN 'PASS' ELSE 'FAIL' END,
-    ROUND(100.0 * SUM(CASE WHEN price_portugal_eur_mwh IS NULL THEN 1 ELSE 0 END)
-          / NULLIF(COUNT(*), 0), 2),
+    CASE WHEN null_price_pt = 0 THEN 'PASS' ELSE 'FAIL' END,
+    ROUND(100.0 * null_price_pt / NULLIF(total, 0), 2),
     0.0,
-    CONCAT(CAST(SUM(CASE WHEN price_portugal_eur_mwh IS NULL THEN 1 ELSE 0 END) AS VARCHAR),
-           ' nulos em ', CAST(COUNT(*) AS VARCHAR), ' linhas')
-FROM iceberg.silver.preco_hourly
+    CONCAT(CAST(null_price_pt AS VARCHAR), ' nulos em ', CAST(total AS VARCHAR), ' linhas')
+FROM preco_stats
 
 UNION ALL
 
--- -----------------------------------------------------------------------------
--- 5. TAXA DE NULOS — price_spain_eur_mwh em preco_hourly
--- -----------------------------------------------------------------------------
+-- 5. null_rate: price_spain_eur_mwh
 SELECT
     'silver.preco_hourly » null_rate » price_spain_eur_mwh',
-    CASE WHEN SUM(CASE WHEN price_spain_eur_mwh IS NULL THEN 1 ELSE 0 END) = 0
-         THEN 'PASS' ELSE 'FAIL' END,
-    ROUND(100.0 * SUM(CASE WHEN price_spain_eur_mwh IS NULL THEN 1 ELSE 0 END)
-          / NULLIF(COUNT(*), 0), 2),
+    CASE WHEN null_price_es = 0 THEN 'PASS' ELSE 'FAIL' END,
+    ROUND(100.0 * null_price_es / NULLIF(total, 0), 2),
     0.0,
-    CONCAT(CAST(SUM(CASE WHEN price_spain_eur_mwh IS NULL THEN 1 ELSE 0 END) AS VARCHAR),
-           ' nulos em ', CAST(COUNT(*) AS VARCHAR), ' linhas')
-FROM iceberg.silver.preco_hourly
+    CONCAT(CAST(null_price_es AS VARCHAR), ' nulos em ', CAST(total AS VARCHAR), ' linhas')
+FROM preco_stats
 
 UNION ALL
 
--- -----------------------------------------------------------------------------
--- 6. RANGE — consumo horário positivo (> 0 MWh após agregação SUM/1000)
--- -----------------------------------------------------------------------------
+-- 6. range: consumo horário > 0
 SELECT
     'silver.consumo_hourly » range » total_mwh > 0',
-    CASE WHEN SUM(CASE WHEN total_mwh <= 0 THEN 1 ELSE 0 END) = 0
-         THEN 'PASS' ELSE 'WARN' END,
-    ROUND(100.0 * SUM(CASE WHEN total_mwh <= 0 THEN 1 ELSE 0 END)
-          / NULLIF(COUNT(*), 0), 4),
+    CASE WHEN nonpos_mwh = 0 THEN 'PASS' ELSE 'WARN' END,
+    ROUND(100.0 * nonpos_mwh / NULLIF(total, 0), 4),
     0.0,
-    CONCAT(CAST(SUM(CASE WHEN total_mwh <= 0 THEN 1 ELSE 0 END) AS VARCHAR),
-           ' horas com consumo <= 0 MWh')
-FROM iceberg.silver.consumo_hourly
+    CONCAT(CAST(nonpos_mwh AS VARCHAR), ' horas com consumo <= 0 MWh')
+FROM consumo_stats
 
 UNION ALL
 
--- -----------------------------------------------------------------------------
--- 7. RANGE — preço PT não-negativo (mercado MIBEL pode ter preços negativos, WARN)
--- -----------------------------------------------------------------------------
+-- 7. range: preço PT >= 0
 SELECT
     'silver.preco_hourly » range » price_portugal_eur_mwh >= 0',
-    CASE WHEN SUM(CASE WHEN price_portugal_eur_mwh < 0 THEN 1 ELSE 0 END) = 0
-         THEN 'PASS' ELSE 'WARN' END,
-    ROUND(100.0 * SUM(CASE WHEN price_portugal_eur_mwh < 0 THEN 1 ELSE 0 END)
-          / NULLIF(COUNT(*), 0), 4),
+    CASE WHEN negative_price = 0 THEN 'PASS' ELSE 'WARN' END,
+    ROUND(100.0 * negative_price / NULLIF(total, 0), 4),
     0.0,
-    CONCAT(CAST(SUM(CASE WHEN price_portugal_eur_mwh < 0 THEN 1 ELSE 0 END) AS VARCHAR),
+    CONCAT(CAST(negative_price AS VARCHAR),
            ' horas com preço PT negativo (possível: mercado negativo)')
-FROM iceberg.silver.preco_hourly
+FROM preco_stats
 
 UNION ALL
 
--- -----------------------------------------------------------------------------
--- 8. UNICIDADE — ts_utc único em consumo_hourly (sem horas duplicadas)
--- -----------------------------------------------------------------------------
+-- 8. uniqueness: ts_utc em consumo_hourly
 SELECT
     'silver.consumo_hourly » uniqueness » ts_utc',
     CASE WHEN dup_groups = 0 THEN 'PASS' ELSE 'FAIL' END,
     CAST(dup_groups AS DECIMAL(18,2)),
     0.0,
     CONCAT(CAST(dup_groups AS VARCHAR), ' horas duplicadas')
-FROM (
-    SELECT SUM(CASE WHEN cnt > 1 THEN 1 ELSE 0 END) AS dup_groups
-    FROM (
-        SELECT ts_utc, COUNT(*) AS cnt
-        FROM iceberg.silver.consumo_hourly
-        GROUP BY ts_utc
-    ) AS grouped
-) AS dup_summary
+FROM consumo_dups
 
 UNION ALL
 
--- -----------------------------------------------------------------------------
--- 9. UNICIDADE — ts_utc único em preco_hourly
--- -----------------------------------------------------------------------------
+-- 9. uniqueness: ts_utc em preco_hourly
 SELECT
     'silver.preco_hourly » uniqueness » ts_utc',
     CASE WHEN dup_groups = 0 THEN 'PASS' ELSE 'FAIL' END,
     CAST(dup_groups AS DECIMAL(18,2)),
     0.0,
     CONCAT(CAST(dup_groups AS VARCHAR), ' horas duplicadas')
-FROM (
-    SELECT SUM(CASE WHEN cnt > 1 THEN 1 ELSE 0 END) AS dup_groups
-    FROM (
-        SELECT ts_utc, COUNT(*) AS cnt
-        FROM iceberg.silver.preco_hourly
-        GROUP BY ts_utc
-    ) AS grouped
-) AS dup_summary
+FROM preco_dups
 
 UNION ALL
 
--- -----------------------------------------------------------------------------
--- 10. ALINHAMENTO TEMPORAL — ts_utc deve estar em fronteiras de hora exactas
---     (minuto = 0, segundo = 0): garante que a agregação 15min → 1h foi correcta
--- -----------------------------------------------------------------------------
+-- 10. alinhamento temporal: ts_utc em fronteiras de hora exactas
 SELECT
     'silver.consumo_hourly » temporal » ts_utc em fronteira de hora',
-    CASE WHEN SUM(CASE WHEN MINUTE(ts_utc) <> 0 OR SECOND(ts_utc) <> 0
-                       THEN 1 ELSE 0 END) = 0
-         THEN 'PASS' ELSE 'FAIL' END,
-    ROUND(100.0 * SUM(CASE WHEN MINUTE(ts_utc) <> 0 OR SECOND(ts_utc) <> 0
-                            THEN 1 ELSE 0 END)
-          / NULLIF(COUNT(*), 0), 4),
+    CASE WHEN bad_temporal = 0 THEN 'PASS' ELSE 'FAIL' END,
+    ROUND(100.0 * bad_temporal / NULLIF(total, 0), 4),
     0.0,
-    CONCAT(CAST(SUM(CASE WHEN MINUTE(ts_utc) <> 0 OR SECOND(ts_utc) <> 0
-                         THEN 1 ELSE 0 END) AS VARCHAR),
+    CONCAT(CAST(bad_temporal AS VARCHAR),
            ' registos fora de fronteira de hora (minuto ou segundo != 0)')
-FROM iceberg.silver.consumo_hourly
+FROM consumo_stats
 
 UNION ALL
 
--- -----------------------------------------------------------------------------
--- 11. COBERTURA DO JOIN — % de horas de consumo com preço correspondente
---     Threshold: >= 95% (pode haver dias sem publicação de preço pelo OMIE)
--- -----------------------------------------------------------------------------
+-- 11. cobertura do join: >= 95% de horas de consumo com preço
 SELECT
     'silver » join_coverage » consumo_hourly com preco_hourly >= 95%',
     CASE WHEN coverage_pct >= 95.0 THEN 'PASS' ELSE 'WARN' END,
@@ -187,52 +186,28 @@ SELECT
     95.0,
     CONCAT(CAST(matched AS VARCHAR), ' de ', CAST(total_consumo AS VARCHAR),
            ' horas com preço correspondente')
-FROM (
-    SELECT
-        COUNT(c.ts_utc)                                                      AS total_consumo,
-        COUNT(p.ts_utc)                                                      AS matched,
-        ROUND(100.0 * COUNT(p.ts_utc) / NULLIF(COUNT(c.ts_utc), 0), 2)      AS coverage_pct
-    FROM iceberg.silver.consumo_hourly AS c
-    LEFT JOIN iceberg.silver.preco_hourly AS p ON c.ts_utc = p.ts_utc
-) AS join_stats
+FROM join_stats
 
 UNION ALL
 
--- -----------------------------------------------------------------------------
--- 12. COMPLETUDE DIÁRIA — dias com menos de 23 horas em consumo_hourly
---     Em UTC não há DST: cada dia deve ter exactamente 24 horas
--- -----------------------------------------------------------------------------
+-- 12. completude diária: >= 23 horas/dia em consumo_hourly
 SELECT
     'silver.consumo_hourly » completeness » horas_por_dia >= 23',
-    CASE WHEN SUM(CASE WHEN cnt < 23 THEN 1 ELSE 0 END) = 0
-         THEN 'PASS' ELSE 'WARN' END,
-    CAST(SUM(CASE WHEN cnt < 23 THEN 1 ELSE 0 END) AS DECIMAL(18,2)),
+    CASE WHEN days_low = 0 THEN 'PASS' ELSE 'WARN' END,
+    CAST(days_low AS DECIMAL(18,2)),
     0.0,
-    CONCAT(CAST(SUM(CASE WHEN cnt < 23 THEN 1 ELSE 0 END) AS VARCHAR),
-           ' dias com menos de 23 horas de consumo')
-FROM (
-    SELECT CAST(ts_utc AS DATE) AS dt, COUNT(*) AS cnt
-    FROM iceberg.silver.consumo_hourly
-    GROUP BY CAST(ts_utc AS DATE)
-) AS daily_counts
+    CONCAT(CAST(days_low AS VARCHAR), ' dias com menos de 23 horas de consumo')
+FROM consumo_daily
 
 UNION ALL
 
--- -----------------------------------------------------------------------------
--- 13. COMPLETUDE DIÁRIA — dias com menos de 23 horas em preco_hourly
--- -----------------------------------------------------------------------------
+-- 13. completude diária: >= 23 horas/dia em preco_hourly
 SELECT
     'silver.preco_hourly » completeness » horas_por_dia >= 23',
-    CASE WHEN SUM(CASE WHEN cnt < 23 THEN 1 ELSE 0 END) = 0
-         THEN 'PASS' ELSE 'WARN' END,
-    CAST(SUM(CASE WHEN cnt < 23 THEN 1 ELSE 0 END) AS DECIMAL(18,2)),
+    CASE WHEN days_low = 0 THEN 'PASS' ELSE 'WARN' END,
+    CAST(days_low AS DECIMAL(18,2)),
     0.0,
-    CONCAT(CAST(SUM(CASE WHEN cnt < 23 THEN 1 ELSE 0 END) AS VARCHAR),
-           ' dias com menos de 23 horas de preços')
-FROM (
-    SELECT CAST(ts_utc AS DATE) AS dt, COUNT(*) AS cnt
-    FROM iceberg.silver.preco_hourly
-    GROUP BY CAST(ts_utc AS DATE)
-) AS daily_counts
+    CONCAT(CAST(days_low AS VARCHAR), ' dias com menos de 23 horas de preços')
+FROM preco_daily
 
 ORDER BY status DESC, check_name;

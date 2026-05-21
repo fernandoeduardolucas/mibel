@@ -102,6 +102,25 @@ SELECT
 FROM validated;
 
 
+ALTER TABLE iceberg.silver.meteo_open_meteo_hourly
+SET PROPERTIES
+    format_version = 2,
+    object_store_layout_enabled = true,
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
+        ARRAY['silver', 'meteo_producao', '1', 'hourly', 'bronze.meteo_open_meteo_hourly']
+    );
+
+COMMENT ON TABLE iceberg.silver.meteo_open_meteo_hourly IS
+'Tabela Silver com dados meteorológicos horários para Portugal Continental. Deduplicada por ts_utc, com validação de intervalos físicos e flag de qualidade (_quality_flag).';
+
+COMMENT ON COLUMN iceberg.silver.meteo_open_meteo_hourly.ts_utc IS 'Timestamp horário UTC — chave de negócio Silver (único após deduplicação).';
+COMMENT ON COLUMN iceberg.silver.meteo_open_meteo_hourly.temperature_2m IS 'Temperatura do ar a 2 m (°C) — valor mais recente após deduplicação.';
+COMMENT ON COLUMN iceberg.silver.meteo_open_meteo_hourly.radiation_kwh_m2 IS 'Radiação solar convertida de W/m² para kWh/m² (÷ 1000).';
+COMMENT ON COLUMN iceberg.silver.meteo_open_meteo_hourly._quality_flag IS 'ok | out_of_range | null_values — resultado da validação de intervalos físicos para Portugal Continental.';
+COMMENT ON COLUMN iceberg.silver.meteo_open_meteo_hourly.year IS 'Ano — coluna de partição.';
+COMMENT ON COLUMN iceberg.silver.meteo_open_meteo_hourly.month IS 'Mês — coluna de partição.';
+
 -- =============================================================================
 -- VALIDAÇÃO
 -- =============================================================================

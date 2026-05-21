@@ -89,7 +89,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(producao_total_kwh) AS value\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
+          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(producao_total_kwh) AS value\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
           "refId": "A"
         }
@@ -150,7 +150,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(consumo_total_kwh) AS value\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
+          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(consumo_total_kwh) AS value\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
           "refId": "A"
         }
@@ -219,7 +219,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  AVG(ratio_producao_consumo) AS value\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
+          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  AVG(ratio_producao_consumo) AS value\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
           "refId": "A"
         }
@@ -288,7 +288,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(saldo_kwh) AS value\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
+          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(saldo_kwh) AS value\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
           "refId": "A"
         }
@@ -357,7 +357,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  MAX(consumo_total_kwh) AS value\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
+          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  MAX(consumo_total_kwh) AS value\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
           "refId": "A"
         }
@@ -418,7 +418,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  MAX(ratio_producao_consumo) AS value\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
+          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  MAX(ratio_producao_consumo) AS value\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
           "refId": "A"
         }
@@ -586,7 +586,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(producao_total_kwh) AS \"Produção\",\n  SUM(consumo_total_kwh) AS \"Consumo\",\n  SUM(saldo_kwh) AS \"Saldo\"\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
+          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(producao_total_kwh) AS \"Produção\",\n  SUM(consumo_total_kwh) AS \"Consumo\",\n  SUM(saldo_kwh) AS \"Saldo\"\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
           "refId": "A"
         }
@@ -648,7 +648,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  'produção total' AS categoria,\n  SUM(producao_total_kwh) AS valor\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY valor DESC",
+          "rawSQL": "SELECT\n  'produção total' AS categoria,\n  SUM(producao_total_kwh) AS valor\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY valor DESC",
           "format": 1,
           "refId": "A"
         }
@@ -767,7 +767,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  AVG(ratio_producao_consumo) AS \"Preço €/MWh\"\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
+          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  AVG(ratio_producao_consumo) AS \"Preço €/MWh\"\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
           "refId": "A"
         }
@@ -858,7 +858,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('hour', TIMESTAMP '2000-01-01' + (hour(timestamp_utc) * INTERVAL '1' HOUR)) AS time,\n  AVG(ratio_producao_consumo) AS \"Preço Médio €/MWh\"\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY hour(timestamp_utc)\nORDER BY hour(timestamp_utc)",
+          "rawSQL": "SELECT\n  date_trunc('hour', TIMESTAMP '2000-01-01' + (hour(timestamp_utc) * INTERVAL '1' HOUR)) AS time,\n  AVG(ratio_producao_consumo) AS \"Preço Médio €/MWh\"\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY hour(timestamp_utc)\nORDER BY hour(timestamp_utc)",
           "format": 0,
           "refId": "A"
         }
@@ -966,7 +966,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  consumo_total_kwh,\n  ratio_producao_consumo\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nORDER BY timestamp_utc\nLIMIT 2000",
+          "rawSQL": "SELECT\n  consumo_total_kwh,\n  ratio_producao_consumo\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nORDER BY timestamp_utc\nLIMIT 2000",
           "format": 1,
           "refId": "A"
         }
@@ -1144,7 +1144,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  CAST(date_trunc('hour', timestamp_utc) AS varchar) AS hora,\n  ROUND(SUM(producao_total_kwh), 2) AS producao_total_kwh,\n  ROUND(SUM(consumo_total_kwh), 2) AS consumo_total_kwh,\n  ROUND(SUM(saldo_kwh), 2) AS saldo_kwh,\n  ROUND(AVG(ratio_producao_consumo), 4) AS ratio_producao_consumo\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY hora DESC\nLIMIT 24",
+          "rawSQL": "SELECT\n  CAST(date_trunc('hour', timestamp_utc) AS varchar) AS hora,\n  ROUND(SUM(producao_total_kwh), 2) AS producao_total_kwh,\n  ROUND(SUM(consumo_total_kwh), 2) AS consumo_total_kwh,\n  ROUND(SUM(saldo_kwh), 2) AS saldo_kwh,\n  ROUND(AVG(ratio_producao_consumo), 4) AS ratio_producao_consumo\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY hora DESC\nLIMIT 24",
           "format": 1,
           "refId": "A"
         }
@@ -1278,7 +1278,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('day', timestamp_utc) AS time,\n  SUM(producao_total_kwh) AS \"Produção\",\n  SUM(consumo_total_kwh) AS \"Consumo\"\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
+          "rawSQL": "SELECT\n  date_trunc('day', timestamp_utc) AS time,\n  SUM(producao_total_kwh) AS \"Produção\",\n  SUM(consumo_total_kwh) AS \"Consumo\"\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
           "refId": "A"
         }
@@ -1371,7 +1371,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('day', timestamp_utc) AS time,\n  AVG(ratio_producao_consumo) AS \"Preço Médio\",\n  MAX(ratio_producao_consumo) AS \"Preço Máximo\",\n  MIN(ratio_producao_consumo) AS \"Preço Mínimo\"\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
+          "rawSQL": "SELECT\n  date_trunc('day', timestamp_utc) AS time,\n  AVG(ratio_producao_consumo) AS \"Preço Médio\",\n  MAX(ratio_producao_consumo) AS \"Preço Máximo\",\n  MIN(ratio_producao_consumo) AS \"Preço Mínimo\"\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
           "refId": "A"
         }
@@ -1453,7 +1453,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  CASE\n    WHEN COUNT(*) = 0 THEN 0\n    ELSE CAST(COUNT(*) AS DOUBLE) /\n      (CAST(date_diff('hour', MIN(timestamp_utc), MAX(timestamp_utc)) AS DOUBLE) + 1)\n  END AS completude\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)",
+          "rawSQL": "SELECT\n  CASE\n    WHEN COUNT(*) = 0 THEN 0\n    ELSE CAST(COUNT(*) AS DOUBLE) /\n      (CAST(date_diff('hour', MIN(timestamp_utc), MAX(timestamp_utc)) AS DOUBLE) + 1)\n  END AS completude\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)",
           "format": 1,
           "refId": "A"
         }
@@ -1522,7 +1522,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  CASE\n    WHEN COUNT(*) = 0 THEN NULL\n    ELSE date_diff('hour', MIN(timestamp_utc), MAX(timestamp_utc)) + 1 - COUNT(*)\n  END AS horas_em_falta\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)",
+          "rawSQL": "SELECT\n  CASE\n    WHEN COUNT(*) = 0 THEN NULL\n    ELSE date_diff('hour', MIN(timestamp_utc), MAX(timestamp_utc)) + 1 - COUNT(*)\n  END AS horas_em_falta\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)",
           "format": 0,
           "refId": "A"
         }
@@ -1591,7 +1591,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT COUNT(*) AS nulos\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\n  AND (producao_total_kwh IS NULL OR consumo_total_kwh IS NULL)",
+          "rawSQL": "SELECT COUNT(*) AS nulos\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\n  AND (producao_total_kwh IS NULL OR consumo_total_kwh IS NULL)",
           "format": 0,
           "refId": "A"
         }
@@ -1660,7 +1660,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "WITH stats AS (\n  SELECT approx_percentile(ratio_producao_consumo, 0.99) AS p99\n  FROM iceberg.gold.producao_vs_consumo_hourly\n  WHERE $__timeFilter(timestamp_utc)\n)\nSELECT COUNT(*) AS outliers\nFROM iceberg.gold.producao_vs_consumo_hourly\nCROSS JOIN stats\nWHERE $__timeFilter(timestamp_utc)\n  AND ratio_producao_consumo > p99",
+          "rawSQL": "WITH stats AS (\n  SELECT approx_percentile(ratio_producao_consumo, 0.99) AS p99\n  FROM iceberg.gold.dp_energia_balance_hourly\n  WHERE $__timeFilter(timestamp_utc)\n)\nSELECT COUNT(*) AS outliers\nFROM iceberg.gold.dp_energia_balance_hourly\nCROSS JOIN stats\nWHERE $__timeFilter(timestamp_utc)\n  AND ratio_producao_consumo > p99",
           "format": 0,
           "refId": "A"
         }
@@ -1748,7 +1748,7 @@
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('day', timestamp_utc) AS time,\n  COUNT(*) AS registos\nFROM iceberg.gold.producao_vs_consumo_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
+          "rawSQL": "SELECT\n  date_trunc('day', timestamp_utc) AS time,\n  COUNT(*) AS registos\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
           "refId": "A"
         }

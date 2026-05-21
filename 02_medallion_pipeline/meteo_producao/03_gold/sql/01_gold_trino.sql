@@ -3,7 +3,7 @@
 -- Produto: dp_meteo_producao_daily_features  (DP-03)
 -- Entradas:
 --   iceberg.silver.meteo_open_meteo_hourly       → variáveis meteorológicas
---   iceberg.gold.producao_vs_consumo_hourly      → produção e consumo (DP-01)
+--   iceberg.gold.dp_energia_balance_hourly      → produção e consumo (DP-01)
 --   iceberg.gold.dp_energy_market_hourly         → preço spot day-ahead (DP-02)
 -- Saída:
 --   iceberg.gold.dp_meteo_producao_daily_features
@@ -62,6 +62,10 @@ WITH (
     partitioning = ARRAY['year', 'month'],
     format_version = 2,
     object_store_layout_enabled = true,
+    extra_properties = MAP(
+        ARRAY['layer', 'data_product', 'schema_version', 'product_version', 'deprecated', 'domain', 'grain'],
+        ARRAY['gold', 'dp_meteo_producao_daily_features', '1', 'v1', 'false', 'meteo_producao', 'daily']
+    ),
     location = 's3a://warehouse/gold/dp_meteo_producao_daily_features/'
 );
 
@@ -70,7 +74,7 @@ COMMENT ON TABLE iceberg.gold.dp_meteo_producao_daily_features IS
 
 COMMENT ON COLUMN iceberg.gold.dp_meteo_producao_daily_features.data_dia IS 'Chave diária UTC — grão primário do produto.';
 COMMENT ON COLUMN iceberg.gold.dp_meteo_producao_daily_features.preco_spot_medio_eur_mwh IS 'TARGET: preço spot médio diário em €/MWh (média aritmética dos preços horários day-ahead MIBEL PT).';
-COMMENT ON COLUMN iceberg.gold.dp_meteo_producao_daily_features.producao_total_daily_mwh IS 'Produção elétrica total diária: soma de producao_total_kwh / 1000 da tabela producao_vs_consumo_hourly.';
+COMMENT ON COLUMN iceberg.gold.dp_meteo_producao_daily_features.producao_total_daily_mwh IS 'Produção elétrica total diária: soma de producao_total_kwh / 1000 da tabela dp_energia_balance_hourly.';
 COMMENT ON COLUMN iceberg.gold.dp_meteo_producao_daily_features.estacao IS '1=Inverno (Dez-Fev), 2=Primavera (Mar-Mai), 3=Verão (Jun-Ago), 4=Outono (Set-Nov).';
 
 
@@ -102,7 +106,7 @@ producao_daily AS (
         SUM(COALESCE(producao_total_kwh, 0)) / 1000.0 AS producao_total_daily_mwh,
         SUM(COALESCE(consumo_total_kwh, 0))  / 1000.0 AS consumo_total_daily_mwh,
         SUM(COALESCE(saldo_kwh, 0))          / 1000.0 AS saldo_daily_mwh
-    FROM iceberg.gold.producao_vs_consumo_hourly
+    FROM iceberg.gold.dp_energia_balance_hourly
     GROUP BY 1
 ),
 preco_daily AS (

@@ -17,7 +17,15 @@ WITH (location = 's3a://warehouse/silver/');
 DROP TABLE IF EXISTS iceberg.silver.consumo_total_nacional_15min;
 
 CREATE TABLE iceberg.silver.consumo_total_nacional_15min
-WITH (format = 'PARQUET') AS
+WITH (
+    format = 'PARQUET',
+    partitioning = ARRAY['ano', 'mes'],
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
+        ARRAY['silver', 'producao_consumo', '1', '15min', 'bronze.consumo_total_nacional']
+    ),
+    location = 's3a://warehouse/silver/producao_consumo/consumo_total_nacional_15min/'
+) AS
 WITH ranked AS (
     SELECT
         b.*,
@@ -67,13 +75,39 @@ SELECT
 FROM ranked
 WHERE silver_pick_rank = 1;
 
+ALTER TABLE iceberg.silver.consumo_total_nacional_15min
+SET PROPERTIES
+    format_version = 2,
+    object_store_layout_enabled = true,
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
+        ARRAY['silver', 'producao_consumo', '1', '15min', 'bronze.consumo_total_nacional']
+    );
+
+COMMENT ON TABLE iceberg.silver.consumo_total_nacional_15min IS
+'Tabela Silver com consumo elétrico nacional a 15 minutos. Deduplicada por timestamp_utc (registo de melhor qualidade por janela), com flags de componentes e consistência interna.';
+
+COMMENT ON COLUMN iceberg.silver.consumo_total_nacional_15min.timestamp_utc IS 'Timestamp canónico UTC do intervalo de 15 minutos — chave de negócio Silver.';
+COMMENT ON COLUMN iceberg.silver.consumo_total_nacional_15min.consumo_total_kwh IS 'Consumo total nacional no intervalo de 15 minutos em kW (registo seleccionado após deduplicação).';
+COMMENT ON COLUMN iceberg.silver.consumo_total_nacional_15min.flag_component_sum_mismatch IS 'True se a soma das componentes (BT+MT+AT+MAT) diverge do total em mais de 0.001 kW.';
+COMMENT ON COLUMN iceberg.silver.consumo_total_nacional_15min.ano IS 'Ano — coluna de partição.';
+COMMENT ON COLUMN iceberg.silver.consumo_total_nacional_15min.mes IS 'Mês — coluna de partição.';
+
 -- ============================================
 -- 2) SILVER PRODUCAO 15 MIN
 -- ============================================
 DROP TABLE IF EXISTS iceberg.silver.energia_produzida_total_nacional_15min;
 
 CREATE TABLE iceberg.silver.energia_produzida_total_nacional_15min
-WITH (format = 'PARQUET') AS
+WITH (
+    format = 'PARQUET',
+    partitioning = ARRAY['ano', 'mes'],
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
+        ARRAY['silver', 'producao_consumo', '1', '15min', 'bronze.energia_produzida_total_nacional']
+    ),
+    location = 's3a://warehouse/silver/producao_consumo/energia_produzida_total_nacional_15min/'
+) AS
 WITH ranked AS (
     SELECT
         b.*,
@@ -118,6 +152,26 @@ SELECT
     ingest_ts_utc
 FROM ranked
 WHERE silver_pick_rank = 1;
+
+ALTER TABLE iceberg.silver.energia_produzida_total_nacional_15min
+SET PROPERTIES
+    format_version = 2,
+    object_store_layout_enabled = true,
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
+        ARRAY['silver', 'producao_consumo', '1', '15min', 'bronze.energia_produzida_total_nacional']
+    );
+
+COMMENT ON TABLE iceberg.silver.energia_produzida_total_nacional_15min IS
+'Tabela Silver com energia produzida total nacional a 15 minutos. Deduplicada por timestamp_utc, preserva componentes DGM e PRE com flags de consistência interna.';
+
+COMMENT ON COLUMN iceberg.silver.energia_produzida_total_nacional_15min.timestamp_utc IS 'Timestamp canónico UTC do intervalo de 15 minutos — chave de negócio Silver.';
+COMMENT ON COLUMN iceberg.silver.energia_produzida_total_nacional_15min.producao_total_kwh IS 'Produção total nacional (DGM + PRE) no intervalo de 15 minutos em kW.';
+COMMENT ON COLUMN iceberg.silver.energia_produzida_total_nacional_15min.producao_dgm_kwh IS 'Produção DGM no intervalo de 15 minutos em kW.';
+COMMENT ON COLUMN iceberg.silver.energia_produzida_total_nacional_15min.producao_pre_kwh IS 'Produção PRE no intervalo de 15 minutos em kW.';
+COMMENT ON COLUMN iceberg.silver.energia_produzida_total_nacional_15min.flag_component_sum_mismatch IS 'True se DGM + PRE diverge do total em mais de 0.001 kW.';
+COMMENT ON COLUMN iceberg.silver.energia_produzida_total_nacional_15min.ano IS 'Ano — coluna de partição.';
+COMMENT ON COLUMN iceberg.silver.energia_produzida_total_nacional_15min.mes IS 'Mês — coluna de partição.';
 
 -- ============================================
 -- 3) VALIDACAO

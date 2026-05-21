@@ -169,8 +169,34 @@ CREATE TABLE iceberg.bronze.consumo_total_nacional (
     ingest_ts_utc TIMESTAMP
 )
 WITH (
-    format = 'PARQUET'
+    format = 'PARQUET',
+    partitioning = ARRAY['ano', 'mes'],
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
+        ARRAY['bronze', 'producao_consumo', '1', 'indefinite', 'ren_csv']
+    ),
+    location = 's3a://warehouse/bronze/producao_consumo/consumo_total_nacional/'
 );
+
+ALTER TABLE iceberg.bronze.consumo_total_nacional
+SET PROPERTIES
+    format_version = 2,
+    object_store_layout_enabled = true,
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
+        ARRAY['bronze', 'producao_consumo', '1', 'indefinite', 'ren_csv']
+    );
+
+COMMENT ON TABLE iceberg.bronze.consumo_total_nacional IS
+'Tabela Bronze com consumo elétrico nacional a 15 minutos, ingerida do CSV REN (ERSE). Preserva todas as colunas da fonte com flags de qualidade sem transformação semântica.';
+
+COMMENT ON COLUMN iceberg.bronze.consumo_total_nacional.timestamp_utc IS 'Timestamp original da fonte interpretado em UTC para o registo de 15 minutos.';
+COMMENT ON COLUMN iceberg.bronze.consumo_total_nacional.consumo_total_kwh IS 'Consumo total nacional no intervalo de 15 minutos em kW.';
+COMMENT ON COLUMN iceberg.bronze.consumo_total_nacional.flag_duplicate_timestamp IS 'True se este timestamp_utc tem mais do que um registo na fonte.';
+COMMENT ON COLUMN iceberg.bronze.consumo_total_nacional.flag_bad_timestamp IS 'True se o timestamp não foi possível converter correctamente.';
+COMMENT ON COLUMN iceberg.bronze.consumo_total_nacional.flag_bad_total IS 'True se consumo_total_kwh é negativo ou nulo de forma anómala.';
+COMMENT ON COLUMN iceberg.bronze.consumo_total_nacional.ano IS 'Ano — coluna de partição.';
+COMMENT ON COLUMN iceberg.bronze.consumo_total_nacional.mes IS 'Mês — coluna de partição.';
 
 INSERT INTO iceberg.bronze.consumo_total_nacional
 SELECT
@@ -220,8 +246,34 @@ CREATE TABLE iceberg.bronze.energia_produzida_total_nacional (
     ingest_ts_utc TIMESTAMP
 )
 WITH (
-    format = 'PARQUET'
+    format = 'PARQUET',
+    partitioning = ARRAY['ano', 'mes'],
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
+        ARRAY['bronze', 'producao_consumo', '1', 'indefinite', 'ren_csv']
+    ),
+    location = 's3a://warehouse/bronze/producao_consumo/energia_produzida_total_nacional/'
 );
+
+ALTER TABLE iceberg.bronze.energia_produzida_total_nacional
+SET PROPERTIES
+    format_version = 2,
+    object_store_layout_enabled = true,
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
+        ARRAY['bronze', 'producao_consumo', '1', 'indefinite', 'ren_csv']
+    );
+
+COMMENT ON TABLE iceberg.bronze.energia_produzida_total_nacional IS
+'Tabela Bronze com energia produzida total nacional a 15 minutos, ingerida do CSV REN. Preserva colunas DGM e PRE com flags de qualidade sem transformação semântica.';
+
+COMMENT ON COLUMN iceberg.bronze.energia_produzida_total_nacional.timestamp_utc IS 'Timestamp original da fonte interpretado em UTC para o registo de 15 minutos.';
+COMMENT ON COLUMN iceberg.bronze.energia_produzida_total_nacional.producao_total_kwh IS 'Produção total nacional (DGM + PRE) no intervalo de 15 minutos em kW.';
+COMMENT ON COLUMN iceberg.bronze.energia_produzida_total_nacional.producao_dgm_kwh IS 'Produção DGM (Despacho Global do Mercado) no intervalo de 15 minutos em kW.';
+COMMENT ON COLUMN iceberg.bronze.energia_produzida_total_nacional.producao_pre_kwh IS 'Produção PRE (Produção em Regime Especial) no intervalo de 15 minutos em kW.';
+COMMENT ON COLUMN iceberg.bronze.energia_produzida_total_nacional.flag_duplicate_timestamp IS 'True se este timestamp_utc tem mais do que um registo na fonte.';
+COMMENT ON COLUMN iceberg.bronze.energia_produzida_total_nacional.ano IS 'Ano — coluna de partição.';
+COMMENT ON COLUMN iceberg.bronze.energia_produzida_total_nacional.mes IS 'Mês — coluna de partição.';
 
 INSERT INTO iceberg.bronze.energia_produzida_total_nacional
 SELECT

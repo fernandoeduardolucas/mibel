@@ -106,6 +106,31 @@ CREATE TABLE iceberg.bronze.meteo_open_meteo_hourly (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['year', 'month'],
-    location = 's3a://warehouse/bronze/managed/meteo_open_meteo_hourly/'
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
+        ARRAY['bronze', 'meteo_producao', '1', 'indefinite', 'open_meteo_api']
+    ),
+    location = 's3a://warehouse/bronze/meteo_producao/meteo_open_meteo_hourly/'
 );
+
+ALTER TABLE iceberg.bronze.meteo_open_meteo_hourly
+SET PROPERTIES
+    format_version = 2,
+    object_store_layout_enabled = true,
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
+        ARRAY['bronze', 'meteo_producao', '1', 'indefinite', 'open_meteo_api']
+    );
+
+COMMENT ON TABLE iceberg.bronze.meteo_open_meteo_hourly IS
+'Tabela Bronze com dados meteorológicos horários para Portugal Continental, ingeridos da API Open-Meteo. Preserva todas as variáveis horárias sem transformação semântica.';
+
+COMMENT ON COLUMN iceberg.bronze.meteo_open_meteo_hourly.ts_utc IS 'Timestamp horário UTC da observação meteorológica — chave de negócio Bronze.';
+COMMENT ON COLUMN iceberg.bronze.meteo_open_meteo_hourly.temperature_2m IS 'Temperatura do ar a 2 metros de altitude (°C).';
+COMMENT ON COLUMN iceberg.bronze.meteo_open_meteo_hourly.precipitation IS 'Precipitação acumulada na hora (mm).';
+COMMENT ON COLUMN iceberg.bronze.meteo_open_meteo_hourly.wind_speed_10m IS 'Velocidade do vento a 10 metros (m/s).';
+COMMENT ON COLUMN iceberg.bronze.meteo_open_meteo_hourly.shortwave_radiation IS 'Radiação solar de onda curta instantânea (W/m²).';
+COMMENT ON COLUMN iceberg.bronze.meteo_open_meteo_hourly._source_file IS 'Nome do ficheiro/endpoint fonte para rastreabilidade da ingestão.';
+COMMENT ON COLUMN iceberg.bronze.meteo_open_meteo_hourly.year IS 'Ano — coluna de partição.';
+COMMENT ON COLUMN iceberg.bronze.meteo_open_meteo_hourly.month IS 'Mês — coluna de partição.';
 

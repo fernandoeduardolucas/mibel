@@ -1,5 +1,5 @@
 -- ============================================
--- GOLD QUALITY CHECKS (producao_vs_consumo_hourly)
+-- GOLD QUALITY CHECKS (dp_energia_balance_hourly)
 -- Objetivo: detetar meses com cobertura incompleta,
 -- desbalanceamento anómalo de saldo e lacunas por fonte.
 -- ============================================
@@ -12,7 +12,7 @@ WITH month_bounds AS (
         date_trunc('month', timestamp_utc) AS mes,
         min(timestamp_utc) AS min_ts,
         max(timestamp_utc) AS max_ts
-    FROM iceberg.gold.producao_vs_consumo_hourly
+    FROM iceberg.gold.dp_energia_balance_hourly
     GROUP BY 1
 ),
 month_counts AS (
@@ -22,7 +22,7 @@ month_counts AS (
         sum(CASE WHEN consumo_total_kwh IS NULL THEN 1 ELSE 0 END) AS horas_sem_consumo,
         sum(CASE WHEN producao_total_kwh IS NULL THEN 1 ELSE 0 END) AS horas_sem_producao,
         sum(CASE WHEN flag_missing_source THEN 1 ELSE 0 END) AS horas_com_fonte_em_falta
-    FROM iceberg.gold.producao_vs_consumo_hourly
+    FROM iceberg.gold.dp_energia_balance_hourly
     GROUP BY 1
 )
 SELECT
@@ -50,7 +50,7 @@ SELECT
     sum(CASE WHEN flag_defice THEN 1 ELSE 0 END) AS horas_defice,
     sum(CASE WHEN flag_excedente THEN 1 ELSE 0 END) AS horas_excedente,
     count(*) AS horas_lidas
-FROM iceberg.gold.producao_vs_consumo_hourly
+FROM iceberg.gold.dp_energia_balance_hourly
 GROUP BY 1
 ORDER BY 1;
 
@@ -62,6 +62,6 @@ SELECT
     saldo_kwh,
     ratio_producao_consumo,
     flag_missing_source
-FROM iceberg.gold.producao_vs_consumo_hourly
+FROM iceberg.gold.dp_energia_balance_hourly
 ORDER BY abs(saldo_kwh) DESC NULLS LAST
 LIMIT 100;

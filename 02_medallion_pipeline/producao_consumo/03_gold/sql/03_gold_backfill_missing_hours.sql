@@ -3,7 +3,7 @@
 -- Objetivo:
 --   Inserir na tabela principal apenas as horas em falta.
 -- Tabela alvo:
---   iceberg.gold.producao_vs_consumo_hourly
+--   iceberg.gold.dp_energia_balance_hourly
 -- =====================================================
 
 -- ETAPA 1) Limpeza de tabelas temporárias
@@ -17,7 +17,7 @@ WITH limits AS (
     SELECT
         date_trunc('hour', MIN(timestamp_utc)) AS min_ts,
         date_trunc('hour', MAX(timestamp_utc)) AS max_ts
-    FROM iceberg.gold.producao_vs_consumo_hourly
+    FROM iceberg.gold.dp_energia_balance_hourly
 )
 SELECT date_add('hour', h, d) AS timestamp_utc
 FROM limits
@@ -35,7 +35,7 @@ SELECT
     g.producao_pre_kwh,
     g.timestamp_utc IS NULL AS row_missing
 FROM iceberg.gold.gold_hourly_calendar c
-LEFT JOIN iceberg.gold.producao_vs_consumo_hourly g
+LEFT JOIN iceberg.gold.dp_energia_balance_hourly g
   ON g.timestamp_utc = c.timestamp_utc;
 
 -- ETAPA 4) Calcular valores imputados apenas para horas missing
@@ -122,7 +122,7 @@ SELECT *
 FROM filled;
 
 -- ETAPA 5) Inserir na tabela principal apenas as horas missing imputadas
-INSERT INTO iceberg.gold.producao_vs_consumo_hourly
+INSERT INTO iceberg.gold.dp_energia_balance_hourly
 SELECT
     timestamp_utc,
     consumo_total_kwh,
@@ -152,7 +152,7 @@ FROM iceberg.gold.gold_hourly_missing_filled;
 -- ETAPA 6) Check rápido: quantas horas continuam em falta
 SELECT COUNT(*) AS horas_em_falta
 FROM iceberg.gold.gold_hourly_calendar c
-LEFT JOIN iceberg.gold.producao_vs_consumo_hourly g
+LEFT JOIN iceberg.gold.dp_energia_balance_hourly g
   ON g.timestamp_utc = c.timestamp_utc
 WHERE g.timestamp_utc IS NULL;
 

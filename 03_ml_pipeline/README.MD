@@ -8,7 +8,7 @@ Flows de MLflow para treino e tracking de modelos de energia MIBEL.
 
 Flow de MLflow para o domínio **producao_consumo**.
 
-Lê dados de `iceberg.gold.producao_vs_consumo_hourly` via Trino, cria features temporais e lags de consumo/produção/saldo/ratio, e treina um `RandomForestClassifier` para prever `flag_defice` na hora seguinte (`t+1`). Regista o modelo em `producao_consumo_defice_classifier`.
+Lê dados de `iceberg.gold.dp_energia_balance_hourly` via Trino, cria features temporais e lags de consumo/produção/saldo/ratio, e treina um `RandomForestClassifier` para prever `flag_defice` na hora seguinte (`t+1`). Regista o modelo em `producao_consumo_defice_classifier`.
 
 **Ficheiro:** `03_ml_pipeline/producao_consumo_mlflow_flow.py`
 

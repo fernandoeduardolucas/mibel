@@ -58,7 +58,7 @@ flowchart TD
     subgraph SRC["☁  Fonte de Dados"]
         direction TB
         API["🌤  Open-Meteo Archive API\n(sem chave)\nlat=38.72  lon=-9.14\n2023-01-01 → hoje"]
-        DP01["DP-01\niceberg.gold\n.producao_vs_consumo_hourly\n(producao + consumo)"]
+        DP01["DP-01\niceberg.gold\n.dp_energia_balance_hourly\n(producao + consumo)"]
         DP02["DP-02\niceberg.gold\n.dp_energy_market_hourly\n(preco spot day-ahead)"]
     end
 

@@ -73,7 +73,7 @@ TRINO_USER = os.getenv("TRINO_USER", "tead")
 TRINO_HTTP_SCHEME = os.getenv("TRINO_HTTP_SCHEME", "http")
 TRINO_CATALOG = os.getenv("TRINO_CATALOG", "iceberg")
 TRINO_SCHEMA = os.getenv("TRINO_SCHEMA", "gold")
-TRINO_TABLE = os.getenv("TRINO_TABLE", "producao_vs_consumo_hourly")
+TRINO_TABLE = os.getenv("TRINO_TABLE", "dp_energia_balance_hourly")
 
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://host.docker.internal:15000")
 MLFLOW_EXPERIMENT = os.getenv("MLFLOW_EXPERIMENT", "producao-consumo-defice")

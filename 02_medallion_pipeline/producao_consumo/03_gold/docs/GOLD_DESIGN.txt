@@ -1,7 +1,7 @@
 DESENHO DA CAMADA GOLD
 
 Produto Gold
-- gold.producao_vs_consumo_hourly
+- gold.dp_energia_balance_hourly
 
 Granularidade
 - 1 linha por hora em timestamp_utc

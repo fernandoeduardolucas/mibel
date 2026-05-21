@@ -9,7 +9,7 @@ Do ponto de vista de negócio, o objetivo final é disponibilizar uma visão hor
 - razão produção/consumo;
 - identificação de horas com défice (produção < consumo) e excedente (produção > consumo).
 
-Este produto final é a tabela Gold `iceberg.gold.producao_vs_consumo_hourly`.
+Este produto final é a tabela Gold `iceberg.gold.dp_energia_balance_hourly`.
 
 ---
 
@@ -145,7 +145,7 @@ A Gold entrega a visão executiva de produção vs consumo por hora.
 
 ### 7.1) Produto final
 
-Tabela: `iceberg.gold.producao_vs_consumo_hourly`
+Tabela: `iceberg.gold.dp_energia_balance_hourly`
 
 Granularidade: **1 linha por hora (UTC)**.
 

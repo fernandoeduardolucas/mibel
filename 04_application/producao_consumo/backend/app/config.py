@@ -13,7 +13,7 @@ TRINO_USER = "trino"
 TRINO_CATALOG = "iceberg"
 TRINO_SCHEMA = "gold"
 
-GOLD_TABLE = "iceberg.gold.producao_vs_consumo_hourly"
+GOLD_TABLE = "iceberg.gold.dp_energia_balance_hourly"
 
 BASE_QUERY = f"""
 SELECT

@@ -184,7 +184,7 @@ Bronze tables `bronze.consumo_total_nacional` and `bronze.energia_produzida_tota
 
 Silver tables `silver.consumo_total_nacional_15min` and `silver.energia_produzida_total_nacional_15min` are 15-min granularity, deduplicated with priority: non-zero → max total → min duplicate_rank → most recent.
 
-`gold.producao_vs_consumo_hourly`:
+`gold.dp_energia_balance_hourly`:
 
 | Column | Type | Notes |
 | --- | --- | --- |
@@ -272,7 +272,7 @@ Dual data loading modes: CSV or Trino. Frontend: `04_application/consumo_preco/f
 
 Backend (`04_application/producao_consumo/backend/`): Python stdlib HTTPServer, port 8081
 
-MVC pattern: Controller → Service (in-memory cache 60s) → Repository (Trino `trino.dbapi`) → `iceberg.gold.producao_vs_consumo_hourly`
+MVC pattern: Controller → Service (in-memory cache 60s) → Repository (Trino `trino.dbapi`) → `iceberg.gold.dp_energia_balance_hourly`
 
 Endpoints:
 
@@ -289,7 +289,7 @@ Frontend: `04_application/producao_consumo/frontend/` — static HTML/CSS/JS (`s
 Dashboard files: `01_docker_stack/grafana/dashboards/`
 
 - `consumo_preco_overview.json` — queries `gold.dp_energy_market_hourly` + `gold.feat_load_forecasting_hourly`
-- `producao_consumo_overview.json` — queries `gold.producao_vs_consumo_hourly`
+- `producao_consumo_overview.json` — queries `gold.dp_energia_balance_hourly`
 
 Datasource provisioning: `01_docker_stack/grafana/provisioning/datasources/trino.yml`
 uid: `trino-iceberg`, catalog: `iceberg`, schema: `gold`, user: `grafana`

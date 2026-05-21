@@ -9,7 +9,7 @@
 | Data Product | Objetivo de negócio | Consumidor principal |
 |---|---|---|
 | `dp_energia_balance_hourly` | Monitorizar défice/excedente entre produção e consumo por hora | Dashboard operacional + API |
-| `dp_consumo_custo_hourly` | Estimar custo horário de energia consumida com base no preço day-ahead | Dashboard financeiro + API |
+| `dp_energy_market_hourly` | Estimar custo horário de energia consumida com base no preço day-ahead | Dashboard financeiro + API |
 | `dp_meteo_producao_daily_features` | Fornecer features diárias para treino/avaliação de modelos de previsão de produção | Equipa ML (workflow Flyte + MLflow) |
 
 ---
@@ -79,7 +79,7 @@
 
 ---
 
-## DP-02 — `dp_consumo_custo_hourly`
+## DP-02 — `dp_energy_market_hourly`
 
 ### 1) Perguntas analíticas, métricas e consumidores
 

@@ -196,7 +196,7 @@ def main() -> None:
             "trino",
             "trino",
             "--execute",
-            "SELECT COUNT(*) AS linhas_gold FROM iceberg.gold.producao_vs_consumo_hourly;",
+            "SELECT COUNT(*) AS linhas_gold FROM iceberg.gold.dp_energia_balance_hourly;",
         ]
     )
 

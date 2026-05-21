@@ -6,14 +6,14 @@
 -- Regra adicional:
 --   Não gerar valores numéricos a zero para linhas fictícias.
 -- Tabela alvo:
---   iceberg.gold.producao_vs_consumo_hourly
+--   iceberg.gold.dp_energia_balance_hourly
 -- =====================================================
 
-INSERT INTO iceberg.gold.producao_vs_consumo_hourly
+INSERT INTO iceberg.gold.dp_energia_balance_hourly
 WITH
 last_ts AS (
     SELECT MAX(timestamp_utc) AS max_ts
-    FROM iceberg.gold.producao_vs_consumo_hourly
+    FROM iceberg.gold.dp_energia_balance_hourly
 ),
 base_values AS (
     SELECT
@@ -33,7 +33,7 @@ base_values AS (
             max_by(producao_pre_kwh, timestamp_utc) FILTER (WHERE producao_pre_kwh IS NOT NULL AND producao_pre_kwh > 0),
             33000.0
         ) AS base_pre
-    FROM iceberg.gold.producao_vs_consumo_hourly
+    FROM iceberg.gold.dp_energia_balance_hourly
 ),
 range_limits AS (
     SELECT
@@ -132,10 +132,10 @@ SELECT
     SUM(CASE WHEN flag_defice IS NULL THEN 1 ELSE 0 END) AS null_flag_defice,
     SUM(CASE WHEN flag_excedente IS NULL THEN 1 ELSE 0 END) AS null_flag_excedente,
     SUM(CASE WHEN flag_missing_source IS NULL THEN 1 ELSE 0 END) AS null_flag_missing_source
-FROM iceberg.gold.producao_vs_consumo_hourly
+FROM iceberg.gold.dp_energia_balance_hourly
 WHERE flag_missing_source = true
   AND timestamp_utc >= (
       SELECT date_add('hour', 1, date_trunc('hour', MAX(timestamp_utc)))
-      FROM iceberg.gold.producao_vs_consumo_hourly
+      FROM iceberg.gold.dp_energia_balance_hourly
       WHERE flag_missing_source = false
   );

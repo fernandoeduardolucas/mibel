@@ -8,7 +8,7 @@ Entrada esperada
 - iceberg.silver.energia_produzida_total_nacional_15min
 
 Saída criada
-- iceberg.gold.producao_vs_consumo_hourly
+- iceberg.gold.dp_energia_balance_hourly
 
 O que a Gold faz
 1. Agrega os dados de 15 minutos para 1 hora.

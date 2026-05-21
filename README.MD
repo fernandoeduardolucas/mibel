@@ -30,7 +30,7 @@ Plataforma de análise do mercado energético ibérico (MIBEL — Portugal), con
                                ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  GOLD — produtos de dados                                           │
-│  DP-01: iceberg.gold.producao_vs_consumo_hourly                     │
+│  DP-01: iceberg.gold.dp_energia_balance_hourly                     │
 │  DP-02: iceberg.gold.dp_energy_market_hourly                        │
 │  DP-03: iceberg.gold.dp_meteo_producao_daily_features               │
 └──────────┬──────────────────┬──────────────────────────────────────-┘
@@ -51,7 +51,7 @@ Plataforma de análise do mercado energético ibérico (MIBEL — Portugal), con
 
 | ID | Tabela Gold | Grão | Descrição |
 |----|-------------|------|-----------|
-| DP-01 | `producao_vs_consumo_hourly` | Horário | Produção vs consumo elétrico nacional (REN/ERSE) |
+| DP-01 | `dp_energia_balance_hourly` | Horário | Produção vs consumo elétrico nacional (REN/ERSE) |
 | DP-02 | `dp_energy_market_hourly` | Horário | Preço spot day-ahead MIBEL PT (OMIE) |
 | DP-03 | `dp_meteo_producao_daily_features` | Diário | Meteorologia + produção + preço + features ML (lags, rolling, temporais) |
 

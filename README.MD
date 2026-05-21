@@ -1,258 +1,237 @@
-# MIBEL Energy Analytics Platform
+# MIBEL — Energy Analytics Platform
 
-Plataforma de análise do mercado energético ibérico (MIBEL — Portugal), construída sobre uma arquitetura Medallion (Bronze → Silver → Gold) com Trino + Iceberg + MinIO. Cobre três produtos de dados que correlacionam produção elétrica, consumo, preço spot e meteorologia, com pipelines ML (MLflow) e dashboards interativos.
+Plataforma local de análise do mercado energético português (MIBEL), construída sobre uma arquitetura **Medallion** (Bronze → Silver → Gold) com **Trino + Iceberg + MinIO**. Integra três Data Products independentes, pipelines de Machine Learning com MLflow, APIs HTTP e frontends React, quality gates automáticos e dashboards Grafana.
+
+> Projeto académico — MEI / TEAD 2.0 | ESTG-IPP
 
 ---
 
-## Arquitetura Geral
+## Arquitetura Global
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        FONTES DE DADOS                              │
-│  Open-Meteo API (meteo)  │  REN/ERSE CSVs (prod/cons)  │  OMIE CSVs │
-└──────────────┬───────────────────────┬──────────────────────┬───────┘
-               │                       │                      │
-               ▼                       ▼                      ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  BRONZE — ingestão raw (MinIO S3 Parquet + Hive External Tables)    │
-│  iceberg.bronze.meteo_open_meteo_hourly                             │
-│  hive.bronze_stage.producao_consumo_clean / consumo_preco_clean     │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │ Trino SQL (dedup + validação)
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  SILVER — dados limpos e validados                                  │
-│  iceberg.silver.meteo_open_meteo_hourly  (_quality_flag: ok/bad)    │
-│  iceberg.silver.producao_consumo_hourly                             │
-│  iceberg.silver.energy_market_hourly                                │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │ Trino SQL (JOIN + agregações + lags)
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  GOLD — produtos de dados                                           │
-│  DP-01: iceberg.gold.dp_energia_balance_hourly                     │
-│  DP-02: iceberg.gold.dp_energy_market_hourly                        │
-│  DP-03: iceberg.gold.dp_meteo_producao_daily_features               │
-└──────────┬──────────────────┬──────────────────────────────────────-┘
-           │                  │
-           ▼                  ▼
-   ┌───────────────┐  ┌───────────────────────────────────────────────┐
-   │  ML (MLflow)  │  │  Aplicações (API + Frontend + Grafana)        │
-   │ 4 modelos     │  │  3 backends HTTP  │  3 frontends React (CDN)  │
-   │ localhost:    │  │  localhost:8081   │  localhost:3300 (Grafana)  │
-   │ 15000         │  │  localhost:8000   │                           │
-   └───────────────┘  │  localhost:8083   │                           │
-                      └───────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Fontes de Dados                                 │
+│   REN/ERSE CSVs         OMIE CSVs          Open-Meteo API               │
+│   (producao/consumo)    (precos mercado)    (meteorologia PT)            │
+└────────────┬────────────────┬──────────────────┬───────────────────────┘
+             │                │                  │
+             ▼                ▼                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  01_docker_stack — Infraestrutura Local (Docker Compose)                │
+│                                                                         │
+│  MinIO (S3)  ──►  Hive Metastore  ──►  Trino (query engine)            │
+│                                         catalogs: iceberg | hive        │
+│  MLflow (tracking + model registry)     Grafana (dashboards)            │
+│  Redpanda (Kafka streaming)             Flyte Sandbox (orquestração)    │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │ Pipelines (02_medallion_pipeline)
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Arquitetura Medallion                                                  │
+│                                                                         │
+│  BRONZE  →  Hive external tables (Parquet raw em MinIO)                 │
+│  SILVER  →  Iceberg managed (dedup, range validation, quality_flag)     │
+│  GOLD    →  Iceberg managed (joins, lags, features ML-ready)            │
+│                              + Quality Gates (PASS/FAIL/WARN)           │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              ▼              ▼              ▼
+      03_ml_pipeline   04_application   Grafana
+      (MLflow + Flyte) (APIs + React)  (Dashboards)
 ```
 
 ---
 
-## Produtos de Dados
+## Data Products
 
-| ID | Tabela Gold | Grão | Descrição |
-|----|-------------|------|-----------|
-| DP-01 | `dp_energia_balance_hourly` | Horário | Produção vs consumo elétrico nacional (REN/ERSE) |
-| DP-02 | `dp_energy_market_hourly` | Horário | Preço spot day-ahead MIBEL PT (OMIE) |
-| DP-03 | `dp_meteo_producao_daily_features` | Diário | Meteorologia + produção + preço + features ML (lags, rolling, temporais) |
-
----
-
-## Stack de Serviços
-
-| Serviço | URL | Credenciais |
-|---------|-----|-------------|
-| **Trino** (query engine) | http://localhost:8080 | sem auth |
-| **MinIO** S3 Console | http://localhost:9001 | `minioadmin` / `minioadmin` |
-| **MinIO** S3 API | http://localhost:9000 | `minioadmin` / `minioadmin` |
-| **MLflow** | http://localhost:15000 | sem auth |
-| **Grafana** | http://localhost:3300 | `admin` / `admin` |
-| **Hive Metastore** | `thrift://localhost:9083` | — |
-
-### Aplicações (backends + frontends)
-
-| Produto | Backend | Frontend |
-|---------|---------|----------|
-| DP-01 Produção vs Consumo | http://localhost:8081 | [index.html](04_application/producao_consumo/frontend/index.html) |
-| DP-02 Consumo vs Preço | http://localhost:8000 | [index.html](04_application/frontend/consumo_preco/index.html) |
-| DP-03 Meteo + Produção | http://localhost:8083 | [index.html](04_application/meteo_producao/frontend/index.html) |
-
----
-
-## Passo a Passo: Arrancar Tudo
-
-### 1. Iniciar o stack Docker
-
-```bash
-cd 01_docker_stack
-docker compose up -d
-```
-
-Aguarda ~30 segundos e verifica:
-```bash
-docker compose ps
-# Todos os serviços devem estar "Up" exceto "mc" (exit 0 é esperado)
-```
-
-Confirma Trino disponível:
-```bash
-docker compose exec trino trino --execute "SHOW CATALOGS;"
-# Deve listar: iceberg, hive, system, tpcds, tpch
-```
-
----
-
-### 2. Correr os Pipelines Medallion
-
-> Cada pipeline faz fetch dos dados, upload para MinIO e materializa Bronze → Silver → Gold no Trino.
-
-**DP-01 — Produção vs Consumo** (requer CSVs da REN/ERSE em `02_medallion_pipeline/producao_consumo/01_bronze/data/raw/`):
-```bash
-python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py --skip-docker
-```
-
-**DP-02 — Consumo vs Preço Spot** (requer CSVs do OMIE em `02_medallion_pipeline/consumo_preco/01_bronze/data/raw/`):
-```bash
-python 02_medallion_pipeline/consumo_preco/run_medallion_consumo_precos.py --skip-docker
-```
-
-**DP-03 — Meteo + Produção** (dados meteorológicos obtidos automaticamente via Open-Meteo API):
-```bash
-python 02_medallion_pipeline/meteo_producao/run_medallion_meteo_producao.py --skip-docker
-```
-
-Flags disponíveis em todos os runners:
-- `--skip-docker` — não faz `docker compose up` (stack já a correr)
-- `--skip-ddl` — não recria as tabelas (já existem)
-- `--no-quality` — salta o quality gate final
-
----
-
-### 3. Correr os Pipelines ML (MLflow)
-
-```bash
-# Activa um venv com as dependências ML
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # Linux/macOS
-
-pip install pandas scikit-learn trino mlflow boto3
-
-# Treina os 4 modelos (2 por pipeline)
-python 03_ml_pipeline/meteo_producao_mlflow_flow.py
-```
-
-Resultados em http://localhost:15000 (MLflow UI).
-
-Modelos registados:
-- `meteo_producao_producao_forecaster` — RandomForest → previsão produção (Target: `producao_total_daily_mwh`)
-- `meteo_producao_preco_impact` — GradientBoosting → impacto no preço spot (Target: `preco_spot_medio_eur_mwh`)
-
----
-
-### 4. Arrancar os Backends API
-
-Cada backend é um servidor HTTP Python puro (sem dependências externas além de `trino`).
-
-```bash
-pip install trino
-
-# DP-01 — porta 8081
-python 04_application/producao_consumo/backend/app/main.py
-
-# DP-02 — porta 8000
-python 04_application/backend/consumo_preco/server.py
-
-# DP-03 — porta 8083
-python 04_application/meteo_producao/backend/app/main.py
-```
-
-Verifica:
-```bash
-curl http://localhost:8081/api/v1/producao-consumo/latest
-curl http://localhost:8083/api/v1/meteo-producao/latest
-```
-
----
-
-### 5. Abrir os Frontends
-
-Os frontends são HTML estáticos com React via CDN — basta abrir no browser:
-
-```bash
-# Windows
-start 04_application/producao_consumo/frontend/index.html
-start 04_application/frontend/consumo_preco/index.html
-start 04_application/meteo_producao/frontend/index.html
-```
-
-> Os frontends detectam automaticamente o backend em `localhost` na porta configurada. O backend correspondente deve estar a correr.
-
----
-
-### 6. Abrir o Dashboard Grafana
-
-O dashboard DP-03 está pré-configurado em `04_application/meteo_producao/grafana/dashboards/meteo_producao_overview.json`.
-
-**Importar via API** (apenas necessário uma vez):
-
-```powershell
-# PowerShell
-$headers = @{ "Content-Type" = "application/json"; "Authorization" = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("admin:admin")) }
-$json = Get-Content "04_application\meteo_producao\grafana\dashboards\meteo_producao_overview.json" -Raw
-$body = @{
-    dashboard = ($json | ConvertFrom-Json)
-    overwrite = $true
-    folderId  = 0
-    inputs    = @(@{ name="DS_TRINO"; type="datasource"; pluginId="trino-datasource"; value="trino-iceberg" })
-} | ConvertTo-Json -Depth 20 -Compress
-Invoke-RestMethod -Method Post -Uri "http://localhost:3300/api/dashboards/import" -Headers $headers -Body $body
-```
-
-Abre o dashboard: http://localhost:3300/d/meteo-producao-dp03
-
----
-
-## Fontes de Dados
-
-| Produto | Fonte | Como obter |
-|---------|-------|------------|
-| **DP-01** Produção/Consumo | REN DataHub (`datahub.ren.pt`) e ERSE (`erse.pt`) | Download manual CSV → colocar em `02_medallion_pipeline/producao_consumo/01_bronze/data/raw/` |
-| **DP-02** Preço Spot | OMIE (`omie.es`) | Download manual CSV day-ahead → colocar em `02_medallion_pipeline/consumo_preco/01_bronze/data/raw/` |
-| **DP-03** Meteorologia | Open-Meteo Archive API (gratuita, sem chave) | Obtido automaticamente pelo `fetch_open_meteo.py` (lat=38.72, lon=-9.14, 2023-01-01 → hoje) |
-
-> Os dados de DP-01 e DP-02 cobrem até **2026-03-04**. Para estender o período, descarrega novos CSVs e re-corre os respetivos pipelines.
-
----
-
-## Diagrama da Pipeline DP-03
-
-Arquivo: `02_medallion_pipeline/meteo_producao/diagrama_meteo_producao.html`
-
-```bash
-start 02_medallion_pipeline/meteo_producao/diagrama_meteo_producao.html
-```
+| # | Nome | Fonte | Grão | Gold Table |
+|---|---|---|---|---|
+| DP-01 | `producao_consumo` | REN/ERSE CSV | Horário | `dp_energia_balance_hourly` |
+| DP-02 | `consumo_preco` | OMIE CSV | Horário | `dp_energy_market_hourly` + `feat_load_forecasting_hourly` |
+| DP-03 | `meteo_producao` | Open-Meteo API | Diário | `dp_meteo_producao_daily_features` |
 
 ---
 
 ## Estrutura do Repositório
 
 ```
-01_docker_stack/                       ← Docker Compose stack (Trino, MinIO, MLflow, Grafana)
-02_medallion_pipeline/
-  producao_consumo/                 ← Pipeline DP-01
-  consumo_preco/                    ← Pipeline DP-02
-  meteo_producao/                   ← Pipeline DP-03
-    01_bronze/                      ← fetch_open_meteo.py + DDL bronze
-    02_silver/                      ← DDL silver (dedup + quality flag)
-    03_gold/                        ← DDL gold (features diárias DP-03)
-    run_medallion_meteo_producao.py ← orquestrador
-    diagrama_meteo_producao.html    ← diagrama de arquitetura
-03_ml_pipeline/
-  meteo_producao_mlflow_flow.py     ← treino modelos A e B (MLflow)
-04_application/
-  producao_consumo/                 ← backend 8081 + frontend + grafana
-  backend/consumo_preco/            ← backend 8000
-  frontend/consumo_preco/           ← frontend DP-02
-  meteo_producao/                   ← backend 8083 + frontend + grafana (DP-03)
-05_relatorio/relatorio.md           ← especificação dos produtos de dados
+mibel/
+├── 01_docker_stack/        Infraestrutura Docker (MinIO, Trino, MLflow, Grafana)
+├── 02_medallion_pipeline/  Pipelines Bronze→Silver→Gold (3 DPs)
+├── 03_ml_pipeline/         Workflows ML com MLflow + Flyte
+├── 04_application/         APIs HTTP + Frontends React (3 DPs)
+├── 05_relatorio/           Relatório técnico (LaTeX) e especificações
+└── README.md               Este ficheiro
 ```
+
+---
+
+## Critérios de Avaliação
+
+### A) Especificação de Data Products — 20%
+
+**Objetivo:** definir formalmente os três produtos de dados com contratos, SLAs e estratégia de versionamento.
+
+**Implementado:**
+
+- Três Data Products especificados em [`05_relatorio/relatorio.md`](05_relatorio/relatorio.md):
+  - Perguntas analíticas, métricas e consumidores por DP
+  - Grão e chaves de negócio
+  - Schema v1 com tipos explícitos e regras de qualidade
+  - SLAs (freshness, completude mínima) e SLOs (null rate, unicidade)
+  - Estratégia de schema evolution: versão semântica (`v1`, `v2`), janela de coexistência 30 dias, `feature_set_version` obrigatório no DP-03
+
+**Decisão chave:** o DP-03 inclui `feature_set_version` em todas as linhas da Gold, permitindo que cada treino ML referencie explicitamente a versão do conjunto de features utilizado — garante reprodutibilidade e auditabilidade.
+
+---
+
+### B) Implementação do Lakehouse — 20%
+
+**Objetivo:** lakehouse operacional com separação de camadas Bronze/Silver/Gold.
+
+**Implementado:**
+
+- Stack Docker Compose com MinIO (S3), Hive Metastore (MariaDB), Trino 440, MLflow, Grafana, Redpanda
+- 5 catálogos Trino: `iceberg`, `hive`, `kafka`, `tpcds`, `tpch`
+- Bronze: Hive external tables sobre Parquet em `s3://warehouse/bronze/`
+- Silver: Iceberg managed tables com deduplicação e `_quality_flag` (ok / null_values / out_of_range)
+- Gold: Iceberg managed tables com joins cross-DP, lags, rolling windows e flags de negócio
+- 12 tabelas Iceberg no total (bronze + silver + gold dos 3 DPs)
+
+**Decisão chave:** Hive para Bronze (tabelas externas preservam o Parquet original sem overhead ACID) e Iceberg para Silver/Gold (ACID, schema evolution sem rewrite, time-travel para auditoria).
+
+Ver [`01_docker_stack/README.md`](01_docker_stack/README.md) e [`02_medallion_pipeline/README.md`](02_medallion_pipeline/README.md).
+
+---
+
+### C) Pipelines com Orquestração — 20%
+
+**Objetivo:** pipelines reprodutíveis, idempotentes e orquestradas.
+
+**Implementado:**
+
+- Três runners Python idempotentes (Bronze→Silver→Gold + Quality Gate em sequência):
+  - [`02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py`](02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py)
+  - [`02_medallion_pipeline/consumo_preco/run_medallion_consumo_precos.py`](02_medallion_pipeline/consumo_preco/run_medallion_consumo_precos.py)
+  - [`02_medallion_pipeline/meteo_producao/run_medallion_meteo_producao.py`](02_medallion_pipeline/meteo_producao/run_medallion_meteo_producao.py)
+- Flags: `--skip-docker`, `--skip-ddl`, `--build`, `--no-quality`, `--date-from`, `--date-to`
+- Reprocessamento incremental Gold: DELETE + INSERT com filtro temporal (DP-01 e DP-03)
+- Compatibilidade Flyte: todos os scripts ML decorados com `@task` + `@workflow` (stubs locais sem Flyte instalado)
+- Flyte Sandbox: [`01_docker_stack/flyte/`](01_docker_stack/flyte/) com Dockerfile e Helm overrides
+
+**Decisão chave:** os runners gerem automaticamente o venv local e as dependências Python — zero setup manual além do Docker; idempotência garantida por `CREATE TABLE IF NOT EXISTS` + DDL antes de cada ingest.
+
+---
+
+### D) Serving — 10%
+
+**Objetivo:** expor os dados Gold a consumidores via API e interface web.
+
+**Implementado:**
+
+- Três backends HTTP Python (`BaseHTTPRequestHandler`, sem framework):
+  - DP-01 em `:8081`, DP-02 em `:8000`, DP-03 em `:8083`
+  - Padrão MVC: Route → Controller → Service → Repository → Trino Client
+  - Queries parametrizadas sobre `iceberg.gold.*`
+- Três frontends React 18 (ESM CDN, sem build step):
+  - DP-01: KPIs saldo/ratio/flags + tabela horária + respostas analíticas
+  - DP-02: KPIs preço/consumo/custo + série temporal + análise de correlação
+  - DP-03: KPIs meteo + série temp/produção + scatter + importâncias de features
+
+**Decisão chave:** React via ESM importmap elimina toda a toolchain de frontend (Node.js, bundler, transpiler) — o ficheiro `index.html` abre directamente no browser sem servidor.
+
+Ver [`04_application/README.md`](04_application/README.md).
+
+---
+
+### E) Qualidade e Observabilidade — 15%
+
+**Objetivo:** validação automática da qualidade dos dados com evidências e visibilidade em dashboard.
+
+**Implementado:**
+
+- **76+ checks SQL** distribuídos por 8 ficheiros (Silver + Gold dos 3 DPs):
+  - [`02_medallion_pipeline/producao_consumo/04_quality/sql/`](02_medallion_pipeline/producao_consumo/04_quality/sql/) — 21 checks
+  - [`02_medallion_pipeline/consumo_preco/04_quality/sql/`](02_medallion_pipeline/consumo_preco/04_quality/sql/) — ~30 checks
+  - [`02_medallion_pipeline/meteo_producao/04_quality/sql/`](02_medallion_pipeline/meteo_producao/04_quality/sql/) — 25 checks
+- Tipos de checks: null rates, range físico (Portugal continental), unicidade, alinhamento temporal, lag consistency, cobertura cross-DP, freshness
+- **Quality gates bloqueantes** nos 3 runners: FAIL → `SystemExit`; WARN → continua com log
+- **4 dashboards Grafana** provisionados automaticamente:
+  - 3 dashboards operacionais por DP (overview KPIs + séries temporais)
+  - 1 dashboard unificado de Qualidade & Observabilidade (26 painéis, todas as tabelas Gold e Silver)
+
+**Decisão chave:** bloquear o pipeline em FAIL (e não apenas alertar) garante que dados com qualidade insuficiente nunca chegam à Gold — é mais barato reprovar na pipeline do que corrigir downstream em ML ou dashboards.
+
+---
+
+### F) Machine Learning — 15%
+
+**Objetivo:** workflow de treino reprodutível com rastreabilidade completa de dados e artefactos.
+
+**Implementado:**
+
+- 4 modelos treinados a partir de feature tables Gold:
+
+| Script | Modelo | Target | Métricas |
+|---|---|---|---|
+| `producao_consumo_mlflow_flow.py` | RandomForestClassifier | `flag_defice` (t+1h) | accuracy, precision, recall, F1, ROC-AUC |
+| `preco_consumo_mlflow_flow.py` | GradientBoostingRegressor | `consumo_next_hour` | MAE, RMSE, R², MAPE |
+| `meteo_producao_mlflow_flow.py` (A) | RandomForestRegressor | `producao_total_daily_mwh` | MAE, RMSE, R², MAPE |
+| `meteo_producao_mlflow_flow.py` (B) | GradientBoostingRegressor | `preco_spot_medio_eur_mwh` | MAE, RMSE, R², MAPE |
+
+- **Split temporal** (sem shuffle) em todos os modelos — evita data leakage em séries temporais
+- **MLflow tracking completo** por run: params (hiperparâmetros + período de dados), métricas, tags (`dataset`, `target`, `model_type`), artefactos (`feature_importances.json`, `classification_report.json`, `feature_columns.json`, `model/`)
+- **Model Registry**: 4 modelos registados com `registered_model_name`
+- Compatibilidade **Flyte** (`@task` + `@workflow`) com stubs locais
+
+**Decisão chave:** feature tables pré-computadas na Gold (lags, rolling windows) garantem que treino e inferência usam exactamente a mesma transformação — sem risco de training-serving skew.
+
+Ver [`03_ml_pipeline/README.md`](03_ml_pipeline/README.md).
+
+---
+
+## Execução Rápida (Ordem Correcta)
+
+```powershell
+# 1. Arrancar infraestrutura
+cd 01_docker_stack
+docker compose up -d --build
+
+# 2. Aguardar ~30s e verificar
+docker compose exec trino trino --execute "SHOW CATALOGS;"
+
+# 3. Correr pipelines de dados
+python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py
+python 02_medallion_pipeline/consumo_preco/run_medallion_consumo_precos.py --skip-docker
+python 02_medallion_pipeline/meteo_producao/run_medallion_meteo_producao.py --skip-docker
+
+# 4. Treinar modelos ML
+python -m venv .venv && .venv\Scripts\activate
+pip install pandas==2.2.3 scikit-learn==1.6.1 trino==0.336.0 mlflow==3.10.1 boto3
+python 03_ml_pipeline/producao_consumo_mlflow_flow.py
+python 03_ml_pipeline/preco_consumo_mlflow_flow.py
+python 03_ml_pipeline/meteo_producao_mlflow_flow.py
+
+# 5. Arrancar backends
+cd 04_application/producao_consumo/backend && python server.py        # :8081
+cd 04_application/backend/consumo_preco   && python server.py        # :8000
+cd 04_application/meteo_producao/backend  && python -m app.main      # :8083
+
+# 6. Abrir frontends directamente no browser
+#    04_application/producao_consumo/frontend/index.html
+#    04_application/frontend/consumo_preco/index.html
+#    04_application/meteo_producao/frontend/index.html
+```
+
+## Endpoints
+
+| Serviço | URL | Credenciais |
+|---|---|---|
+| Trino UI | <http://localhost:8080> | — |
+| MinIO Console | <http://localhost:9001> | minioadmin / minioadmin |
+| MLflow | <http://localhost:15000> | — |
+| Grafana | <http://localhost:3300> | admin / admin |
+| API DP-01 | <http://localhost:8081> | — |
+| API DP-02 | <http://localhost:8000> | — |
+| API DP-03 | <http://localhost:8083> | — |

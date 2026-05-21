@@ -225,6 +225,64 @@ def trino_execute(compose_file: Path, sql: str, *, max_attempts: int = 3) -> Non
 
 
 # ---------------------------------------------------------------------------
+# Quality gate — executa SQL de checks e bloqueia em FAIL
+# ---------------------------------------------------------------------------
+
+def run_quality_checks(compose_file: Path, sql_file: Path, layer_name: str) -> None:
+    print(f"\n>>> Quality gate — {layer_name}: {sql_file.name}")
+    sql_text = sql_file.read_text(encoding="utf-8")
+    # Remove comentários de linha e separa em statements
+    sql_clean = re.sub(r"--[^\n]*", "", sql_text)
+    statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
+    if not statements:
+        print(f"    [AVISO] Nenhum statement encontrado em {sql_file.name}.")
+        return
+
+    # Primeiro statement é o UNION ALL com todos os checks
+    check_sql = statements[0] + ";"
+    cmd = [
+        "docker", "compose", "-f", str(compose_file),
+        "exec", "-T", "trino", "trino",
+        "--output-format", "TSV_HEADER",
+        "--execute", check_sql,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(
+            f"Quality gate {layer_name} falhou ao executar checks:\n{result.stderr.strip()}"
+        )
+
+    lines = result.stdout.strip().splitlines()
+    if len(lines) < 2:
+        print(f"    [AVISO] Quality gate {layer_name}: sem resultados.")
+        return
+
+    # Apresenta resultados formatados
+    fail_checks, warn_checks, pass_checks = [], [], []
+    for line in lines[1:]:
+        cols = line.split("\t")
+        status = cols[1].strip() if len(cols) > 1 else "?"
+        if status == "FAIL":
+            fail_checks.append(line)
+        elif status == "WARN":
+            warn_checks.append(line)
+        else:
+            pass_checks.append(line)
+
+    print(f"\n    PASS: {len(pass_checks)}  WARN: {len(warn_checks)}  FAIL: {len(fail_checks)}")
+    for line in warn_checks:
+        print(f"    [WARN] {line.split(chr(9))[0]} — {line.split(chr(9))[-1]}")
+    for line in fail_checks:
+        print(f"    [FAIL] {line.split(chr(9))[0]} — {line.split(chr(9))[-1]}")
+
+    if fail_checks:
+        raise SystemExit(
+            f"\nQuality gate {layer_name} bloqueado: {len(fail_checks)} check(s) em FAIL."
+        )
+    print(f"    Quality gate {layer_name} OK.")
+
+
+# ---------------------------------------------------------------------------
 # Gold incremental — DELETE + INSERT com filtro temporal
 # ---------------------------------------------------------------------------
 
@@ -427,44 +485,24 @@ def main() -> None:
         apply_ddl(compose_file, gold_sql, "Gold")
 
     # -------------------------------------------------------------------------
-    # Quality gate
+    # Quality gate — Silver + Gold (bloqueante em FAIL)
     # -------------------------------------------------------------------------
+    silver_checks_sql = pipeline_root / "04_quality" / "sql" / "01_silver_checks.sql"
+    gold_checks_sql   = pipeline_root / "04_quality" / "sql" / "02_gold_checks.sql"
+
     if not args.no_quality:
         print("\n" + "=" * 60)
-        print("QUALITY GATE — Gold")
+        print("QUALITY GATE")
         print("=" * 60)
-        if incremental:
-            trino_execute(
-                compose_file,
-                (
-                    f"SELECT COUNT(*) AS linhas_intervalo, "
-                    f"CAST(MIN(timestamp_utc) AS VARCHAR) AS inicio, "
-                    f"CAST(MAX(timestamp_utc) AS VARCHAR) AS fim "
-                    f"FROM iceberg.gold.dp_energia_balance_hourly "
-                    f"WHERE CAST(timestamp_utc AS DATE) "
-                    f"BETWEEN DATE '{args.date_from}' AND DATE '{args.date_to}';"
-                ),
-            )
+        if not incremental:
+            if silver_checks_sql.exists():
+                run_quality_checks(compose_file, silver_checks_sql, "Silver")
+            else:
+                print(f"    [AVISO] {silver_checks_sql} não encontrado — a saltar Silver checks.")
+        if gold_checks_sql.exists():
+            run_quality_checks(compose_file, gold_checks_sql, "Gold")
         else:
-            trino_execute(
-                compose_file,
-                (
-                    "SELECT COUNT(*) AS linhas_gold, "
-                    "CAST(MIN(timestamp_utc) AS VARCHAR) AS inicio, "
-                    "CAST(MAX(timestamp_utc) AS VARCHAR) AS fim "
-                    "FROM iceberg.gold.dp_energia_balance_hourly;"
-                ),
-            )
-            trino_execute(
-                compose_file,
-                (
-                    "SELECT "
-                    "SUM(CASE WHEN flag_defice        THEN 1 ELSE 0 END) AS horas_defice, "
-                    "SUM(CASE WHEN flag_excedente     THEN 1 ELSE 0 END) AS horas_excedente, "
-                    "SUM(CASE WHEN flag_missing_source THEN 1 ELSE 0 END) AS horas_fonte_em_falta "
-                    "FROM iceberg.gold.dp_energia_balance_hourly;"
-                ),
-            )
+            print(f"    [AVISO] {gold_checks_sql} não encontrado — a saltar Gold checks.")
 
     modo = f"backfill incremental {args.date_from} → {args.date_to}" if incremental else "full rebuild"
     print(f"\n{'=' * 60}")

@@ -181,36 +181,58 @@ def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Quality gate
+# Quality gate — executa SQL de checks e bloqueia em FAIL
 # ---------------------------------------------------------------------------
 
-def quality_gate_gold(compose_file: Path) -> None:
-    print("\n>>> Quality gate — Gold (dp_meteo_producao_daily_features)...")
-    result = subprocess.run(
-        [
-            "docker", "compose", "-f", str(compose_file),
-            "exec", "-T", "trino", "trino",
-            "--output-format", "TSV_HEADER",
-            "--execute",
-            "SELECT COUNT(*) AS total, "
-            "  CAST(MIN(data_dia) AS VARCHAR) AS min_dia, "
-            "  CAST(MAX(data_dia) AS VARCHAR) AS max_dia "
-            "FROM iceberg.gold.dp_meteo_producao_daily_features;",
-        ],
-        capture_output=True,
-        text=True,
-    )
+def run_quality_checks(compose_file: Path, sql_file: Path, layer_name: str) -> None:
+    print(f"\n>>> Quality gate — {layer_name}: {sql_file.name}")
+    sql_text = sql_file.read_text(encoding="utf-8")
+    sql_clean = re.sub(r"--[^\n]*", "", sql_text)
+    statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
+    if not statements:
+        print(f"    [AVISO] Nenhum statement encontrado em {sql_file.name}.")
+        return
+
+    check_sql = statements[0] + ";"
+    cmd = [
+        "docker", "compose", "-f", str(compose_file),
+        "exec", "-T", "trino", "trino",
+        "--output-format", "TSV_HEADER",
+        "--execute", check_sql,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise SystemExit(f"Erro no quality gate: {result.stderr.strip()}")
-    print(result.stdout.strip())
+        raise SystemExit(
+            f"Quality gate {layer_name} falhou ao executar checks:\n{result.stderr.strip()}"
+        )
+
     lines = result.stdout.strip().splitlines()
     if len(lines) < 2:
-        raise SystemExit("Quality gate falhou: sem dados na tabela Gold.")
-    values = lines[1].split("\t")
-    total = int(values[0]) if values[0].isdigit() else 0
-    if total == 0:
-        raise SystemExit("Quality gate falhou: tabela Gold está vazia.")
-    print(f">>> Quality gate OK — {total} linhas diárias na Gold.")
+        print(f"    [AVISO] Quality gate {layer_name}: sem resultados.")
+        return
+
+    fail_checks, warn_checks, pass_checks = [], [], []
+    for line in lines[1:]:
+        cols = line.split("\t")
+        status = cols[1].strip() if len(cols) > 1 else "?"
+        if status == "FAIL":
+            fail_checks.append(line)
+        elif status == "WARN":
+            warn_checks.append(line)
+        else:
+            pass_checks.append(line)
+
+    print(f"\n    PASS: {len(pass_checks)}  WARN: {len(warn_checks)}  FAIL: {len(fail_checks)}")
+    for line in warn_checks:
+        print(f"    [WARN] {line.split(chr(9))[0]} — {line.split(chr(9))[-1]}")
+    for line in fail_checks:
+        print(f"    [FAIL] {line.split(chr(9))[0]} — {line.split(chr(9))[-1]}")
+
+    if fail_checks:
+        raise SystemExit(
+            f"\nQuality gate {layer_name} bloqueado: {len(fail_checks)} check(s) em FAIL."
+        )
+    print(f"    Quality gate {layer_name} OK.")
 
 
 # ---------------------------------------------------------------------------
@@ -351,12 +373,22 @@ def main() -> None:
         )
     print("    Gold INSERT aplicado.")
 
-    # --- Quality gate ---
+    # --- Quality gate — Silver + Gold (bloqueante em FAIL) ---
+    silver_checks_sql = pipeline_root / "04_quality" / "sql" / "01_silver_checks.sql"
+    gold_checks_sql   = pipeline_root / "04_quality" / "sql" / "02_gold_checks.sql"
+
     if not args.no_quality:
         print("\n" + "=" * 60)
-        print("QUALITY GATE — Gold (dp_meteo_producao_daily_features)")
+        print("QUALITY GATE")
         print("=" * 60)
-        quality_gate_gold(compose_file)
+        if silver_checks_sql.exists():
+            run_quality_checks(compose_file, silver_checks_sql, "Silver")
+        else:
+            print(f"    [AVISO] {silver_checks_sql} não encontrado — a saltar Silver checks.")
+        if gold_checks_sql.exists():
+            run_quality_checks(compose_file, gold_checks_sql, "Gold")
+        else:
+            print(f"    [AVISO] {gold_checks_sql} não encontrado — a saltar Gold checks.")
 
     print("\n" + "=" * 60)
     print("Pipeline meteo_producao concluída com sucesso!")

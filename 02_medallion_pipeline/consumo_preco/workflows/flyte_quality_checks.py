@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import os
 import re
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import trino
@@ -52,6 +54,10 @@ def _trino_conn() -> trino.dbapi.Connection:
     )
 
 
+_MAX_RETRIES = 3
+_RETRY_WAIT_S = 20  # segundos entre tentativas (multiplicado pelo nº da tentativa)
+
+
 def _run_checks(layer: str) -> list[dict]:
     """
     Executa o SQL de qualidade para a camada indicada.
@@ -59,6 +65,9 @@ def _run_checks(layer: str) -> list[dict]:
     O ficheiro SQL contém um único bloco UNION ALL seguido de queries
     de detalhe separadas por ';'. Executa apenas o primeiro bloco
     (sumário de checks com check_name / status / valor_pct / threshold_pct / detalhe).
+
+    Inclui retry com backoff para absorver falhas de ligação TCP transitórias
+    (ex: ConnectionAbortedError 10053 no Windows com queries longas).
 
     Retorna lista de dicts com os resultados de cada verificação.
     """
@@ -78,13 +87,68 @@ def _run_checks(layer: str) -> list[dict]:
     first_semi = sql_no_comments.find(";")
     summary_sql = (sql_no_comments[:first_semi] if first_semi != -1 else sql_no_comments).strip()
 
-    conn = _trino_conn()
-    cur = conn.cursor()
-    cur.execute(summary_sql)
-    columns = [d[0] for d in cur.description]
-    rows = [dict(zip(columns, row)) for row in cur.fetchall()]
-    conn.close()
-    return rows
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            conn = _trino_conn()
+            cur = conn.cursor()
+            cur.execute(summary_sql)
+            columns = [d[0] for d in cur.description]
+            rows = [dict(zip(columns, row)) for row in cur.fetchall()]
+            conn.close()
+            return rows
+        except Exception as exc:
+            last_exc = exc
+            if attempt < _MAX_RETRIES - 1:
+                wait = _RETRY_WAIT_S * (attempt + 1)
+                print(
+                    f"  [quality_checks retry {attempt + 1}/{_MAX_RETRIES}] "
+                    f"{type(exc).__name__}: {exc} — nova tentativa em {wait}s"
+                )
+                time.sleep(wait)
+    raise last_exc  # type: ignore[misc]
+
+
+def _persist_results(layer: str, results: list[dict]) -> None:
+    """
+    Insere os resultados do quality gate em iceberg.gold.quality_log.
+
+    Falha silenciosamente se a tabela não existir (ex: DDL ainda não executado
+    ou execução standalone de pyflyte run quality_gate_*).
+    """
+    if not results:
+        return
+
+    now_ts = datetime.now(timezone.utc)
+    run_date = now_ts.date().isoformat()
+    now_iso = now_ts.strftime("%Y-%m-%d %H:%M:%S.000 UTC")
+
+    def _esc(s: str) -> str:
+        return str(s).replace("'", "''")
+
+    rows_sql = ",\n        ".join(
+        f"(TIMESTAMP '{now_iso}', 'consumo_preco', '{layer}', "
+        f"'{_esc(r['check_name'])}', '{r['status']}', "
+        f"{float(r.get('valor_pct') or 0.0)}, {float(r.get('threshold_pct') or 0.0)}, "
+        f"'{_esc(r.get('detalhe', ''))}', DATE '{run_date}')"
+        for r in results
+    )
+
+    try:
+        conn = _trino_conn()
+        cur = conn.cursor()
+        cur.execute(f"""
+            INSERT INTO iceberg.gold.quality_log
+                (run_ts, pipeline, layer, check_name, status,
+                 valor_pct, threshold_pct, detalhe, run_date)
+            VALUES
+                {rows_sql}
+        """)
+        cur.fetchall()
+        conn.close()
+        print(f"  [quality_log] {len(results)} registos persistidos em iceberg.gold.quality_log")
+    except Exception as exc:
+        print(f"  [quality_log] Aviso: não foi possível persistir resultados ({exc})")
 
 
 @task(retries=2, environment=_FLYTE_ENV)
@@ -126,6 +190,8 @@ def quality_gate(layer: str) -> int:
 
     for r in fails:
         print(f"  [FAIL] {r['check_name']} -> {r.get('detalhe', '')}")
+
+    _persist_results(layer, results)
 
     if fails:
         fail_names = "; ".join(r["check_name"] for r in fails)

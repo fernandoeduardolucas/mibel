@@ -318,19 +318,21 @@ check_name | status | valor_pct | threshold_pct | detalhe
   \item \textbf{\textcolor{fail-red}{FAIL}}: violação crítica --- \texttt{SystemExit} imediato; dados não chegam a consumidores
 \end{itemize}
 
+Todos os resultados são persistidos automaticamente na tabela \texttt{iceberg.gold.quality\_log} (particionada por \texttt{run\_date}), permitindo auditoria histórica, \textit{trending} de WARNs ao longo do tempo e rastreabilidade de execuções.
+
 \subsection{Cobertura de Checks}
 
 \begin{table}[h!]
 \centering
-\begin{tabular}{lrrr}
+\begin{tabular}{lrrrr}
 \toprule
-\textbf{DP} & \textbf{Silver checks} & \textbf{Gold checks} & \textbf{Total} \\
+\textbf{DP} & \textbf{Bronze checks} & \textbf{Silver checks} & \textbf{Gold checks} & \textbf{Total} \\
 \midrule
-DP-01 & 11 & 10 & 21 \\
-DP-02 & 12 + Bronze & 10 & $\approx$30 \\
-DP-03 & 13 & 12 & 25 \\
+DP-01 & --- & 11 & 10 & 21 \\
+DP-02 & 11 & 13 & 14 & 38 \\
+DP-03 & --- & 13 & 12 & 25 \\
 \midrule
-\textbf{Total} & & & \textbf{76+} \\
+\textbf{Total} & & & & \textbf{84} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -346,6 +348,32 @@ Tipos de verificação implementados:
   \item \textbf{Cobertura cross-DP}: $\geq 90$\% dos dias com meteo + produção + preço
   \item \textbf{Freshness}: dados com atraso $< 400$ dias (threshold adaptado ao dataset histórico)
 \end{itemize}
+
+\subsection{Anomalias Esperadas e Conhecimento de Domínio (DP-02)}
+
+Na execução de validação do DP-02 (\textit{consumo\_preco}), todos os 38 checks foram executados: 32 PASS, 6 WARN, 0 FAIL. Os WARNs não bloqueiam o pipeline porque representam características conhecidas do mercado ou artefactos controlados do processo de ingestão:
+
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{p{4.8cm}lrp{5.5cm}}
+\toprule
+\textbf{Check} & \textbf{Camada} & \textbf{Contagem} & \textbf{Explicação} \\
+\midrule
+\texttt{price\_portugal\_raw >= 0} & Bronze + Silver & 504 horas & Preços negativos são fenómeno real do MIBEL: excesso de produção renovável em períodos de baixa procura empurra o preço abaixo de zero. O dado é válido e preservado; o WARN garante rastreabilidade. \\
+\addlinespace
+\texttt{uniqueness (datahora,} \texttt{process\_date)} & Bronze & 24 grupos & Artefacto de re-ingest: a Bronze é carregada com idempotência diária, pelo que uma segunda execução sobre o mesmo dia gera duplicados temporários. A Silver absorve-os via \texttt{GROUP BY + AVG}, sem propagação. \\
+\addlinespace
+\texttt{registos\_por\_dia >= 80} & Bronze & 2 dias & Dias de fronteira do ficheiro histórico com carga parcial ($<96$ registos de 15~min esperados). Não afecta a agregação horária da Silver. \\
+\addlinespace
+\texttt{horas\_por\_dia >= 23} & Silver & 2 dias & Dias de transição DST (\textit{spring forward}): a hora 2 local não existe, pelo que o dia tem 23 horas. Comportamento esperado e correcto. \\
+\bottomrule
+\end{tabular}
+\caption{WARNs observados no DP-02 e respectiva justificação de domínio.}
+\label{tab:warns_dp02}
+\end{table}
+
+Esta abordagem --- distinguir anomalias esperadas (WARN) de violações críticas (FAIL) --- é uma decisão de engenharia deliberada: evita \textit{alert fatigue} (falsos alarmes que levam à ignorância de alertas reais) e documenta explicitamente o comportamento do mercado energético ibérico no próprio sistema de qualidade.
 
 \subsection{Dashboards Grafana}
 
@@ -426,7 +454,7 @@ A cadeia de modelos (Modelo A: produção a partir de meteorologia; Modelo B: pr
 
 \subsection{Valor da Qualidade como Diferenciador}
 
-Os 76+ checks de qualidade e os dashboards de observabilidade não são apenas boas práticas técnicas --- têm impacto direto em decisões de negócio. Um sinal de défice gerado a partir de dados com duplicados ou valores fora de range pode levar a uma decisão de compra desnecessária, com custo financeiro real. A rastreabilidade dados $\leftrightarrow$ modelo (via MLflow tags e params) permite auditar \textit{a posteriori} qualquer decisão automatizada que tenha usado um modelo específico.
+Os 84 checks de qualidade e os dashboards de observabilidade não são apenas boas práticas técnicas --- têm impacto direto em decisões de negócio. Um sinal de défice gerado a partir de dados com duplicados ou valores fora de range pode levar a uma decisão de compra desnecessária, com custo financeiro real. A rastreabilidade dados $\leftrightarrow$ modelo (via MLflow tags e params) permite auditar \textit{a posteriori} qualquer decisão automatizada que tenha usado um modelo específico.
 
 % =============================================================================
 \section{Conclusão}
@@ -439,7 +467,7 @@ O projeto MIBEL implementou integralmente os seis critérios de avaliação:
   \item \textbf{B)} Lakehouse local completo com Bronze/Silver/Gold em Iceberg + Trino
   \item \textbf{C)} Pipelines idempotentes com quality gates, reprocessamento incremental e orquestração Flyte
   \item \textbf{D)} Três APIs HTTP + três frontends React sem toolchain de frontend
-  \item \textbf{E)} 76+ checks de qualidade bloqueantes + 4 dashboards Grafana provisionados automaticamente
+  \item \textbf{E)} 84 checks de qualidade bloqueantes + 4 dashboards Grafana provisionados automaticamente
   \item \textbf{F)} 4 modelos ML com rastreabilidade completa de dados, split temporal e feature tables Gold
 \end{itemize}
 

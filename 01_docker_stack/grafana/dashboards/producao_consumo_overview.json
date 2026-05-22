@@ -1,26 +1,4 @@
 {
-  "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": {
-          "type": "grafana",
-          "uid": "-- Grafana --"
-        },
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "type": "dashboard"
-      }
-    ]
-  },
-  "description": "MIBEL Energy Intelligence Dashboard — Produção, Consumo e Preços Day-Ahead (Mercado Ibérico de Electricidade)",
-  "editable": true,
-  "fiscalYearStartMonth": 0,
-  "graphTooltip": 1,
-  "id": null,
-  "links": [],
   "panels": [
     {
       "collapsed": false,
@@ -30,8 +8,9 @@
         "x": 0,
         "y": 0
       },
-      "id": 100,
-      "title": "📊 KPIs — Produção · Consumo · Preço",
+      "id": 1,
+      "panels": [],
+      "title": "KPIs -- Producao . Consumo . Saldo . Cobertura",
       "type": "row"
     },
     {
@@ -39,11 +18,68 @@
         "type": "trino-datasource",
         "uid": "trino-iceberg"
       },
+      "description": "Soma da producao total nacional no periodo",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT ROUND(SUM(producao_total_kwh)/1e6,1) AS value FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6))",
+          "refId": "A"
+        }
+      ],
+      "title": "Producao Total (GWh)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "description": "Soma do consumo nacional no periodo",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -53,73 +89,8 @@
               }
             ]
           },
-          "unit": "kwatth",
-          "decimals": 1,
-          "mappings": [],
-          "noValue": "N/A"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 1
-      },
-      "id": 1,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Produção Nacional Total",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "trino-datasource",
-            "uid": "trino-iceberg"
-          },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(producao_total_kwh) AS value\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
-          "format": 0,
-          "refId": "A"
+          "unit": "none"
         }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "trino-datasource",
-        "uid": "trino-iceberg"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "kwatth",
-          "decimals": 1,
-          "mappings": [],
-          "noValue": "N/A"
-        },
-        "overrides": []
       },
       "gridPos": {
         "h": 4,
@@ -127,124 +98,49 @@
         "x": 4,
         "y": 1
       },
-      "id": 2,
+      "id": 3,
       "options": {
         "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+          ]
         },
         "textMode": "auto"
       },
-      "title": "Consumo Nacional Total",
-      "type": "stat",
       "targets": [
         {
           "datasource": {
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(consumo_total_kwh) AS value\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
+          "rawSQL": "SELECT ROUND(SUM(consumo_total_kwh)/1e6,1) AS value FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6))",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Consumo Total (GWh)",
+      "type": "stat"
     },
     {
       "datasource": {
         "type": "trino-datasource",
         "uid": "trino-iceberg"
       },
+      "description": "Racio medio de cobertura (>1 = excedente)",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "yellow",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 80
-              },
-              {
-                "color": "red",
-                "value": 120
-              }
-            ]
-          },
-          "unit": "currencyEUR",
-          "decimals": 2,
-          "mappings": [],
-          "noValue": "N/A"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 1
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "mean"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Preço Médio MIBEL (€/MWh)",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "trino-datasource",
-            "uid": "trino-iceberg"
-          },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  AVG(ratio_producao_consumo) AS value\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
-          "format": 0,
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "trino-datasource",
-        "uid": "trino-iceberg"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
+          "decimals": 3,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "red",
                 "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0
               },
               {
                 "color": "green",
@@ -252,12 +148,67 @@
               }
             ]
           },
-          "unit": "kwatth",
-          "decimals": 2,
-          "mappings": [],
-          "noValue": "N/A"
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
         },
-        "overrides": []
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT ROUND(AVG(ratio_producao_consumo),3) AS value FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) AND ratio_producao_consumo IS NOT NULL",
+          "refId": "A"
+        }
+      ],
+      "title": "Racio Medio Prod/Cons",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "description": "Producao - Consumo acumulado (>0 = excedente)",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "none"
+        }
       },
       "gridPos": {
         "h": 4,
@@ -265,45 +216,98 @@
         "x": 12,
         "y": 1
       },
-      "id": 4,
+      "id": 5,
       "options": {
         "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+          ]
         },
         "textMode": "auto"
       },
-      "title": "Saldo Exportação (Prod − Cons)",
-      "type": "stat",
       "targets": [
         {
           "datasource": {
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(saldo_kwh) AS value\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
+          "rawSQL": "SELECT ROUND(SUM(saldo_kwh)/1e6,1) AS value FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6))",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Saldo Total (GWh)",
+      "type": "stat"
     },
     {
       "datasource": {
         "type": "trino-datasource",
         "uid": "trino-iceberg"
       },
+      "description": "Hora com maior consumo no periodo",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "background",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT ROUND(MAX(consumo_total_kwh)/1000,1) AS value FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6))",
+          "refId": "A"
+        }
+      ],
+      "title": "Pico de Consumo (MWh)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "description": "Horas em que producao < consumo",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -312,82 +316,17 @@
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 8000000
+                "color": "orange",
+                "value": 100
               },
               {
                 "color": "red",
-                "value": 10000000
+                "value": 500
               }
             ]
           },
-          "unit": "kwatth",
-          "decimals": 1,
-          "mappings": [],
-          "noValue": "N/A"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 1
-      },
-      "id": 5,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "max"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Pico de Consumo",
-      "type": "stat",
-      "targets": [
-        {
-          "datasource": {
-            "type": "trino-datasource",
-            "uid": "trino-iceberg"
-          },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  MAX(consumo_total_kwh) AS value\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
-          "format": 0,
-          "refId": "A"
+          "unit": "none"
         }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "trino-datasource",
-        "uid": "trino-iceberg"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "super-light-blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "currencyEUR",
-          "decimals": 2,
-          "mappings": [],
-          "noValue": "N/A"
-        },
-        "overrides": []
       },
       "gridPos": {
         "h": 4,
@@ -395,34 +334,30 @@
         "x": 20,
         "y": 1
       },
-      "id": 6,
+      "id": 7,
       "options": {
         "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
-            "max"
-          ],
-          "fields": "",
-          "values": false
+            "lastNotNull"
+          ]
         },
         "textMode": "auto"
       },
-      "title": "Preço Máximo (€/MWh)",
-      "type": "stat",
       "targets": [
         {
           "datasource": {
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  MAX(ratio_producao_consumo) AS value\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
+          "rawSQL": "SELECT COUNT(*) AS value FROM iceberg.gold.dp_energia_balance_hourly WHERE flag_defice = true AND timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6))",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Horas em Defice",
+      "type": "stat"
     },
     {
       "collapsed": false,
@@ -432,8 +367,9 @@
         "x": 0,
         "y": 5
       },
-      "id": 101,
-      "title": "⚡ Produção vs Consumo — Série Temporal",
+      "id": 10,
+      "panels": [],
+      "title": "Producao vs Consumo -- Serie Horaria",
       "type": "row"
     },
     {
@@ -443,335 +379,39 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
           "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "kWh",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
             "fillOpacity": 8,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 3,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "lineWidth": 1
           },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "kwatth",
-          "decimals": 2
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Produção"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#5794F2",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Consumo"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#73BF69",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Saldo"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#B877D9",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 1
-              },
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    6,
-                    3
-                  ],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 3
-              }
-            ]
-          }
-        ]
+          "decimals": 2,
+          "unit": "none"
+        }
       },
       "gridPos": {
-        "h": 10,
+        "h": 9,
         "w": 16,
         "x": 0,
-        "y": 6
-      },
-      "id": 10,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "min"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "title": "Produção vs Consumo Nacional",
-      "type": "timeseries",
-      "targets": [
-        {
-          "datasource": {
-            "type": "trino-datasource",
-            "uid": "trino-iceberg"
-          },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  SUM(producao_total_kwh) AS \"Produção\",\n  SUM(consumo_total_kwh) AS \"Consumo\",\n  SUM(saldo_kwh) AS \"Saldo\"\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
-          "format": 0,
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "trino-datasource",
-        "uid": "trino-iceberg"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": [],
-          "unit": "kwatth"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 8,
-        "x": 16,
         "y": 6
       },
       "id": 11,
       "options": {
-        "displayLabels": [
-          "percent"
-        ],
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "values": [
-            "value",
-            "percent"
-          ]
-        },
-        "pieType": "donut",
         "tooltip": {
-          "mode": "single",
-          "sort": "none"
+          "mode": "multi"
         }
       },
-      "title": "Mix Energético por Fonte",
-      "type": "piechart",
       "targets": [
         {
           "datasource": {
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  'produção total' AS categoria,\n  SUM(producao_total_kwh) AS valor\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY valor DESC",
-          "format": 1,
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 16
-      },
-      "id": 102,
-      "title": "💶 Preços Day-Ahead MIBEL",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "trino-datasource",
-        "uid": "trino-iceberg"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "continuous-GrYlRd"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "€/MWh",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "gradientMode": "scheme",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 3,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 60
-              },
-              {
-                "color": "orange",
-                "value": 80
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          },
-          "unit": "currencyEUR",
-          "decimals": 2,
-          "displayName": "€/MWh"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 17
-      },
-      "id": 20,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "min",
-            "stdDev"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "thresholdLines": true
-      },
-      "title": "Preço Day-Ahead (€/MWh)",
-      "type": "timeseries",
-      "targets": [
-        {
-          "datasource": {
-            "type": "trino-datasource",
-            "uid": "trino-iceberg"
-          },
-          "rawSQL": "SELECT\n  date_trunc('hour', timestamp_utc) AS time,\n  AVG(ratio_producao_consumo) AS \"Preço €/MWh\"\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
+          "rawSQL": "SELECT date_trunc('hour', timestamp_utc) AT TIME ZONE 'UTC' AS time, ROUND(producao_total_kwh/1000,2) AS \"Producao (MWh)\", ROUND(consumo_total_kwh/1000,2) AS \"Consumo (MWh)\", ROUND(saldo_kwh/1000,2) AS \"Saldo (MWh)\" FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) ORDER BY 1",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Producao vs Consumo Nacional (MWh/h)",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -779,198 +419,48 @@
         "uid": "trino-iceberg"
       },
       "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "€/MWh",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "bars",
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 3,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "currencyEUR",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 17
-      },
-      "id": 21,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "title": "Distribuição Horária de Preços — Média por Hora do Dia",
-      "type": "timeseries",
-      "targets": [
-        {
-          "datasource": {
-            "type": "trino-datasource",
-            "uid": "trino-iceberg"
-          },
-          "rawSQL": "SELECT\n  date_trunc('hour', TIMESTAMP '2000-01-01' + (hour(timestamp_utc) * INTERVAL '1' HOUR)) AS time,\n  AVG(ratio_producao_consumo) AS \"Preço Médio €/MWh\"\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY hour(timestamp_utc)\nORDER BY hour(timestamp_utc)",
-          "format": 0,
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 26
-      },
-      "id": 103,
-      "title": "🔗 Correlação Preço × Consumo",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "trino-datasource",
-        "uid": "trino-iceberg"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#5794F2"
-          },
-          "custom": {
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "pointSize": {
-              "fixed": 5
-            }
-          },
-          "mappings": [],
-          "unit": "short"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "consumo_total_kwh"
-            },
-            "properties": [
-              {
-                "id": "custom.axisPlacement",
-                "value": "bottom"
-              },
-              {
-                "id": "displayName",
-                "value": "Consumo (kWh)"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ratio_producao_consumo"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Preço (€/MWh)"
-              },
-              {
-                "id": "unit",
-                "value": "currencyEUR"
-              }
-            ]
-          }
-        ]
+        "defaults": {}
       },
       "gridPos": {
         "h": 9,
         "w": 8,
-        "x": 0,
-        "y": 27
+        "x": 16,
+        "y": 6
       },
-      "id": 30,
+      "id": 12,
       "options": {
-        "dims": {
-          "x": "consumo_total_kwh",
-          "exclude": []
-        },
         "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+          "displayMode": "table",
+          "placement": "bottom"
         },
-        "series": [],
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
+        "pieType": "pie"
       },
-      "title": "Scatter: Preço vs Consumo",
-      "type": "xychart",
       "targets": [
         {
           "datasource": {
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  consumo_total_kwh,\n  ratio_producao_consumo\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nORDER BY timestamp_utc\nLIMIT 2000",
-          "format": 1,
+          "format": 0,
+          "rawSQL": "SELECT 'DGM (Mercado)' AS categoria, SUM(producao_dgm_kwh) AS valor FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) UNION ALL SELECT 'PRE (Renovaveis)', SUM(producao_pre_kwh) FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) ORDER BY valor DESC",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Mix Energetico -- DGM vs PRE",
+      "type": "piechart"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "id": 20,
+      "panels": [],
+      "title": "Racio Producao/Consumo -- Serie & Distribuicao",
+      "type": "row"
     },
     {
       "datasource": {
@@ -979,176 +469,175 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
+            "fillOpacity": 8,
+            "lineWidth": 1
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 70
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          },
-          "mappings": [],
-          "unit": "short",
-          "decimals": 2
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "hora"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 160
-              },
-              {
-                "id": "unit",
-                "value": "short"
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "auto"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "producao_total_kwh"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Produção (kWh)"
-              },
-              {
-                "id": "unit",
-                "value": "kwatth"
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "auto"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "consumo_total_kwh"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Consumo (kWh)"
-              },
-              {
-                "id": "unit",
-                "value": "kwatth"
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "auto"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ratio_producao_consumo"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Preço (€/MWh)"
-              },
-              {
-                "id": "unit",
-                "value": "currencyEUR"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "saldo_kwh"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Saldo (kWh)"
-              },
-              {
-                "id": "unit",
-                "value": "kwatth"
-              }
-            ]
-          }
-        ]
+          "decimals": 3,
+          "unit": "none"
+        }
       },
       "gridPos": {
-        "h": 9,
-        "w": 16,
-        "x": 8,
-        "y": 27
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 21,
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT date_trunc('hour', timestamp_utc) AT TIME ZONE 'UTC' AS time, ROUND(AVG(ratio_producao_consumo),4) AS \"Racio Prod/Cons\" FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) AND ratio_producao_consumo IS NOT NULL GROUP BY date_trunc('hour', timestamp_utc) ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Racio Producao/Consumo -- Serie Horaria",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 1
+          },
+          "decimals": 3,
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 22,
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT CAST(TIMESTAMP '2000-01-01 00:00:00' + (hour(timestamp_utc) * INTERVAL '1' HOUR) AS TIMESTAMP WITH TIME ZONE) AS time, ROUND(AVG(ratio_producao_consumo),4) AS \"Racio Medio\" FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) AND ratio_producao_consumo IS NOT NULL GROUP BY hour(timestamp_utc) ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Perfil Horario Medio -- Racio por Hora do Dia (0-23h)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 30,
+      "panels": [],
+      "title": "Tendencias -- Agregacao Diaria",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 1
+          },
+          "decimals": 2,
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 14,
+        "x": 0,
+        "y": 25
       },
       "id": 31,
       "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "hora"
-          }
-        ]
+        "tooltip": {
+          "mode": "multi"
+        }
       },
-      "title": "Últimas 24 Horas no Intervalo Selecionado — Produção · Consumo · Preço",
-      "type": "table",
       "targets": [
         {
           "datasource": {
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  CAST(date_trunc('hour', timestamp_utc) AS varchar) AS hora,\n  ROUND(SUM(producao_total_kwh), 2) AS producao_total_kwh,\n  ROUND(SUM(consumo_total_kwh), 2) AS consumo_total_kwh,\n  ROUND(SUM(saldo_kwh), 2) AS saldo_kwh,\n  ROUND(AVG(ratio_producao_consumo), 4) AS ratio_producao_consumo\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY hora DESC\nLIMIT 24",
-          "format": 1,
+          "format": 0,
+          "rawSQL": "SELECT date_trunc('day', timestamp_utc) AT TIME ZONE 'UTC' AS time, ROUND(SUM(producao_total_kwh)/1000,1) AS \"Producao (MWh)\", ROUND(SUM(consumo_total_kwh)/1000,1) AS \"Consumo (MWh)\" FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) GROUP BY date_trunc('day', timestamp_utc) ORDER BY 1",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Producao vs Consumo -- Agregacao Diaria (MWh)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 1
+          },
+          "decimals": 3,
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 10,
+        "x": 14,
+        "y": 25
+      },
+      "id": 32,
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT date_trunc('day', timestamp_utc) AT TIME ZONE 'UTC' AS time, ROUND(AVG(ratio_producao_consumo),4) AS \"Racio Medio\", ROUND(MAX(ratio_producao_consumo),4) AS \"Racio Max\", ROUND(MIN(ratio_producao_consumo),4) AS \"Racio Min\" FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) AND ratio_producao_consumo IS NOT NULL GROUP BY date_trunc('day', timestamp_utc) ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Variacao Diaria do Racio Producao/Consumo",
+      "type": "timeseries"
     },
     {
       "collapsed": false,
@@ -1156,10 +645,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 33
       },
-      "id": 104,
-      "title": "📈 Tendências — Semana · Mês",
+      "id": 40,
+      "panels": [],
+      "title": "Correlacao & Dados Recentes",
       "type": "row"
     },
     {
@@ -1168,214 +658,60 @@
         "uid": "trino-iceberg"
       },
       "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "bars",
-            "fillOpacity": 70,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 3,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "kwatth",
-          "decimals": 1
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Produção"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#5794F2",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Consumo"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#73BF69",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
+        "defaults": {}
       },
       "gridPos": {
         "h": 9,
-        "w": 12,
+        "w": 10,
         "x": 0,
-        "y": 37
-      },
-      "id": 40,
-      "options": {
-        "legend": {
-          "calcs": [
-            "sum",
-            "mean"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "title": "Produção vs Consumo — Agregação Diária",
-      "type": "timeseries",
-      "targets": [
-        {
-          "datasource": {
-            "type": "trino-datasource",
-            "uid": "trino-iceberg"
-          },
-          "rawSQL": "SELECT\n  date_trunc('day', timestamp_utc) AS time,\n  SUM(producao_total_kwh) AS \"Produção\",\n  SUM(consumo_total_kwh) AS \"Consumo\"\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
-          "format": 0,
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "trino-datasource",
-        "uid": "trino-iceberg"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "continuous-YlOrRd"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 20,
-            "gradientMode": "scheme",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 3,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "currencyEUR",
-          "decimals": 2,
-          "displayName": "€/MWh"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 37
+        "y": 34
       },
       "id": 41,
       "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "min"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
+        "seriesMapping": "auto"
       },
-      "title": "Volatilidade de Preços — Média Diária",
-      "type": "timeseries",
       "targets": [
         {
           "datasource": {
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('day', timestamp_utc) AS time,\n  AVG(ratio_producao_consumo) AS \"Preço Médio\",\n  MAX(ratio_producao_consumo) AS \"Preço Máximo\",\n  MIN(ratio_producao_consumo) AS \"Preço Mínimo\"\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
+          "rawSQL": "SELECT ROUND(consumo_total_kwh/1000,2) AS \"Consumo (MWh)\", ROUND(ratio_producao_consumo,4) AS \"Racio\" FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) AND ratio_producao_consumo IS NOT NULL ORDER BY timestamp_utc LIMIT 2000",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Scatter: Racio vs Consumo (MWh)",
+      "type": "xychart"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {}
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 14,
+        "x": 10,
+        "y": 34
+      },
+      "id": 42,
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT CAST(date_trunc('hour', timestamp_utc) AS VARCHAR) AS hora, ROUND(producao_total_kwh/1000,2) AS \"Prod (MWh)\", ROUND(consumo_total_kwh/1000,2) AS \"Cons (MWh)\", ROUND(saldo_kwh/1000,2) AS \"Saldo (MWh)\", ROUND(ratio_producao_consumo,4) AS racio, CAST(flag_defice AS VARCHAR) AS defice FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) ORDER BY timestamp_utc DESC LIMIT 24",
+          "refId": "A"
+        }
+      ],
+      "title": "Ultimas 24 Horas no Intervalo -- Producao . Consumo . Saldo . Racio",
+      "type": "table"
     },
     {
       "collapsed": false,
@@ -1383,10 +719,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 46
+        "y": 43
       },
-      "id": 105,
-      "title": "🔬 Qualidade de Dados — Pipeline Medallion",
+      "id": 50,
+      "panels": [],
+      "title": "Qualidade de Dados -- Cobertura & Integridade",
       "type": "row"
     },
     {
@@ -1396,18 +733,17 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
+          "max": 100,
+          "min": 0,
           "thresholds": {
-            "mode": "percentage",
+            "mode": "absolute",
             "steps": [
               {
                 "color": "red",
                 "value": null
               },
               {
-                "color": "yellow",
+                "color": "orange",
                 "value": 90
               },
               {
@@ -1416,128 +752,51 @@
               }
             ]
           },
-          "unit": "percentunit",
-          "decimals": 2,
-          "min": 0,
-          "max": 1
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 4,
-        "x": 0,
-        "y": 47
-      },
-      "id": 50,
-      "options": {
-        "minVizHeight": 75,
-        "minVizWidth": 75,
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "sizing": "auto"
-      },
-      "title": "Completude dos Dados Gold",
-      "type": "gauge",
-      "targets": [
-        {
-          "datasource": {
-            "type": "trino-datasource",
-            "uid": "trino-iceberg"
-          },
-          "rawSQL": "SELECT\n  CASE\n    WHEN COUNT(*) = 0 THEN 0\n    ELSE CAST(COUNT(*) AS DOUBLE) /\n      (CAST(date_diff('hour', MIN(timestamp_utc), MAX(timestamp_utc)) AS DOUBLE) + 1)\n  END AS completude\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)",
-          "format": 1,
-          "refId": "A"
+          "unit": "percent"
         }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "trino-datasource",
-        "uid": "trino-iceberg"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 10
-              }
-            ]
-          },
-          "unit": "short",
-          "decimals": 0,
-          "mappings": [],
-          "noValue": "N/A"
-        },
-        "overrides": []
       },
       "gridPos": {
         "h": 6,
-        "w": 4,
-        "x": 4,
-        "y": 47
+        "w": 6,
+        "x": 0,
+        "y": 44
       },
       "id": 51,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+          ]
         },
-        "textMode": "auto"
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
       },
-      "title": "Horas em Falta (Gold)",
-      "type": "stat",
       "targets": [
         {
           "datasource": {
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  CASE\n    WHEN COUNT(*) = 0 THEN NULL\n    ELSE date_diff('hour', MIN(timestamp_utc), MAX(timestamp_utc)) + 1 - COUNT(*)\n  END AS horas_em_falta\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)",
           "format": 0,
+          "rawSQL": "SELECT ROUND(CAST(COUNT(*) AS DOUBLE)/(date_diff('hour',MIN(timestamp_utc),MAX(timestamp_utc))+1)*100,2) AS value FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6))",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Completude dos Dados Gold (%)",
+      "type": "gauge"
     },
     {
       "datasource": {
         "type": "trino-datasource",
         "uid": "trino-iceberg"
       },
+      "description": "Lacunas no historico",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1546,67 +805,61 @@
                 "value": null
               },
               {
-                "color": "yellow",
+                "color": "orange",
                 "value": 1
               },
               {
                 "color": "red",
-                "value": 5
+                "value": 100
               }
             ]
           },
-          "unit": "short",
-          "decimals": 0,
-          "mappings": [],
-          "noValue": "N/A"
-        },
-        "overrides": []
+          "unit": "none"
+        }
       },
       "gridPos": {
         "h": 6,
         "w": 4,
-        "x": 8,
-        "y": 47
+        "x": 6,
+        "y": 44
       },
       "id": 52,
       "options": {
         "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+          ]
         },
         "textMode": "auto"
       },
-      "title": "Valores Nulos — Produção/Consumo",
-      "type": "stat",
       "targets": [
         {
           "datasource": {
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT COUNT(*) AS nulos\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\n  AND (producao_total_kwh IS NULL OR consumo_total_kwh IS NULL)",
           "format": 0,
+          "rawSQL": "SELECT date_diff('hour',MIN(timestamp_utc),MAX(timestamp_utc))+1-COUNT(*) AS value FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6))",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Horas em Falta (Gold)",
+      "type": "stat"
     },
     {
       "datasource": {
         "type": "trino-datasource",
         "uid": "trino-iceberg"
       },
+      "description": "Horas sem dados de producao ou consumo",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1615,56 +868,44 @@
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 1
-              },
-              {
                 "color": "red",
-                "value": 5
+                "value": 1
               }
             ]
           },
-          "unit": "short",
-          "decimals": 0,
-          "mappings": [],
-          "noValue": "N/A"
-        },
-        "overrides": []
+          "unit": "none"
+        }
       },
       "gridPos": {
         "h": 6,
         "w": 4,
         "x": 12,
-        "y": 47
+        "y": 44
       },
       "id": 53,
       "options": {
         "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+          ]
         },
         "textMode": "auto"
       },
-      "title": "Outliers de Preço (> P99)",
-      "type": "stat",
       "targets": [
         {
           "datasource": {
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "WITH stats AS (\n  SELECT approx_percentile(ratio_producao_consumo, 0.99) AS p99\n  FROM iceberg.gold.dp_energia_balance_hourly\n  WHERE $__timeFilter(timestamp_utc)\n)\nSELECT COUNT(*) AS outliers\nFROM iceberg.gold.dp_energia_balance_hourly\nCROSS JOIN stats\nWHERE $__timeFilter(timestamp_utc)\n  AND ratio_producao_consumo > p99",
           "format": 0,
+          "rawSQL": "SELECT COUNT(*) AS value FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) AND (producao_total_kwh IS NULL OR consumo_total_kwh IS NULL)",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Nulos Prod/Cons",
+      "type": "stat"
     },
     {
       "datasource": {
@@ -1673,181 +914,56 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
           "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "bars",
-            "fillOpacity": 80,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 3,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "fillOpacity": 8,
+            "lineWidth": 1
           },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short",
-          "decimals": 0
-        },
-        "overrides": []
+          "decimals": 0,
+          "unit": "none"
+        }
       },
       "gridPos": {
         "h": 6,
-        "w": 8,
-        "x": 16,
-        "y": 47
+        "w": 6,
+        "x": 18,
+        "y": 44
       },
       "id": 54,
       "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
         "tooltip": {
-          "mode": "single",
-          "sort": "none"
+          "mode": "multi"
         }
       },
-      "title": "Registos por Dia — Cobertura Gold",
-      "type": "timeseries",
       "targets": [
         {
           "datasource": {
             "type": "trino-datasource",
             "uid": "trino-iceberg"
           },
-          "rawSQL": "SELECT\n  date_trunc('day', timestamp_utc) AS time,\n  COUNT(*) AS registos\nFROM iceberg.gold.dp_energia_balance_hourly\nWHERE $__timeFilter(timestamp_utc)\nGROUP BY 1\nORDER BY 1",
           "format": 0,
+          "rawSQL": "SELECT date_trunc('day', timestamp_utc) AT TIME ZONE 'UTC' AS time, COUNT(*) AS registos FROM iceberg.gold.dp_energia_balance_hourly WHERE timestamp_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) GROUP BY date_trunc('day', timestamp_utc) ORDER BY 1",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Registos por Dia -- Cobertura Gold",
+      "type": "timeseries"
     }
   ],
   "refresh": "5m",
-  "schemaVersion": 38,
+  "schemaVersion": 36,
   "tags": [
     "mibel",
+    "dp01",
     "energia",
-    "portugal",
-    "eletricidade",
-    "medallion"
+    "producao",
+    "consumo",
+    "portugal"
   ],
-  "templating": {
-    "list": []
-  },
   "time": {
-    "from": "now-2y",
-    "to": "now"
+    "from": "2023-01-01T00:00:00Z",
+    "to": "2026-03-12T00:00:00Z"
   },
-  "timepicker": {
-    "refresh_intervals": [
-      "30s",
-      "1m",
-      "5m",
-      "15m",
-      "30m",
-      "1h"
-    ],
-    "time_options": [
-      "5m",
-      "15m",
-      "1h",
-      "6h",
-      "12h",
-      "24h",
-      "2d",
-      "7d",
-      "30d",
-      "90d",
-      "1y",
-      "2y"
-    ]
-  },
-  "timezone": "Europe/Lisbon",
-  "title": "MIBEL Energy Intelligence",
-  "uid": "mibel-energy-intelligence-v2",
-  "version": 2,
-  "weekStart": "monday",
-  "__requires": [
-    {
-      "type": "grafana",
-      "id": "grafana",
-      "name": "Grafana",
-      "version": "10.0.0"
-    },
-    {
-      "type": "datasource",
-      "id": "trino-datasource",
-      "name": "Trino",
-      "version": "1.0.0"
-    },
-    {
-      "type": "panel",
-      "id": "timeseries",
-      "name": "Time series",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "stat",
-      "name": "Stat",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "gauge",
-      "name": "Gauge",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "piechart",
-      "name": "Pie chart",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "table",
-      "name": "Table",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "xychart",
-      "name": "XY Chart",
-      "version": ""
-    }
-  ]
+  "timezone": "browser",
+  "title": "Balanco da Rede Nacional -- Producao . Consumo . Saldo",
+  "uid": "mibel-energy-intelligence-v2"
 }

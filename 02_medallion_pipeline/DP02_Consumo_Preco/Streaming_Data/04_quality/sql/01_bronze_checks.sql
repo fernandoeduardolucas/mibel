@@ -129,12 +129,12 @@ UNION ALL
 -- 9. FRESHNESS — dados de consumo têm menos de 3 dias de atraso
 SELECT
     'bronze.consumo_api_raw » freshness » max_process_date',
-    CASE WHEN DATEDIFF('day', MAX(process_date), CURRENT_DATE) <= 3
+    CASE WHEN date_diff('day', MAX(process_date), CURRENT_DATE) <= 3
          THEN 'PASS' ELSE 'WARN' END,
-    CAST(DATEDIFF('day', MAX(process_date), CURRENT_DATE) AS DECIMAL(18,2)),
+    CAST(date_diff('day', MAX(process_date), CURRENT_DATE) AS DECIMAL(18,2)),
     3.0,
     CONCAT('Último process_date: ', CAST(MAX(process_date) AS VARCHAR),
-           ' (', CAST(DATEDIFF('day', MAX(process_date), CURRENT_DATE) AS VARCHAR), ' dias atrás)')
+           ' (', CAST(date_diff('day', MAX(process_date), CURRENT_DATE) AS VARCHAR), ' dias atrás)')
 FROM iceberg.bronze.consumo_api_raw
 
 UNION ALL
@@ -142,12 +142,12 @@ UNION ALL
 -- 10. FRESHNESS — dados de preços têm menos de 2 dias de atraso (day-ahead publica D-1)
 SELECT
     'bronze.preco_api_raw » freshness » max_process_date',
-    CASE WHEN DATEDIFF('day', MAX(process_date), CURRENT_DATE) <= 2
+    CASE WHEN date_diff('day', MAX(process_date), CURRENT_DATE) <= 2
          THEN 'PASS' ELSE 'WARN' END,
-    CAST(DATEDIFF('day', MAX(process_date), CURRENT_DATE) AS DECIMAL(18,2)),
+    CAST(date_diff('day', MAX(process_date), CURRENT_DATE) AS DECIMAL(18,2)),
     2.0,
     CONCAT('Último process_date: ', CAST(MAX(process_date) AS VARCHAR),
-           ' (', CAST(DATEDIFF('day', MAX(process_date), CURRENT_DATE) AS VARCHAR), ' dias atrás)')
+           ' (', CAST(date_diff('day', MAX(process_date), CURRENT_DATE) AS VARCHAR), ' dias atrás)')
 FROM iceberg.bronze.preco_api_raw
 
 UNION ALL

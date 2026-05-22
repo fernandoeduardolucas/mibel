@@ -86,7 +86,7 @@ Each data product has its own Python orchestrator. Always pass `--skip-docker` i
 python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py
 
 # DP-02: Consumption vs Price (static CSV pipeline)
-python 02_medallion_pipeline/DP02_Consumo_Preco/run_medallion_consumo_precos.py --skip-docker
+python 02_medallion_pipeline/DP02_Consumo_Preco/Static_Data/run_medallion_consumo_precos.py --skip-docker
 
 # DP-02: Consumption vs Price (streaming API pipeline)
 python 02_medallion_pipeline/DP02_Consumo_Preco/Streaming_Data/run_streaming_pipeline.py --skip-docker --days 7

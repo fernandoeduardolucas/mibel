@@ -2,7 +2,7 @@
 Workflow Flyte: fetch das APIs para a camada Bronze — Streaming_Data (DP-02).
 
 Obtém dados de consumo e preços via Energy-Charts API (Fraunhofer ISE):
-  - Consumo horário PT: total_power?country=pt (ENTSO-E load data)
+  - Consumo horário PT: public_power?country=pt  (Load extraído de production_types)
   - Preços day-ahead PT: price?bzn=PT (OMIE/MIBEL)
 
 Sem autenticação — APIs abertas ao público.
@@ -24,7 +24,7 @@ from flytekit import task, workflow
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
-CONSUMO_URL = "https://api.energy-charts.info/total_power"
+CONSUMO_URL = "https://api.energy-charts.info/public_power"
 PRECO_URL   = "https://api.energy-charts.info/price"
 
 BATCH_SIZE = 2000
@@ -63,8 +63,9 @@ def fetch_consumo_api(start_date: date, end_date: date) -> int:
     """
     Obtém carga elétrica nacional horária da Energy-Charts API (dados ENTSO-E).
 
-    Endpoint: https://api.energy-charts.info/total_power?country=pt
-    Resposta: {"unix_seconds": [...], "Load": [...]} ou variantes.
+    Endpoint: https://api.energy-charts.info/public_power?country=pt
+    Resposta: {"unix_seconds": [...], "production_types": [{"name": "Load", "data": [...]}]}
+    O campo "Load" vem dentro de production_types (total_power nao suporta PT).
 
     Idempotente: apaga process_dates do intervalo antes de inserir.
     """
@@ -78,12 +79,12 @@ def fetch_consumo_api(start_date: date, end_date: date) -> int:
     data = resp.json()
 
     unix_seconds = data.get("unix_seconds", [])
-    load_values  = (
-        data.get("Load")
-        or data.get("load")
-        or data.get("load_actual")
-        or []
-    )
+    # public_power returns production_types list; extract "Load" entry
+    load_values: list = []
+    for pt in data.get("production_types", []):
+        if pt.get("name") == "Load":
+            load_values = pt.get("data", [])
+            break
 
     if not unix_seconds or not load_values:
         print(f"[fetch_consumo] AVISO: sem dados para {start_date}–{end_date}.")

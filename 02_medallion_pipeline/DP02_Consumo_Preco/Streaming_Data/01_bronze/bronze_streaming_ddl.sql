@@ -21,21 +21,13 @@ CREATE TABLE IF NOT EXISTS iceberg.bronze.consumo_api_raw (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['process_date'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'consumo_preco_api', '1', 'indefinite', 'energy_charts_api']
-    ),
     location = 's3a://warehouse/bronze/consumo_api_raw/'
 );
 
 ALTER TABLE iceberg.bronze.consumo_api_raw
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'consumo_preco_api', '1', 'indefinite', 'energy_charts_api']
-    );
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.bronze.consumo_api_raw IS
 'Tabela Bronze com carga elétrica nacional horária obtida via Energy-Charts API (dados ENTSO-E). Timestamp UTC já normalizado na ingestão.';
@@ -62,21 +54,13 @@ CREATE TABLE IF NOT EXISTS iceberg.bronze.preco_api_raw (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['process_date'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'consumo_preco_api', '1', 'indefinite', 'energy_charts_api']
-    ),
     location = 's3a://warehouse/bronze/preco_api_raw/'
 );
 
 ALTER TABLE iceberg.bronze.preco_api_raw
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'consumo_preco_api', '1', 'indefinite', 'energy_charts_api']
-    );
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.bronze.preco_api_raw IS
 'Tabela Bronze com preços day-ahead horários obtidos via Energy-Charts API (zona de balanço PT). Timestamp UTC já normalizado na ingestão.';

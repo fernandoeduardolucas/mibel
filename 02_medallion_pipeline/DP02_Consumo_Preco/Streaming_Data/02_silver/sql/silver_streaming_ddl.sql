@@ -20,21 +20,13 @@ CREATE TABLE IF NOT EXISTS iceberg.silver.consumo_api_hourly (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['year', 'month'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
-        ARRAY['silver', 'consumo_preco_api', '1', 'hourly', 'bronze.consumo_api_raw']
-    ),
     location = 's3a://warehouse/silver/consumo_api_hourly/'
 );
 
 ALTER TABLE iceberg.silver.consumo_api_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
-        ARRAY['silver', 'consumo_preco_api', '1', 'hourly', 'bronze.consumo_api_raw']
-    );
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.silver.consumo_api_hourly IS
 'Tabela Silver com carga elétrica nacional horária normalizada. Origem: Energy-Charts API (ENTSO-E). Equivalente a consumo_hourly mas com fonte dinâmica.';
@@ -59,21 +51,13 @@ CREATE TABLE IF NOT EXISTS iceberg.silver.preco_api_hourly (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['year', 'month'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
-        ARRAY['silver', 'consumo_preco_api', '1', 'hourly', 'bronze.preco_api_raw']
-    ),
     location = 's3a://warehouse/silver/preco_api_hourly/'
 );
 
 ALTER TABLE iceberg.silver.preco_api_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
-        ARRAY['silver', 'consumo_preco_api', '1', 'hourly', 'bronze.preco_api_raw']
-    );
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.silver.preco_api_hourly IS
 'Tabela Silver com preços day-ahead horários normalizados. Origem: Energy-Charts API (OMIE/MIBEL zona PT). Equivalente a preco_hourly mas com fonte dinâmica.';

@@ -30,21 +30,13 @@ CREATE TABLE IF NOT EXISTS iceberg.gold.dp_energy_market_api_hourly (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['year', 'month'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'source_type'],
-        ARRAY['gold', 'consumo_preco_api', '1', 'hourly', 'api_streaming']
-    ),
     location = 's3a://warehouse/gold/dp_energy_market_api_hourly/'
 );
 
 ALTER TABLE iceberg.gold.dp_energy_market_api_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'source_type'],
-        ARRAY['gold', 'consumo_preco_api', '1', 'hourly', 'api_streaming']
-    );
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.gold.dp_energy_market_api_hourly IS
 'Produto analítico Gold com consumo e preços de energia horários + features de calendário e lags. Origem: Energy-Charts API. Schema idêntico a dp_energy_market_hourly (fonte estática).';
@@ -81,21 +73,13 @@ CREATE TABLE IF NOT EXISTS iceberg.gold.feat_load_forecasting_api_hourly (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['year', 'month'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'source_type', 'ml_target'],
-        ARRAY['gold', 'consumo_preco_api', '1', 'hourly', 'api_streaming', 'consumo_next_hour']
-    ),
     location = 's3a://warehouse/gold/feat_load_forecasting_api_hourly/'
 );
 
 ALTER TABLE iceberg.gold.feat_load_forecasting_api_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'grain', 'source_type', 'ml_target'],
-        ARRAY['gold', 'consumo_preco_api', '1', 'hourly', 'api_streaming', 'consumo_next_hour']
-    );
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.gold.feat_load_forecasting_api_hourly IS
 'Feature table Gold para treino de modelos ML de previsão de carga. Inclui variável alvo consumo_next_hour (LEAD 1h). Origem: Energy-Charts API.';

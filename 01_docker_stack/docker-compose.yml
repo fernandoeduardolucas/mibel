@@ -97,8 +97,8 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_INSTALL_PLUGINS: trino-datasource
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../04_application/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../04_application/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
 
   # NOTE: Flyte Sandbox runs as a separate external container via flytectl.

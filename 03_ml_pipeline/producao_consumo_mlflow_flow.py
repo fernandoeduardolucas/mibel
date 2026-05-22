@@ -18,6 +18,7 @@ import json
 import os
 import socket
 import tempfile
+from urllib.parse import urlparse, urlunparse
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
@@ -83,6 +84,28 @@ os.environ.setdefault("AWS_ACCESS_KEY_ID", "minioadmin")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "minioadmin")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
+
+
+def _resolve_tracking_uri(uri: str) -> str:
+    """Resolve host do MLflow URI e faz fallback para localhost quando necessário."""
+    parsed = urlparse(uri)
+    if not parsed.hostname:
+        return uri
+
+    resolved_host = _resolved_host(parsed.hostname)
+    if resolved_host == parsed.hostname:
+        return uri
+
+    netloc_host = resolved_host
+    if parsed.port is not None:
+        netloc_host = f"{resolved_host}:{parsed.port}"
+    if parsed.username:
+        auth = parsed.username
+        if parsed.password:
+            auth = f"{auth}:{parsed.password}"
+        netloc_host = f"{auth}@{netloc_host}"
+
+    return urlunparse(parsed._replace(netloc=netloc_host))
 
 
 def _resolved_host(host: str) -> str:
@@ -297,7 +320,7 @@ def train_producao_consumo_model(test_ratio: float = 0.2, random_state: int = 42
 
     report = classification_report(y_test, preds, output_dict=True, zero_division=0)
 
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    mlflow.set_tracking_uri(_resolve_tracking_uri(MLFLOW_TRACKING_URI))
     mlflow.set_experiment(MLFLOW_EXPERIMENT)
 
     with mlflow.start_run(run_name="rf-defice-t-plus-1"):

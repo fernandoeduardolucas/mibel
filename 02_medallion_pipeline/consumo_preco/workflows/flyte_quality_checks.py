@@ -6,9 +6,9 @@ se existirem verificações com status FAIL. Checks WARN são registados
 mas não bloqueiam a promoção de dados.
 
 Uso típico no pipeline:
-    1. ingest_bronze        → quality_gate(layer="bronze")
-    2. bronze_to_silver     → quality_gate(layer="silver")
-    3. silver_to_gold       → quality_gate(layer="gold")
+    1. ingest_bronze        -> quality_gate(layer="bronze")
+    2. bronze_to_silver     -> quality_gate(layer="silver")
+    3. silver_to_gold       -> quality_gate(layer="gold")
 
 Execução standalone:
     pyflyte run workflows/flyte_quality_checks.py quality_gate_bronze
@@ -29,8 +29,8 @@ from flytekit.exceptions.user import FlyteRecoverableException
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
-# Ficheiros SQL em 04_quality/ relativo à raiz do sub-pipeline consumo_preco
-_SQL_DIR = Path(__file__).parent.parent / "04_quality"
+# Ficheiros SQL em 04_quality/sql/ relativo à raiz do sub-pipeline consumo_preco
+_SQL_DIR = Path(__file__).parent.parent / "04_quality" / "sql"
 
 _LAYER_SQL = {
     "bronze": _SQL_DIR / "01_bronze_checks.sql",
@@ -46,8 +46,6 @@ def _trino_conn() -> trino.dbapi.Connection:
         user="admin",
         catalog="iceberg",
         schema="bronze",
-        http_scheme="http",
-        request_timeout=300,
     )
 
 
@@ -65,7 +63,7 @@ def _run_checks(layer: str) -> list[dict]:
     if not sql_path.exists():
         raise FileNotFoundError(
             f"Ficheiro SQL de qualidade não encontrado: {sql_path}\n"
-            f"Verifique se 04_quality/{sql_path.name} existe."
+            f"Verifique se 04_quality/sql/{sql_path.name} existe."
         )
 
     raw_sql = sql_path.read_text(encoding="utf-8")
@@ -92,9 +90,9 @@ def quality_gate(layer: str) -> int:
     Gate de qualidade para a camada indicada ('bronze', 'silver' ou 'gold').
 
     Comportamento:
-    - PASS  → regista no log, não bloqueia.
-    - WARN  → regista no log com aviso, não bloqueia (dados promovidos com ressalva).
-    - FAIL  → lança FlyteRecoverableException (com retries=2) — bloqueia promoção.
+    - PASS  -> regista no log, não bloqueia.
+    - WARN  -> regista no log com aviso, não bloqueia (dados promovidos com ressalva).
+    - FAIL  -> lança FlyteRecoverableException (com retries=2) — bloqueia promoção.
 
     Retorna o número de checks com status PASS.
     """
@@ -121,10 +119,10 @@ def quality_gate(layer: str) -> int:
         print(f"  [PASS] {r['check_name']}")
 
     for r in warns:
-        print(f"  [WARN] {r['check_name']} → {r.get('detalhe', '')}")
+        print(f"  [WARN] {r['check_name']} -> {r.get('detalhe', '')}")
 
     for r in fails:
-        print(f"  [FAIL] {r['check_name']} → {r.get('detalhe', '')}")
+        print(f"  [FAIL] {r['check_name']} -> {r.get('detalhe', '')}")
 
     if fails:
         fail_names = "; ".join(r["check_name"] for r in fails)
@@ -133,7 +131,7 @@ def quality_gate(layer: str) -> int:
             f"{len(fails)} check(s) FAIL: {fail_names}"
         )
 
-    print(f"  → Gate APROVADO para camada {layer}.\n")
+    print(f"  -> Gate APROVADO para camada {layer}.\n")
     return len(passes)
 
 

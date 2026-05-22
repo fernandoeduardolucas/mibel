@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
 """
-Orquestrador completo da pipeline Medallion — consumo_preco (Opção B: Flyte + Iceberg nativo).
+Orquestrador completo da pipeline Medallion — consumo_preco (DP-02).
+
+Fontes de dados:
+  - Consumo: consumo-total-nacional.csv (REN, granularidade 15 min)
+  - Preços:  Day-ahead Market Prices_*.csv (OMIE, granularidade horária)
 
 Fluxo padrão (sem parâmetros, equivalente a --full):
-  1. Verifica pré-requisitos (Docker, Flyte sandbox, Python)
+  1. Verifica pré-requisitos (Docker, Python)
   2. Sobe stack Docker Compose (se não estiver a correr)
   3. Espera Trino disponível
   4. Cria/instala venv local com dependências Flyte
   5. Aplica DDL via Trino CLI (cria schemas e tabelas Iceberg se não existirem)
-  6. Executa ingestão Bronze COMPLETA (ingest_bronze_full — lê CSVs na íntegra)
-  7. Executa transformação Silver COMPLETA
-  8. Executa transformação Gold COMPLETA
-  9. Quality gates finais (Bronze, Silver, Gold)
- 10. Validação final: COUNT e intervalo das tabelas Gold
+  6. Faz upload dos CSVs raw para MinIO (warehouse/raw/)
+  7. Executa ingestão Bronze COMPLETA via Flyte (lê CSVs do MinIO)
+  8. Quality gate Bronze
+  9. Executa transformação Silver COMPLETA via Flyte
+ 10. Quality gate Silver
+ 11. Executa transformação Gold COMPLETA via Flyte
+ 12. Quality gate Gold
+ 13. Validação final: COUNT e intervalo das tabelas Gold
 
-Execução rápida (tudo de uma vez):
+Execução rápida (stack já a correr, DDL já aplicado):
     python run_medallion_consumo_precos.py --skip-docker --skip-ddl
 
 Execução completa (inclui Docker e DDL):
@@ -24,10 +31,11 @@ Execução de um mês específico:
     python run_medallion_consumo_precos.py --year 2023 --month 1
 
 Flags úteis:
-    --skip-docker   não faz compose up (stack já a correr)
-    --skip-ddl      não reaplicar o DDL (tabelas já criadas)
-    --build         faz --build no compose up
-    --no-quality    salta os quality gates (útil em dev)
+    --skip-docker    não faz compose up (stack já a correr)
+    --skip-ddl       não reaplicar o DDL (tabelas já criadas)
+    --skip-upload    não re-faz upload dos CSVs para MinIO
+    --build          faz --build no compose up
+    --no-quality     salta os quality gates (útil em dev)
 """
 
 from __future__ import annotations
@@ -40,7 +48,6 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import date, timedelta
 from pathlib import Path
 
 
@@ -161,7 +168,7 @@ def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
     )
     if not venv_python.exists():
         print(f"\n>>> A criar virtualenv em: {venv_dir}")
-        run([base_python, "-m", "venv", "--system-site-packages", str(venv_dir)])
+        run([base_python, "-m", "venv", str(venv_dir)])
     return venv_python
 
 
@@ -172,9 +179,7 @@ def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
 def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str) -> None:
     print(f"\n>>> DDL {stage_name}: {sql_file.name}")
     sql_text = sql_file.read_text(encoding="utf-8")
-    # Remove comentários de linha para evitar caracteres Unicode problemáticos no Windows
     sql_clean = re.sub(r'--[^\n]*', '', sql_text)
-    # Divide em statements individuais e executa cada um (Trino CLI executa 1 statement por vez)
     statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
     for stmt in statements:
         subprocess.run(
@@ -183,9 +188,58 @@ def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str) -> None:
                 "exec", "-T", "trino", "trino",
             ],
             input=(stmt + ";").encode("utf-8"),
-            capture_output=True,  # DDL é idempotente (IF NOT EXISTS); ignora erros menores
+            capture_output=True,
         )
     print(f"    DDL {stage_name} aplicado.")
+
+
+# ---------------------------------------------------------------------------
+# MinIO upload helper — envia CSVs raw para o bucket warehouse/raw/
+# ---------------------------------------------------------------------------
+
+def upload_raw_csvs_to_minio(raw_dir: Path) -> None:
+    """
+    Faz upload dos dois CSVs raw para MinIO (warehouse/raw/).
+    Necessário antes de correr o workflow Flyte Bronze que os lê do MinIO.
+    """
+    print("\n>>> A verificar/instalar boto3 para upload MinIO...")
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "boto3", "-q"],
+        check=True,
+    )
+
+    import boto3  # noqa: PLC0415 — importação intencional pós-install
+
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=os.environ.get("MINIO_ENDPOINT", "http://localhost:9000"),
+        aws_access_key_id=os.environ.get("MINIO_ACCESS_KEY", "minioadmin"),
+        aws_secret_access_key=os.environ.get("MINIO_SECRET_KEY", "minioadmin"),
+    )
+
+    bucket = "warehouse"
+
+    # Garante que o bucket existe
+    try:
+        s3.head_bucket(Bucket=bucket)
+    except Exception:
+        s3.create_bucket(Bucket=bucket)
+        print(f"    Bucket '{bucket}' criado.")
+
+    uploads = [
+        (raw_dir / "consumo-total-nacional.csv",
+         "raw/consumo-total-nacional.csv"),
+        (raw_dir / "Day-ahead Market Prices_20230101_20260311.csv",
+         "raw/Day-ahead Market Prices_20230101_20260311.csv"),
+    ]
+
+    for local_path, s3_key in uploads:
+        if not local_path.exists():
+            raise SystemExit(f"Erro: ficheiro raw não encontrado: {local_path}")
+        print(f"    Upload: {local_path.name} -> s3://{bucket}/{s3_key}")
+        s3.upload_file(str(local_path), bucket, s3_key)
+
+    print(">>> Upload de CSVs raw para MinIO concluído.")
 
 
 # ---------------------------------------------------------------------------
@@ -198,100 +252,17 @@ def pyflyte_run(
     workflow_file: str,
     workflow_name: str,
     params: dict[str, str],
-    remote: bool = False,
-    image: str | None = None,
-    flyte_config: str | None = None,
 ) -> None:
-    """Invoca pyflyte run — local (padrão) ou remoto no Flyte Sandbox."""
-    cmd = [str(venv_python), "-m", "flytekit.clis.sdk_in_container.pyflyte"]
-    if flyte_config:
-        cmd += ["--config", flyte_config]
-    cmd.append("run")
-    if remote:
-        cmd.append("--remote")
-    if image:
-        cmd += ["--image", image]
-    cmd += [str(workflows_dir / workflow_file), workflow_name]
+    """Invoca pyflyte run no venv local."""
+    cmd = [
+        str(venv_python), "-m", "flytekit.clis.sdk_in_container.pyflyte",
+        "run",
+        str(workflows_dir / workflow_file),
+        workflow_name,
+    ]
     for key, value in params.items():
         cmd += [f"--{key}", value]
     run(cmd, cwd=workflows_dir)
-
-
-# ---------------------------------------------------------------------------
-# Trino helper — deteta meses presentes na Bronze
-# ---------------------------------------------------------------------------
-
-def detect_months_from_bronze(compose_file: Path) -> list[tuple[int, int]]:
-    """
-    Consulta o Trino para obter a lista de (year, month) distintos
-    presentes em iceberg.bronze.consumo_raw.
-    Retorna lista ordenada de tuplos (year, month).
-    """
-    sql = (
-        "SELECT DISTINCT YEAR(process_date) AS y, MONTH(process_date) AS m "
-        "FROM iceberg.bronze.consumo_raw "
-        "ORDER BY y, m;"
-    )
-    result = subprocess.run(
-        [
-            "docker", "compose", "-f", str(compose_file),
-            "exec", "-T", "trino", "trino",
-            "--output-format", "TSV_HEADER",
-            "--execute", sql,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    months = []
-    if result.returncode != 0:
-        print(f"[AVISO] Não foi possível detetar meses no Bronze: {result.stderr.strip()}")
-        return months
-
-    lines = result.stdout.strip().splitlines()
-    # Primeira linha é o cabeçalho (y\tm)
-    for line in lines[1:]:
-        parts = line.strip().split("\t")
-        if len(parts) == 2:
-            try:
-                months.append((int(parts[0]), int(parts[1])))
-            except ValueError:
-                continue
-    return months
-
-
-def detect_dates_from_bronze(compose_file: Path) -> list[str]:
-    """
-    Consulta o Trino para obter a lista de process_date presentes em ambas as
-    tabelas Bronze. Retorna datas YYYY-MM-DD ordenadas para backfill Silver.
-    """
-    sql = (
-        "SELECT CAST(c.process_date AS VARCHAR) AS process_date "
-        "FROM (SELECT DISTINCT process_date FROM iceberg.bronze.consumo_raw) c "
-        "INNER JOIN (SELECT DISTINCT process_date FROM iceberg.bronze.preco_raw) p "
-        "ON c.process_date = p.process_date "
-        "ORDER BY c.process_date;"
-    )
-    result = subprocess.run(
-        [
-            "docker", "compose", "-f", str(compose_file),
-            "exec", "-T", "trino", "trino",
-            "--output-format", "TSV_HEADER",
-            "--execute", sql,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    dates: list[str] = []
-    if result.returncode != 0:
-        print(f"[AVISO] Não foi possível detetar datas no Bronze: {result.stderr.strip()}")
-        return dates
-
-    lines = result.stdout.strip().splitlines()
-    for line in lines[1:]:
-        value = line.strip()
-        if re.match(r"^\d{4}-\d{2}-\d{2}$", value):
-            dates.append(value)
-    return dates
 
 
 # ---------------------------------------------------------------------------
@@ -300,41 +271,21 @@ def detect_dates_from_bronze(compose_file: Path) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Orquestrador Medallion consumo_preco (Opção B: Flyte + Iceberg nativo)"
+        description="Orquestrador Medallion consumo_preco (DP-02: Flyte + Iceberg)"
     )
     parser.add_argument("--full", action="store_true",
-                        help="Carrega a totalidade dos dados raw; também é o modo padrão sem --year/--month")
-    parser.add_argument("--year",  type=int, help="Ano a processar (ex: 2023) — ignorado com --full")
-    parser.add_argument("--month", type=int, help="Mês a processar (1-12) — ignorado com --full")
+                        help="Carrega a totalidade dos dados raw; também é o modo padrão")
+    parser.add_argument("--year",  type=int, help="Ano a processar (ex: 2023)")
+    parser.add_argument("--month", type=int, help="Mês a processar (1-12)")
     parser.add_argument(
         "--date", type=str,
-        help="Data de ingestão Bronze YYYY-MM-DD (ignorado com --full)"
+        help="Data de ingestão Bronze YYYY-MM-DD (usado com --year/--month)"
     )
     parser.add_argument("--build",        action="store_true", help="faz --build no compose up")
     parser.add_argument("--skip-docker",  action="store_true", help="salta o compose up")
     parser.add_argument("--skip-ddl",     action="store_true", help="salta a aplicação de DDL")
+    parser.add_argument("--skip-upload",  action="store_true", help="salta upload dos CSVs para MinIO")
     parser.add_argument("--no-quality",   action="store_true", help="salta os quality gates")
-    parser.add_argument(
-        "--remote",
-        action="store_true",
-        help=(
-            "submete os workflows ao Flyte Sandbox (requer 'flytectl demo start'). "
-            "Constrói e publica a imagem em localhost:30000/consumo-preco:latest."
-        ),
-    )
-    parser.add_argument(
-        "--flyte-image",
-        default="localhost:30000/consumo-preco:latest",
-        help="imagem Docker para os tasks remotos (padrão: localhost:30000/consumo-preco:latest)",
-    )
-    parser.add_argument(
-        "--flyte-config",
-        default=None,
-        help=(
-            "caminho para o ficheiro de configuração Flyte "
-            "(padrão: ~/.flyte/config-sandbox.yaml criado pelo flytectl demo start)"
-        ),
-    )
     args = parser.parse_args()
 
     if not args.full:
@@ -352,14 +303,16 @@ def main() -> None:
 
     compose_file  = repo_root / "01_docker_stack" / "docker-compose.yml"
     workflows_dir = pipeline_root / "workflows"
+    raw_dir       = pipeline_root / "01_bronze" / "data" / "raw"
 
     bronze_sql = pipeline_root / "01_bronze" / "bronze_consumo_precos_trino.sql"
-    silver_sql = pipeline_root / "02_silver" / "silver_consumo_precos_trino.sql"
-    gold_sql   = pipeline_root / "03_gold"   / "gold_consumo_precos_trino.sql"
+    silver_sql = pipeline_root / "02_silver" / "sql" / "silver_consumo_precos_trino.sql"
+    gold_sql   = pipeline_root / "03_gold"   / "sql" / "gold_consumo_precos_trino.sql"
 
     # --- pré-requisitos ---
     must_exist(compose_file,  "docker-compose.yml")
     must_exist(workflows_dir, "pasta workflows/")
+    must_exist(raw_dir,       "pasta com CSVs raw (01_bronze/data/raw/)")
     if not args.skip_ddl:
         must_exist(bronze_sql, "DDL Bronze SQL")
         must_exist(silver_sql, "DDL Silver SQL")
@@ -377,36 +330,14 @@ def main() -> None:
     # --- venv ---
     venv_python = create_local_venv(pipeline_root, python_cmd)
 
-    # Instala dependências Flyte no venv
-    requirements = workflows_dir / "requirements.txt"
+    # Instala dependências no venv
     run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip", "-q"])
+    requirements = workflows_dir / "requirements.txt"
     if requirements.exists():
         run([str(venv_python), "-m", "pip", "install", "-r", str(requirements), "-q"])
     else:
-        run([str(venv_python), "-m", "pip", "install", "flytekit", "trino", "boto3", "pandas", "-q"])
-
-    # --- Resolução do config Flyte e build/push da imagem (modo remoto) ---
-    flyte_config = args.flyte_config
-    if args.remote:
-        if flyte_config is None:
-            default_config = Path.home() / ".flyte" / "config-sandbox.yaml"
-            if not default_config.exists():
-                raise SystemExit(
-                    "Erro: ficheiro de config Flyte não encontrado em "
-                    f"{default_config}.\n"
-                    "Corre 'flytectl demo start' ou passa --flyte-config <caminho>."
-                )
-            flyte_config = str(default_config)
-            print(f"\n>>> Config Flyte: {flyte_config}")
-
-        print(f"\n>>> A construir imagem Docker: {args.flyte_image}")
-        run(
-            ["docker", "build", "-t", args.flyte_image,
-             "-f", str(workflows_dir / "Dockerfile"), "."],
-            cwd=pipeline_root,
-        )
-        print(f"\n>>> A publicar imagem no registry do Flyte Sandbox: {args.flyte_image}")
-        run(["docker", "push", args.flyte_image])
+        run([str(venv_python), "-m", "pip", "install",
+             "flytekit", "trino", "boto3", "pandas", "-q"])
 
     # --- Docker compose up ---
     if not args.skip_docker:
@@ -430,15 +361,14 @@ def main() -> None:
     else:
         print("\n>>> --skip-ddl: DDL ignorado.")
 
-    # Wrapper local que propaga os kwargs de execução remota a todas as chamadas.
-    def _run(wf_file: str, wf_name: str, params: dict[str, str] | None = None) -> None:
-        pyflyte_run(
-            venv_python, workflows_dir, wf_file, wf_name,
-            params or {},
-            remote=args.remote,
-            image=args.flyte_image if args.remote else None,
-            flyte_config=flyte_config,
-        )
+    # --- Upload CSVs raw para MinIO ---
+    if not args.skip_upload:
+        print("\n" + "=" * 60)
+        print("FASE 0.5 — Upload CSVs raw para MinIO (warehouse/raw/)")
+        print("=" * 60)
+        upload_raw_csvs_to_minio(raw_dir)
+    else:
+        print("\n>>> --skip-upload: upload de CSVs ignorado.")
 
     # =========================================================================
     # MODO --full : lê os CSVs na íntegra, sem especificar datas
@@ -448,44 +378,68 @@ def main() -> None:
         print("\n" + "=" * 60)
         print("FASE 1 — Bronze ingest COMPLETO (todos os dados raw)")
         print("=" * 60)
-        _run("flyte_ingest_bronze.py", "ingest_bronze_full")
+        pyflyte_run(
+            venv_python, workflows_dir,
+            "flyte_ingest_bronze.py", "ingest_bronze_full",
+            {},
+        )
 
         # --- Quality gate Bronze ---
         if not args.no_quality:
             print("\n" + "=" * 60)
             print("QUALITY GATE — Bronze")
             print("=" * 60)
-            _run("flyte_quality_checks.py", "quality_gate_bronze")
+            pyflyte_run(
+                venv_python, workflows_dir,
+                "flyte_quality_checks.py", "quality_gate_bronze",
+                {},
+            )
 
         # --- Fase 2: Silver transform COMPLETO ---
         print("\n" + "=" * 60)
         print("FASE 2 — Silver transform COMPLETO (todo o período Bronze)")
         print("=" * 60)
-        _run("flyte_bronze_to_silver.py", "bronze_to_silver_full")
+        pyflyte_run(
+            venv_python, workflows_dir,
+            "flyte_bronze_to_silver.py", "bronze_to_silver_full",
+            {},
+        )
 
         # --- Quality gate Silver ---
         if not args.no_quality:
             print("\n" + "=" * 60)
             print("QUALITY GATE — Silver")
             print("=" * 60)
-            _run("flyte_quality_checks.py", "quality_gate_silver")
+            pyflyte_run(
+                venv_python, workflows_dir,
+                "flyte_quality_checks.py", "quality_gate_silver",
+                {},
+            )
 
         # --- Fase 3: Gold transform COMPLETO ---
         print("\n" + "=" * 60)
         print("FASE 3 — Gold transform COMPLETO (todo o período Silver)")
         print("=" * 60)
-        _run("flyte_silver_to_gold.py", "silver_to_gold_full")
+        pyflyte_run(
+            venv_python, workflows_dir,
+            "flyte_silver_to_gold.py", "silver_to_gold_full",
+            {},
+        )
 
         # --- Quality gate Gold ---
         if not args.no_quality:
             print("\n" + "=" * 60)
             print("QUALITY GATE — Gold")
             print("=" * 60)
-            _run("flyte_quality_checks.py", "quality_gate_gold")
+            pyflyte_run(
+                venv_python, workflows_dir,
+                "flyte_quality_checks.py", "quality_gate_gold",
+                {},
+            )
 
         # --- Validação final ---
         print("\n" + "=" * 60)
-        print("VALIDAÇÃO FINAL — contagem Gold (total)")
+        print("VALIDAÇÃO FINAL — contagem e intervalo das tabelas Gold")
         print("=" * 60)
         validation_sql = (
             "SELECT 'dp_energy_market_hourly' AS tabela, COUNT(*) AS total_linhas, "
@@ -506,8 +460,8 @@ def main() -> None:
         )
 
         print(f"\n{'=' * 60}")
-        print(f"Pipeline Medallion consumo_preco concluída com sucesso!")
-        print(f"  Período  : todo o intervalo disponível nos 2 ficheiros raw")
+        print("Pipeline Medallion consumo_preco (DP-02) concluída com sucesso!")
+        print(f"  Período  : todo o intervalo disponível nos ficheiros raw")
         print(f"  Bronze   : bronze.consumo_raw + bronze.preco_raw")
         print(f"  Silver   : silver.consumo_hourly + silver.preco_hourly")
         print(f"  Gold     : gold.dp_energy_market_hourly + gold.feat_load_forecasting_hourly")
@@ -521,48 +475,72 @@ def main() -> None:
     month = args.month
     process_date = args.date or f"{year}-{month:02d}-01"
 
-    # --- Bronze ingest (um dia / data de referência) ---
+    # --- Bronze ingest (completo — os CSVs contêm todo o histórico) ---
     print("\n" + "=" * 60)
-    print(f"FASE 1 — Bronze ingest  (date={process_date})")
+    print(f"FASE 1 — Bronze ingest COMPLETO (process_date lógico={process_date})")
     print("=" * 60)
-    _run("flyte_ingest_bronze.py", "ingest_bronze", {"process_date": process_date})
+    pyflyte_run(
+        venv_python, workflows_dir,
+        "flyte_ingest_bronze.py", "ingest_bronze_full",
+        {},
+    )
 
     # --- Quality gate Bronze ---
     if not args.no_quality:
         print("\n" + "=" * 60)
         print("QUALITY GATE — Bronze")
         print("=" * 60)
-        _run("flyte_quality_checks.py", "quality_gate_bronze")
+        pyflyte_run(
+            venv_python, workflows_dir,
+            "flyte_quality_checks.py", "quality_gate_bronze",
+            {},
+        )
 
-    # --- Silver transform ---
+    # --- Silver transform para o mês ---
     print("\n" + "=" * 60)
-    print(f"FASE 2 — Silver transform  (year={year}, month={month})")
+    print(f"FASE 2 — Silver transform  (process_date={process_date})")
     print("=" * 60)
-    _run("flyte_bronze_to_silver.py", "bronze_to_silver", {"process_date": process_date})
+    pyflyte_run(
+        venv_python, workflows_dir,
+        "flyte_bronze_to_silver.py", "bronze_to_silver",
+        {"process_date": process_date},
+    )
 
     # --- Quality gate Silver ---
     if not args.no_quality:
         print("\n" + "=" * 60)
         print("QUALITY GATE — Silver")
         print("=" * 60)
-        _run("flyte_quality_checks.py", "quality_gate_silver")
+        pyflyte_run(
+            venv_python, workflows_dir,
+            "flyte_quality_checks.py", "quality_gate_silver",
+            {},
+        )
 
-    # --- Gold transform ---
+    # --- Gold transform (sempre full — window functions precisam de todo o histórico) ---
     print("\n" + "=" * 60)
-    print("FASE 3 — Gold transform  (full)")
+    print("FASE 3 — Gold transform COMPLETO (window functions requerem histórico completo)")
     print("=" * 60)
-    _run("flyte_silver_to_gold.py", "silver_to_gold_full")
+    pyflyte_run(
+        venv_python, workflows_dir,
+        "flyte_silver_to_gold.py", "silver_to_gold_full",
+        {},
+    )
 
     # --- Quality gate Gold ---
     if not args.no_quality:
         print("\n" + "=" * 60)
         print("QUALITY GATE — Gold")
         print("=" * 60)
-        _run("flyte_quality_checks.py", "quality_gate_gold")
+        pyflyte_run(
+            venv_python, workflows_dir,
+            "flyte_quality_checks.py", "quality_gate_gold",
+            {},
+        )
 
     # --- Validação final ---
     print("\n" + "=" * 60)
-    print("VALIDAÇÃO FINAL — contagem Gold")
+    print(f"VALIDAÇÃO FINAL — contagem Gold para {year}-{month:02d}")
     print("=" * 60)
     validation_sql = (
         f"SELECT 'dp_energy_market_hourly' AS tabela, COUNT(*) AS total_linhas "
@@ -583,9 +561,9 @@ def main() -> None:
     )
 
     print(f"\n{'=' * 60}")
-    print(f"Pipeline Medallion consumo_preco concluída com sucesso!")
+    print("Pipeline Medallion consumo_preco (DP-02) concluída com sucesso!")
     print(f"  Período : {year}-{month:02d}")
-    print(f"  Bronze  : process_date={process_date}")
+    print(f"  Bronze  : bronze.consumo_raw + bronze.preco_raw (histórico completo)")
     print(f"  Silver  : silver.consumo_hourly + silver.preco_hourly")
     print(f"  Gold    : gold.dp_energy_market_hourly + gold.feat_load_forecasting_hourly")
     print(f"{'=' * 60}\n")

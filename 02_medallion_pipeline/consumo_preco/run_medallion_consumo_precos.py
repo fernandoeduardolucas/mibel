@@ -161,7 +161,7 @@ def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
     )
     if not venv_python.exists():
         print(f"\n>>> A criar virtualenv em: {venv_dir}")
-        run([base_python, "-m", "venv", str(venv_dir)])
+        run([base_python, "-m", "venv", "--system-site-packages", str(venv_dir)])
     return venv_python
 
 
@@ -198,14 +198,20 @@ def pyflyte_run(
     workflow_file: str,
     workflow_name: str,
     params: dict[str, str],
+    remote: bool = False,
+    image: str | None = None,
+    flyte_config: str | None = None,
 ) -> None:
-    """Invoca pyflyte run no venv local."""
-    cmd = [
-        str(venv_python), "-m", "flytekit.clis.sdk_in_container.pyflyte",
-        "run",
-        str(workflows_dir / workflow_file),
-        workflow_name,
-    ]
+    """Invoca pyflyte run — local (padrão) ou remoto no Flyte Sandbox."""
+    cmd = [str(venv_python), "-m", "flytekit.clis.sdk_in_container.pyflyte"]
+    if flyte_config:
+        cmd += ["--config", flyte_config]
+    cmd.append("run")
+    if remote:
+        cmd.append("--remote")
+    if image:
+        cmd += ["--image", image]
+    cmd += [str(workflows_dir / workflow_file), workflow_name]
     for key, value in params.items():
         cmd += [f"--{key}", value]
     run(cmd, cwd=workflows_dir)
@@ -308,6 +314,27 @@ def main() -> None:
     parser.add_argument("--skip-docker",  action="store_true", help="salta o compose up")
     parser.add_argument("--skip-ddl",     action="store_true", help="salta a aplicação de DDL")
     parser.add_argument("--no-quality",   action="store_true", help="salta os quality gates")
+    parser.add_argument(
+        "--remote",
+        action="store_true",
+        help=(
+            "submete os workflows ao Flyte Sandbox (requer 'flytectl demo start'). "
+            "Constrói e publica a imagem em localhost:30000/consumo-preco:latest."
+        ),
+    )
+    parser.add_argument(
+        "--flyte-image",
+        default="localhost:30000/consumo-preco:latest",
+        help="imagem Docker para os tasks remotos (padrão: localhost:30000/consumo-preco:latest)",
+    )
+    parser.add_argument(
+        "--flyte-config",
+        default=None,
+        help=(
+            "caminho para o ficheiro de configuração Flyte "
+            "(padrão: ~/.flyte/config-sandbox.yaml criado pelo flytectl demo start)"
+        ),
+    )
     args = parser.parse_args()
 
     if not args.full:
@@ -327,8 +354,8 @@ def main() -> None:
     workflows_dir = pipeline_root / "workflows"
 
     bronze_sql = pipeline_root / "01_bronze" / "bronze_consumo_precos_trino.sql"
-    silver_sql = pipeline_root / "02_silver" / "sql" / "silver_consumo_precos_trino.sql"
-    gold_sql   = pipeline_root / "03_gold"   / "sql" / "gold_consumo_precos_trino.sql"
+    silver_sql = pipeline_root / "02_silver" / "silver_consumo_precos_trino.sql"
+    gold_sql   = pipeline_root / "03_gold"   / "gold_consumo_precos_trino.sql"
 
     # --- pré-requisitos ---
     must_exist(compose_file,  "docker-compose.yml")
@@ -358,6 +385,29 @@ def main() -> None:
     else:
         run([str(venv_python), "-m", "pip", "install", "flytekit", "trino", "boto3", "pandas", "-q"])
 
+    # --- Resolução do config Flyte e build/push da imagem (modo remoto) ---
+    flyte_config = args.flyte_config
+    if args.remote:
+        if flyte_config is None:
+            default_config = Path.home() / ".flyte" / "config-sandbox.yaml"
+            if not default_config.exists():
+                raise SystemExit(
+                    "Erro: ficheiro de config Flyte não encontrado em "
+                    f"{default_config}.\n"
+                    "Corre 'flytectl demo start' ou passa --flyte-config <caminho>."
+                )
+            flyte_config = str(default_config)
+            print(f"\n>>> Config Flyte: {flyte_config}")
+
+        print(f"\n>>> A construir imagem Docker: {args.flyte_image}")
+        run(
+            ["docker", "build", "-t", args.flyte_image,
+             "-f", str(workflows_dir / "Dockerfile"), "."],
+            cwd=pipeline_root,
+        )
+        print(f"\n>>> A publicar imagem no registry do Flyte Sandbox: {args.flyte_image}")
+        run(["docker", "push", args.flyte_image])
+
     # --- Docker compose up ---
     if not args.skip_docker:
         ensure_docker_engine_running()
@@ -380,6 +430,16 @@ def main() -> None:
     else:
         print("\n>>> --skip-ddl: DDL ignorado.")
 
+    # Wrapper local que propaga os kwargs de execução remota a todas as chamadas.
+    def _run(wf_file: str, wf_name: str, params: dict[str, str] | None = None) -> None:
+        pyflyte_run(
+            venv_python, workflows_dir, wf_file, wf_name,
+            params or {},
+            remote=args.remote,
+            image=args.flyte_image if args.remote else None,
+            flyte_config=flyte_config,
+        )
+
     # =========================================================================
     # MODO --full : lê os CSVs na íntegra, sem especificar datas
     # =========================================================================
@@ -388,64 +448,40 @@ def main() -> None:
         print("\n" + "=" * 60)
         print("FASE 1 — Bronze ingest COMPLETO (todos os dados raw)")
         print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_ingest_bronze.py", "ingest_bronze_full",
-            {},
-        )
+        _run("flyte_ingest_bronze.py", "ingest_bronze_full")
 
         # --- Quality gate Bronze ---
         if not args.no_quality:
             print("\n" + "=" * 60)
             print("QUALITY GATE — Bronze")
             print("=" * 60)
-            pyflyte_run(
-                venv_python, workflows_dir,
-                "flyte_quality_checks.py", "quality_gate_bronze",
-                {},
-            )
+            _run("flyte_quality_checks.py", "quality_gate_bronze")
 
         # --- Fase 2: Silver transform COMPLETO ---
         print("\n" + "=" * 60)
         print("FASE 2 — Silver transform COMPLETO (todo o período Bronze)")
         print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_bronze_to_silver.py", "bronze_to_silver_full",
-            {},
-        )
+        _run("flyte_bronze_to_silver.py", "bronze_to_silver_full")
 
         # --- Quality gate Silver ---
         if not args.no_quality:
             print("\n" + "=" * 60)
             print("QUALITY GATE — Silver")
             print("=" * 60)
-            pyflyte_run(
-                venv_python, workflows_dir,
-                "flyte_quality_checks.py", "quality_gate_silver",
-                {},
-            )
+            _run("flyte_quality_checks.py", "quality_gate_silver")
 
         # --- Fase 3: Gold transform COMPLETO ---
         print("\n" + "=" * 60)
         print("FASE 3 — Gold transform COMPLETO (todo o período Silver)")
         print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_silver_to_gold.py", "silver_to_gold_full",
-            {},
-        )
+        _run("flyte_silver_to_gold.py", "silver_to_gold_full")
 
         # --- Quality gate Gold ---
         if not args.no_quality:
             print("\n" + "=" * 60)
             print("QUALITY GATE — Gold")
             print("=" * 60)
-            pyflyte_run(
-                venv_python, workflows_dir,
-                "flyte_quality_checks.py", "quality_gate_gold",
-                {},
-            )
+            _run("flyte_quality_checks.py", "quality_gate_gold")
 
         # --- Validação final ---
         print("\n" + "=" * 60)
@@ -489,64 +525,40 @@ def main() -> None:
     print("\n" + "=" * 60)
     print(f"FASE 1 — Bronze ingest  (date={process_date})")
     print("=" * 60)
-    pyflyte_run(
-        venv_python, workflows_dir,
-        "flyte_ingest_bronze.py", "ingest_bronze",
-        {"process_date": process_date},
-    )
+    _run("flyte_ingest_bronze.py", "ingest_bronze", {"process_date": process_date})
 
     # --- Quality gate Bronze ---
     if not args.no_quality:
         print("\n" + "=" * 60)
         print("QUALITY GATE — Bronze")
         print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_quality_checks.py", "quality_gate_bronze",
-            {},
-        )
+        _run("flyte_quality_checks.py", "quality_gate_bronze")
 
     # --- Silver transform ---
     print("\n" + "=" * 60)
     print(f"FASE 2 — Silver transform  (year={year}, month={month})")
     print("=" * 60)
-    pyflyte_run(
-        venv_python, workflows_dir,
-        "flyte_bronze_to_silver.py", "bronze_to_silver",
-        {"process_date": process_date},
-    )
+    _run("flyte_bronze_to_silver.py", "bronze_to_silver", {"process_date": process_date})
 
     # --- Quality gate Silver ---
     if not args.no_quality:
         print("\n" + "=" * 60)
         print("QUALITY GATE — Silver")
         print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_quality_checks.py", "quality_gate_silver",
-            {},
-        )
+        _run("flyte_quality_checks.py", "quality_gate_silver")
 
     # --- Gold transform ---
     print("\n" + "=" * 60)
     print("FASE 3 — Gold transform  (full)")
     print("=" * 60)
-    pyflyte_run(
-        venv_python, workflows_dir,
-        "flyte_silver_to_gold.py", "silver_to_gold_full",
-        {},
-    )
+    _run("flyte_silver_to_gold.py", "silver_to_gold_full")
 
     # --- Quality gate Gold ---
     if not args.no_quality:
         print("\n" + "=" * 60)
         print("QUALITY GATE — Gold")
         print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_quality_checks.py", "quality_gate_gold",
-            {},
-        )
+        _run("flyte_quality_checks.py", "quality_gate_gold")
 
     # --- Validação final ---
     print("\n" + "=" * 60)

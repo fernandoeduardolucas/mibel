@@ -29,8 +29,8 @@ from flytekit.exceptions.user import FlyteRecoverableException
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
-# Ficheiros SQL em 04_quality/sql/ relativo à raiz do sub-pipeline consumo_preco
-_SQL_DIR = Path(__file__).parent.parent / "04_quality" / "sql"
+# Ficheiros SQL em 04_quality/ relativo à raiz do sub-pipeline consumo_preco
+_SQL_DIR = Path(__file__).parent.parent / "04_quality"
 
 _LAYER_SQL = {
     "bronze": _SQL_DIR / "01_bronze_checks.sql",
@@ -46,6 +46,8 @@ def _trino_conn() -> trino.dbapi.Connection:
         user="admin",
         catalog="iceberg",
         schema="bronze",
+        http_scheme="http",
+        request_timeout=300,
     )
 
 
@@ -63,7 +65,7 @@ def _run_checks(layer: str) -> list[dict]:
     if not sql_path.exists():
         raise FileNotFoundError(
             f"Ficheiro SQL de qualidade não encontrado: {sql_path}\n"
-            f"Verifique se 04_quality/sql/{sql_path.name} existe."
+            f"Verifique se 04_quality/{sql_path.name} existe."
         )
 
     raw_sql = sql_path.read_text(encoding="utf-8")

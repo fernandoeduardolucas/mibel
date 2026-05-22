@@ -202,7 +202,7 @@ def main() -> None:
     elif args.today:
         start_date = end_date = today
     elif args.full:
-        start_date = date(2015, 1, 1)
+        start_date = date(2022, 1, 1)
         end_date   = today
     else:
         days = args.days or 7
@@ -273,11 +273,26 @@ def main() -> None:
     print("\n" + "=" * 60)
     print(f"FASE 1 — Bronze fetch API ({start_str} → {end_str})")
     print("=" * 60)
-    pyflyte_run(
-        venv_python, workflows_dir,
-        "flyte_fetch_bronze_api.py", "fetch_bronze_api",
-        {"start_date": start_str, "end_date": end_str},
-    )
+    # Chunk por ano para ranges grandes (evita timeouts da Energy-Charts API)
+    CHUNK_THRESHOLD_DAYS = 180
+    total_days = (end_date - start_date).days
+    if total_days > CHUNK_THRESHOLD_DAYS:
+        chunk_start = start_date
+        while chunk_start <= end_date:
+            chunk_end = min(date(chunk_start.year, 12, 31), end_date)
+            print(f"\n  Chunk: {chunk_start} → {chunk_end}")
+            pyflyte_run(
+                venv_python, workflows_dir,
+                "flyte_fetch_bronze_api.py", "fetch_bronze_api",
+                {"start_date": chunk_start.isoformat(), "end_date": chunk_end.isoformat()},
+            )
+            chunk_start = date(chunk_start.year + 1, 1, 1)
+    else:
+        pyflyte_run(
+            venv_python, workflows_dir,
+            "flyte_fetch_bronze_api.py", "fetch_bronze_api",
+            {"start_date": start_str, "end_date": end_str},
+        )
 
     # --- Quality gate Bronze ---
     if not args.no_quality:

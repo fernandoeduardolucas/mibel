@@ -129,16 +129,16 @@ def transform_preco_api_silver(process_date: date) -> int:
         INSERT INTO iceberg.silver.preco_api_hourly
             (ts_utc, price_portugal_eur_mwh, price_spain_eur_mwh, year, month)
         SELECT
-            ts_utc,
-            ROUND(AVG(price_portugal_eur_mwh), 2) AS price_portugal_eur_mwh,
-            ROUND(AVG(price_spain_eur_mwh), 2)    AS price_spain_eur_mwh,
-            YEAR(ts_utc)                           AS year,
-            MONTH(ts_utc)                          AS month
+            DATE_TRUNC('hour', ts_utc)                          AS ts_utc,
+            ROUND(AVG(price_portugal_eur_mwh), 2)               AS price_portugal_eur_mwh,
+            ROUND(AVG(price_spain_eur_mwh), 2)                  AS price_spain_eur_mwh,
+            YEAR(DATE_TRUNC('hour', ts_utc))                    AS year,
+            MONTH(DATE_TRUNC('hour', ts_utc))                   AS month
         FROM iceberg.bronze.preco_api_raw
         WHERE process_date = DATE '{process_date}'
           AND ts_utc IS NOT NULL
           AND price_portugal_eur_mwh IS NOT NULL
-        GROUP BY ts_utc
+        GROUP BY DATE_TRUNC('hour', ts_utc)
     """)
 
     cur.execute(f"""
@@ -199,15 +199,15 @@ def transform_preco_api_silver_full() -> int:
         INSERT INTO iceberg.silver.preco_api_hourly
             (ts_utc, price_portugal_eur_mwh, price_spain_eur_mwh, year, month)
         SELECT
-            ts_utc,
-            ROUND(AVG(price_portugal_eur_mwh), 2) AS price_portugal_eur_mwh,
-            ROUND(AVG(price_spain_eur_mwh), 2)    AS price_spain_eur_mwh,
-            YEAR(ts_utc)                           AS year,
-            MONTH(ts_utc)                          AS month
+            DATE_TRUNC('hour', ts_utc)                          AS ts_utc,
+            ROUND(AVG(price_portugal_eur_mwh), 2)               AS price_portugal_eur_mwh,
+            ROUND(AVG(price_spain_eur_mwh), 2)                  AS price_spain_eur_mwh,
+            YEAR(DATE_TRUNC('hour', ts_utc))                    AS year,
+            MONTH(DATE_TRUNC('hour', ts_utc))                   AS month
         FROM iceberg.bronze.preco_api_raw
         WHERE ts_utc IS NOT NULL
           AND price_portugal_eur_mwh IS NOT NULL
-        GROUP BY ts_utc
+        GROUP BY DATE_TRUNC('hour', ts_utc)
     """)
 
     cur.execute("SELECT COUNT(*) FROM iceberg.silver.preco_api_hourly")

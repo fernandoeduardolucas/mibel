@@ -1,0 +1,1281 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "MIBEL — Meteorologia + Produção + Preço Day-Ahead (Portugal) · Produto Gold: dp_meteo_producao_daily_features",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "title": "📊 KPIs — Meteorologia · Produção · Preço",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSql": "SELECT COUNT(*) AS \"Dias Registados\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE $__timeFilter(data_dia)",
+          "refId": "A"
+        }
+      ],
+      "title": "📅 Dias Registados",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 18
+              },
+              {
+                "color": "red",
+                "value": 30
+              }
+            ]
+          },
+          "unit": "celsius"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSql": "SELECT ROUND(AVG(temperature_mean_c), 1) AS \"Temperatura Média (°C)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE $__timeFilter(data_dia)",
+          "refId": "A"
+        }
+      ],
+      "title": "🌡️ Temperatura Média (°C)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 120000
+              },
+              {
+                "color": "red",
+                "value": 180000
+              }
+            ]
+          },
+          "unit": "kwatth"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSql": "SELECT ROUND(SUM(producao_total_daily_mwh), 0) AS \"Produção Total (MWh)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE $__timeFilter(data_dia)",
+          "refId": "A"
+        }
+      ],
+      "title": "⚡ Produção Total (MWh)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 150
+              }
+            ]
+          },
+          "unit": "currencyEUR"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSql": "SELECT ROUND(AVG(preco_spot_medio_eur_mwh), 2) AS \"Preço Spot Médio (€/MWh)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE $__timeFilter(data_dia)",
+          "refId": "A"
+        }
+      ],
+      "title": "💶 Preço Spot Médio (€/MWh)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "yellow",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 250
+              },
+              {
+                "color": "red",
+                "value": 500
+              }
+            ]
+          },
+          "unit": "wm2"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSql": "SELECT ROUND(AVG(radiation_mean_wm2), 0) AS \"Radiação Média (W/m²)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE $__timeFilter(data_dia)",
+          "refId": "A"
+        }
+      ],
+      "title": "☀️ Radiação Solar Média (W/m²)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 500
+              },
+              {
+                "color": "dark-blue",
+                "value": 2000
+              }
+            ]
+          },
+          "unit": "lengthmm"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSql": "SELECT ROUND(SUM(precipitation_total_mm), 0) AS \"Precipitação Total (mm)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE $__timeFilter(data_dia)",
+          "refId": "A"
+        }
+      ],
+      "title": "🌧️ Precipitação Acumulada (mm)",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 101,
+      "title": "📈 Séries Temporais — Produção & Preço Diário",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 0,
+          "unit": "kwatth"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Preço Spot (€/MWh)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyEUR"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Produção (MWh)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#37872D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSql": "SELECT\n  CAST(data_dia AS TIMESTAMP) AS time,\n  ROUND(producao_total_daily_mwh, 0) AS \"Produção (MWh)\",\n  ROUND(preco_spot_medio_eur_mwh, 2) AS \"Preço Spot (€/MWh)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE $__timeFilter(data_dia)\nORDER BY data_dia",
+          "refId": "A"
+        }
+      ],
+      "title": "⚡ Produção Diária (MWh) vs 💶 Preço Spot Day-Ahead (€/MWh)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 102,
+      "title": "🌡️ Meteorologia — Temperatura & Radiação Solar",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 1,
+          "unit": "celsius"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Temp Mín (°C)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#5794F2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Temp Média (°C)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Temp Máx (°C)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Média Móvel 7d (°C)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    5
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "id": 20,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSql": "SELECT\n  CAST(data_dia AS TIMESTAMP) AS time,\n  ROUND(temperature_min_c, 1)       AS \"Temp Mín (°C)\",\n  ROUND(temperature_mean_c, 1)      AS \"Temp Média (°C)\",\n  ROUND(temperature_max_c, 1)       AS \"Temp Máx (°C)\",\n  ROUND(temp_rolling_7d_avg, 1)     AS \"Média Móvel 7d (°C)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE $__timeFilter(data_dia)\nORDER BY data_dia",
+          "refId": "A"
+        }
+      ],
+      "title": "🌡️ Temperatura Diária (°C) — Mín / Média / Máx + Rolling 7d",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 15,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 0,
+          "unit": "wm2"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nebulosidade (%)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#B0B0B0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Radiação (W/m²)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FADE2A",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "id": 21,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSql": "SELECT\n  CAST(data_dia AS TIMESTAMP) AS time,\n  ROUND(radiation_mean_wm2, 0)    AS \"Radiação (W/m²)\",\n  ROUND(cloud_cover_mean_pct, 1)  AS \"Nebulosidade (%)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE $__timeFilter(data_dia)\nORDER BY data_dia",
+          "refId": "A"
+        }
+      ],
+      "title": "☀️ Radiação Solar (W/m²) vs ☁️ Nebulosidade (%)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "id": 103,
+      "title": "💨 Vento & Precipitação",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 1,
+          "unit": "velocityms"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Precipitação (mm)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthmm"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 60
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#5794F2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Vento Médio (m/s)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#73BF69",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Vento Máx (m/s)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    6,
+                    4
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 30,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSql": "SELECT\n  CAST(data_dia AS TIMESTAMP) AS time,\n  ROUND(wind_speed_mean_ms, 1)     AS \"Vento Médio (m/s)\",\n  ROUND(wind_speed_max_ms, 1)      AS \"Vento Máx (m/s)\",\n  ROUND(precipitation_total_mm, 1) AS \"Precipitação (mm)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE $__timeFilter(data_dia)\nORDER BY data_dia",
+          "refId": "A"
+        }
+      ],
+      "title": "💨 Vento Médio & Máximo (m/s) + 🌧️ Precipitação (mm)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0,
+          "unit": "kwatth"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 31,
+      "options": {
+        "barWidth": 0.6,
+        "groupWidth": 0.7,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "orientation": "auto",
+        "tooltip": {
+          "mode": "single"
+        },
+        "xTickLabelRotation": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSql": "SELECT\n  CASE estacao\n    WHEN 1 THEN '1 - Inverno'\n    WHEN 2 THEN '2 - Primavera'\n    WHEN 3 THEN '3 - Verão'\n    WHEN 4 THEN '4 - Outono'\n  END AS \"Estação\",\n  ROUND(AVG(producao_total_daily_mwh), 0) AS \"Produção Média (MWh)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE producao_total_daily_mwh IS NOT NULL\nGROUP BY estacao\nORDER BY estacao",
+          "refId": "A"
+        }
+      ],
+      "title": "⚡ Produção Média por Estação do Ano",
+      "type": "barchart"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "id": 104,
+      "title": "📊 Padrões Temporais & Correlações Meteorológicas",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0,
+          "unit": "kwatth"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 32
+      },
+      "id": 40,
+      "options": {
+        "barWidth": 0.6,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "orientation": "auto",
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSql": "SELECT\n  CASE dia_semana\n    WHEN 0 THEN '0-Seg'\n    WHEN 1 THEN '1-Ter'\n    WHEN 2 THEN '2-Qua'\n    WHEN 3 THEN '3-Qui'\n    WHEN 4 THEN '4-Sex'\n    WHEN 5 THEN '5-Sáb'\n    WHEN 6 THEN '6-Dom'\n  END AS \"Dia\",\n  ROUND(AVG(producao_total_daily_mwh), 0) AS \"Produção Média (MWh)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE producao_total_daily_mwh IS NOT NULL\nGROUP BY dia_semana\nORDER BY dia_semana",
+          "refId": "A"
+        }
+      ],
+      "title": "⚡ Produção Média por Dia da Semana",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 1,
+          "unit": "currencyEUR"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 32
+      },
+      "id": 41,
+      "options": {
+        "barWidth": 0.6,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "orientation": "auto",
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSql": "SELECT\n  CAST(month AS VARCHAR) AS \"Mês\",\n  ROUND(AVG(preco_spot_medio_eur_mwh), 2) AS \"Preço Médio (€/MWh)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE preco_spot_medio_eur_mwh IS NOT NULL\n  AND $__timeFilter(data_dia)\nGROUP BY month\nORDER BY month",
+          "refId": "A"
+        }
+      ],
+      "title": "💶 Preço Spot Médio por Mês",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0,
+          "unit": "kwatth"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "id": 42,
+      "options": {
+        "barWidth": 0.6,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "orientation": "auto",
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSql": "SELECT\n  CASE\n    WHEN temperature_mean_c < 5  THEN '< 5°C'\n    WHEN temperature_mean_c < 10 THEN '5–10°C'\n    WHEN temperature_mean_c < 15 THEN '10–15°C'\n    WHEN temperature_mean_c < 20 THEN '15–20°C'\n    WHEN temperature_mean_c < 25 THEN '20–25°C'\n    ELSE '≥ 25°C'\n  END AS \"Temperatura\",\n  ROUND(AVG(producao_total_daily_mwh), 0) AS \"Produção Média (MWh)\",\n  COUNT(*) AS \"Dias\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nWHERE producao_total_daily_mwh IS NOT NULL\n  AND temperature_mean_c IS NOT NULL\nGROUP BY\n  CASE\n    WHEN temperature_mean_c < 5  THEN '< 5°C'\n    WHEN temperature_mean_c < 10 THEN '5–10°C'\n    WHEN temperature_mean_c < 15 THEN '10–15°C'\n    WHEN temperature_mean_c < 20 THEN '15–20°C'\n    WHEN temperature_mean_c < 25 THEN '20–25°C'\n    ELSE '≥ 25°C'\n  END\nORDER BY MIN(temperature_mean_c)",
+          "refId": "A"
+        }
+      ],
+      "title": "🌡️ Produção Média por Faixa de Temperatura",
+      "type": "barchart"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "id": 105,
+      "title": "🗃️ Últimos 30 Dias — Dados Diários",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Produção (MWh)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatth"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background-solid"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 300
+                    },
+                    {
+                      "color": "red",
+                      "value": 500
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Preço (€/MWh)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyEUR"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Temp Média (°C)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Radiação (W/m²)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "wm2"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Vento Médio (m/s)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "velocityms"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Precipitação (mm)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "lengthmm"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "id": 50,
+      "options": {
+        "footer": {
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Data"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSql": "SELECT\n  CAST(data_dia AS VARCHAR)               AS \"Data\",\n  ROUND(temperature_mean_c, 1)            AS \"Temp Média (°C)\",\n  ROUND(precipitation_total_mm, 1)        AS \"Precipitação (mm)\",\n  ROUND(wind_speed_mean_ms, 1)            AS \"Vento Médio (m/s)\",\n  ROUND(radiation_mean_wm2, 0)            AS \"Radiação (W/m²)\",\n  ROUND(producao_total_daily_mwh, 0)      AS \"Produção (MWh)\",\n  ROUND(consumo_total_daily_mwh, 0)       AS \"Consumo (MWh)\",\n  ROUND(saldo_daily_mwh, 0)               AS \"Saldo (MWh)\",\n  ROUND(preco_spot_medio_eur_mwh, 2)      AS \"Preço (€/MWh)\"\nFROM iceberg.gold.dp_meteo_producao_daily_features\nORDER BY data_dia DESC\nLIMIT 30",
+          "refId": "A"
+        }
+      ],
+      "title": "🗃️ Dados Diários — Últimos 30 Dias",
+      "type": "table"
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "mibel",
+    "dp03",
+    "meteo",
+    "producao",
+    "renovavel",
+    "clima"
+  ],
+  "time": {
+    "from": "now-1y",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Clima & Producao Renovavel -- Observatorio Meteorologico",
+  "uid": "dp03-meteo-producao"
+}

@@ -1,33 +1,27 @@
 #!/usr/bin/env python3
 """
-Orquestrador completo da pipeline Medallion — consumo_preco (Opção B: Flyte + Iceberg nativo).
+Orquestrador Medallion — consumo_preco.
 
-Fluxo padrão (sem parâmetros, equivalente a --full):
-  1. Verifica pré-requisitos (Docker, Flyte sandbox, Python)
-  2. Sobe stack Docker Compose (se não estiver a correr)
-  3. Espera Trino disponível
-  4. Cria/instala venv local com dependências Flyte
-  5. Aplica DDL via Trino CLI (cria schemas e tabelas Iceberg se não existirem)
-  6. Executa ingestão Bronze COMPLETA (ingest_bronze_full — lê CSVs na íntegra)
-  7. Executa transformação Silver COMPLETA
-  8. Executa transformação Gold COMPLETA
-  9. Quality gates finais (Bronze, Silver, Gold)
- 10. Validação final: COUNT e intervalo das tabelas Gold
+Fluxo (modo padrão):
+  1. Sobe Docker Compose e aguarda Trino
+  2. Cria venv local e instala dependências (trino, boto3, pandas)
+  3. Aplica DDL via Trino CLI (IF NOT EXISTS — idempotente)
+  4. Bronze ingest        (workflows/bronze.py)
+  5. Quality gate Bronze  (workflows/quality.py --layer bronze)
+  6. Silver transform     (workflows/silver.py)
+  7. Quality gate Silver  (workflows/quality.py --layer silver)
+  8. Gold build           (workflows/gold.py)
+  9. Quality gate Gold    (workflows/quality.py --layer gold)
+ 10. Validação final: COUNT nas tabelas Gold
 
-Execução rápida (tudo de uma vez):
-    python run_medallion_consumo_precos.py --skip-docker --skip-ddl
+Uso rápido (stack já a correr):
+    python run_medallion_consumo_precos.py --skip-docker
 
-Execução completa (inclui Docker e DDL):
-    python run_medallion_consumo_precos.py
-
-Execução de um mês específico:
-    python run_medallion_consumo_precos.py --year 2023 --month 1
-
-Flags úteis:
+Flags:
     --skip-docker   não faz compose up (stack já a correr)
-    --skip-ddl      não reaplicar o DDL (tabelas já criadas)
+    --skip-ddl      não reaplicar DDL (tabelas já criadas)
+    --no-quality    salta os quality gates
     --build         faz --build no compose up
-    --no-quality    salta os quality gates (útil em dev)
 """
 
 from __future__ import annotations
@@ -40,125 +34,92 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import date, timedelta
 from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
-# Helpers de subprocess
+# Subprocess helpers
 # ---------------------------------------------------------------------------
 
-def run(
-    cmd: list[str],
-    *,
-    cwd: Path | None = None,
-    env: dict[str, str] | None = None,
-    input_text: str | None = None,
-) -> None:
-    """Executa um comando e lança excepção se falhar."""
+def run(cmd: list[str], *, cwd: Path | None = None) -> None:
+    """Executa um comando e lança exceção se falhar."""
     print(f"\n>>> {' '.join(str(c) for c in cmd)}")
-    if input_text is None:
-        result = subprocess.run(
-            cmd,
-            cwd=str(cwd) if cwd else None,
-            env=env,
-            text=True,
-        )
-    else:
-        result = subprocess.run(
-            cmd,
-            cwd=str(cwd) if cwd else None,
-            env=env,
-            text=True,
-            input=input_text,
-            capture_output=True,
-        )
-        if result.stdout:
-            print(result.stdout)
-        if result.stderr:
-            print(result.stderr, file=sys.stderr)
-
+    result = subprocess.run(cmd, cwd=str(cwd) if cwd else None, text=True)
     if result.returncode != 0:
-        raise subprocess.CalledProcessError(
-            result.returncode, cmd, output=result.stdout, stderr=result.stderr
-        )
+        raise subprocess.CalledProcessError(result.returncode, cmd)
 
 
-def must_exist(path: Path, description: str) -> None:
+def run_capture(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(cmd, text=True, capture_output=True)
+
+
+def must_exist(path: Path, label: str) -> None:
     if not path.exists():
-        raise SystemExit(f"Erro: {description} não encontrado em: {path}")
+        raise SystemExit(f"Erro: {label} não encontrado em: {path}")
 
 
 # ---------------------------------------------------------------------------
 # Docker helpers
 # ---------------------------------------------------------------------------
 
-def docker_engine_running() -> bool:
-    return subprocess.run(["docker", "info"], text=True, capture_output=True).returncode == 0
+def docker_ok() -> bool:
+    return run_capture(["docker", "info"]).returncode == 0
 
 
-def try_start_docker_engine() -> bool:
+def try_start_docker() -> bool:
     system = platform.system().lower()
-    start_commands: list[list[str]] = []
+    cmds: list[list[str]] = []
     if system == "linux":
-        start_commands = [["systemctl", "start", "docker"], ["service", "docker", "start"]]
+        cmds = [["systemctl", "start", "docker"], ["service", "docker", "start"]]
     elif system == "darwin":
-        start_commands = [["open", "-a", "Docker"]]
+        cmds = [["open", "-a", "Docker"]]
     elif system == "windows":
-        start_commands = [[
-            "powershell", "-NoProfile", "-Command",
-            "Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'",
-        ]]
-    for cmd in start_commands:
+        cmds = [["powershell", "-NoProfile", "-Command",
+                  "Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'"]]
+    for cmd in cmds:
         if shutil.which(cmd[0]) is None:
             continue
-        print(f">>> Docker indisponível. A tentar arrancar: {' '.join(cmd)}")
-        subprocess.run(cmd, text=True, capture_output=True)
+        print(f">>> A tentar arrancar Docker: {' '.join(cmd)}")
+        subprocess.run(cmd, capture_output=True)
         for _ in range(20):
-            if docker_engine_running():
-                print(">>> Docker Engine disponível.")
+            if docker_ok():
                 return True
-            time.sleep(1)
-    return docker_engine_running()
+            time.sleep(2)
+    return docker_ok()
 
 
-def ensure_docker_engine_running() -> None:
-    if docker_engine_running():
-        return
-    if try_start_docker_engine():
-        return
-    raise SystemExit(
-        "Erro: Docker Engine não está a correr.\n"
-        "Tenta arrancar o Docker manualmente e repete."
-    )
+def ensure_docker() -> None:
+    if not docker_ok() and not try_start_docker():
+        raise SystemExit(
+            "Docker Engine não está a correr.\n"
+            "Arranca o Docker manualmente e repete."
+        )
 
 
-def wait_for_trino(compose_file: Path, attempts: int = 30, sleep_seconds: int = 2) -> None:
+def wait_for_trino(compose_file: Path, attempts: int = 40, sleep_s: int = 3) -> None:
     cmd = [
         "docker", "compose", "-f", str(compose_file),
         "exec", "-T", "trino", "trino", "--execute", "SELECT 1;",
     ]
-    for attempt in range(1, attempts + 1):
-        print(f"\n>>> Trino disponível? ({attempt}/{attempts})")
-        result = subprocess.run(cmd, text=True, capture_output=True)
-        if result.returncode == 0:
+    for i in range(1, attempts + 1):
+        print(f">>> Trino disponível? ({i}/{attempts})")
+        if run_capture(cmd).returncode == 0:
             print(">>> Trino OK.")
             return
-        time.sleep(sleep_seconds)
-    raise SystemExit("Erro: Trino não ficou disponível dentro do tempo esperado.")
+        time.sleep(sleep_s)
+    raise SystemExit("Trino não ficou disponível dentro do tempo esperado.")
 
 
 # ---------------------------------------------------------------------------
 # Venv helper
 # ---------------------------------------------------------------------------
 
-def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
+def create_venv(pipeline_root: Path, base_python: str) -> Path:
     venv_dir = pipeline_root / ".venv_medallion_consumo_preco"
-    venv_python = (
-        venv_dir / "Scripts" / "python.exe"
-        if os.name == "nt"
-        else venv_dir / "bin" / "python"
-    )
+    if os.name == "nt":
+        venv_python = venv_dir / "Scripts" / "python.exe"
+    else:
+        venv_python = venv_dir / "bin" / "python"
     if not venv_python.exists():
         print(f"\n>>> A criar virtualenv em: {venv_dir}")
         run([base_python, "-m", "venv", str(venv_dir)])
@@ -166,134 +127,49 @@ def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# DDL helper — aplica um ficheiro SQL via Trino CLI dentro do Docker
+# DDL helper — executa via Trino CLI dentro do Docker
 # ---------------------------------------------------------------------------
 
-def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str) -> None:
-    print(f"\n>>> DDL {stage_name}: {sql_file.name}")
+def apply_ddl(compose_file: Path, sql_file: Path, label: str) -> None:
+    print(f"\n>>> DDL {label}: {sql_file.name}")
     sql_text = sql_file.read_text(encoding="utf-8")
-    # Remove comentários de linha para evitar caracteres Unicode problemáticos no Windows
-    sql_clean = re.sub(r'--[^\n]*', '', sql_text)
-    # Divide em statements individuais e executa cada um (Trino CLI executa 1 statement por vez)
+    # Remove comentários de linha para evitar bytes não-ASCII no Windows
+    sql_clean = re.sub(r"--[^\n]*", "", sql_text)
     statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
     for stmt in statements:
-        result = subprocess.run(
-            [
-                "docker", "compose", "-f", str(compose_file),
-                "exec", "-T", "trino", "trino",
-            ],
-            input=stmt + ";",
+        subprocess.run(
+            ["docker", "compose", "-f", str(compose_file),
+             "exec", "-T", "trino", "trino"],
+            input=(stmt + ";").encode("utf-8"),
             capture_output=True,
-            text=True,
-            encoding="utf-8",
         )
-        if result.returncode != 0:
-            first_word = stmt.strip().split()[0].upper() if stmt.strip() else ""
-            msg = (result.stderr or result.stdout).strip()[:300]
-            print(f"  [DDL AVISO] {first_word}: {msg}")
-    print(f"    DDL {stage_name} aplicado.")
+    print(f"    DDL {label} aplicado.")
 
 
 # ---------------------------------------------------------------------------
-# pyflyte runner
+# Execução de scripts no venv
 # ---------------------------------------------------------------------------
 
-def pyflyte_run(
-    venv_python: Path,
-    workflows_dir: Path,
-    workflow_file: str,
-    workflow_name: str,
-    params: dict[str, str],
-    *,
-    remote: bool = False,
-) -> None:
-    """Invoca pyflyte run no venv local ou no cluster Flyte externo."""
-    # flytekit 1.x instala 'pyflyte' como console script, não como módulo invocável
-    pyflyte_bin = venv_python.parent / ("pyflyte.exe" if os.name == "nt" else "pyflyte")
-    cmd = [str(pyflyte_bin), "run"]
-    if remote:
-        cmd += ["--remote", "-p", "flytesnacks", "-d", "development"]
-    cmd += [str(workflows_dir / workflow_file), workflow_name]
-    for key, value in params.items():
-        cmd += [f"--{key}", value]
-    run(cmd, cwd=workflows_dir)
+def run_script(venv_python: Path, script: Path, extra_args: list[str] | None = None) -> None:
+    """Chama um script Python no venv. Lança exceção se falhar."""
+    cmd = [str(venv_python), str(script)] + (extra_args or [])
+    run(cmd, cwd=script.parent)
 
 
-# ---------------------------------------------------------------------------
-# Trino helper — deteta meses presentes na Bronze
-# ---------------------------------------------------------------------------
-
-def detect_months_from_bronze(compose_file: Path) -> list[tuple[int, int]]:
-    """
-    Consulta o Trino para obter a lista de (year, month) distintos
-    presentes em iceberg.bronze.consumo_raw.
-    Retorna lista ordenada de tuplos (year, month).
-    """
-    sql = (
-        "SELECT DISTINCT YEAR(process_date) AS y, MONTH(process_date) AS m "
-        "FROM iceberg.bronze.consumo_raw "
-        "ORDER BY y, m;"
-    )
+def run_quality(venv_python: Path, workflows_dir: Path, layer: str) -> None:
+    print(f"\n{'=' * 58}")
+    print(f"QUALITY GATE — {layer.upper()}")
+    print(f"{'=' * 58}")
     result = subprocess.run(
-        [
-            "docker", "compose", "-f", str(compose_file),
-            "exec", "-T", "trino", "trino",
-            "--output-format", "TSV_HEADER",
-            "--execute", sql,
-        ],
-        capture_output=True,
+        [str(venv_python), str(workflows_dir / "quality.py"), "--layer", layer],
+        cwd=str(workflows_dir),
         text=True,
     )
-    months = []
     if result.returncode != 0:
-        print(f"[AVISO] Não foi possível detetar meses no Bronze: {result.stderr.strip()}")
-        return months
-
-    lines = result.stdout.strip().splitlines()
-    # Primeira linha é o cabeçalho (y\tm)
-    for line in lines[1:]:
-        parts = line.strip().split("\t")
-        if len(parts) == 2:
-            try:
-                months.append((int(parts[0]), int(parts[1])))
-            except ValueError:
-                continue
-    return months
-
-
-def detect_dates_from_bronze(compose_file: Path) -> list[str]:
-    """
-    Consulta o Trino para obter a lista de process_date presentes em ambas as
-    tabelas Bronze. Retorna datas YYYY-MM-DD ordenadas para backfill Silver.
-    """
-    sql = (
-        "SELECT CAST(c.process_date AS VARCHAR) AS process_date "
-        "FROM (SELECT DISTINCT process_date FROM iceberg.bronze.consumo_raw) c "
-        "INNER JOIN (SELECT DISTINCT process_date FROM iceberg.bronze.preco_raw) p "
-        "ON c.process_date = p.process_date "
-        "ORDER BY c.process_date;"
-    )
-    result = subprocess.run(
-        [
-            "docker", "compose", "-f", str(compose_file),
-            "exec", "-T", "trino", "trino",
-            "--output-format", "TSV_HEADER",
-            "--execute", sql,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    dates: list[str] = []
-    if result.returncode != 0:
-        print(f"[AVISO] Não foi possível detetar datas no Bronze: {result.stderr.strip()}")
-        return dates
-
-    lines = result.stdout.strip().splitlines()
-    for line in lines[1:]:
-        value = line.strip()
-        if re.match(r"^\d{4}-\d{2}-\d{2}$", value):
-            dates.append(value)
-    return dates
+        raise SystemExit(
+            f"Quality gate FALHOU na camada {layer}. "
+            "Corrige os problemas antes de prosseguir."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -301,36 +177,12 @@ def detect_dates_from_bronze(compose_file: Path) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Orquestrador Medallion consumo_preco (Opção B: Flyte + Iceberg nativo)"
-    )
-    parser.add_argument("--full", action="store_true",
-                        help="Carrega a totalidade dos dados raw; também é o modo padrão sem --year/--month")
-    parser.add_argument("--year",  type=int, help="Ano a processar (ex: 2023) — ignorado com --full")
-    parser.add_argument("--month", type=int, help="Mês a processar (1-12) — ignorado com --full")
-    parser.add_argument(
-        "--date", type=str,
-        help="Data de ingestão Bronze YYYY-MM-DD (ignorado com --full)"
-    )
-    parser.add_argument("--build",        action="store_true", help="faz --build no compose up")
-    parser.add_argument("--skip-docker",  action="store_true", help="salta o compose up")
-    parser.add_argument("--skip-ddl",     action="store_true", help="salta a aplicação de DDL")
-    parser.add_argument("--no-quality",   action="store_true", help="salta os quality gates")
-    parser.add_argument(
-        "--remote", action="store_true",
-        help="submete workflows ao cluster Flyte externo (requer flytectl demo start)",
-    )
+    parser = argparse.ArgumentParser(description="Orquestrador Medallion — consumo_preco")
+    parser.add_argument("--skip-docker", action="store_true", help="Não faz compose up")
+    parser.add_argument("--skip-ddl",   action="store_true", help="Não reaplicar DDL")
+    parser.add_argument("--no-quality", action="store_true", help="Salta quality gates")
+    parser.add_argument("--build",      action="store_true", help="--build no compose up")
     args = parser.parse_args()
-
-    if not args.full:
-        if args.year is None and args.month is None:
-            args.full = True
-            print(">>> Sem --year/--month: a correr em modo FULL (todo o período raw).")
-        elif args.year is None or args.month is None:
-            raise SystemExit(
-                "Erro: para correr um mês específico indica --year e --month. "
-                "Sem parâmetros, o runner carrega tudo automaticamente."
-            )
 
     pipeline_root = Path(__file__).resolve().parent
     repo_root     = pipeline_root.parent.parent
@@ -346,33 +198,30 @@ def main() -> None:
     must_exist(compose_file,  "docker-compose.yml")
     must_exist(workflows_dir, "pasta workflows/")
     if not args.skip_ddl:
-        must_exist(bronze_sql, "DDL Bronze SQL")
-        must_exist(silver_sql, "DDL Silver SQL")
-        must_exist(gold_sql,   "DDL Gold SQL")
-
+        must_exist(bronze_sql, "DDL Bronze")
+        must_exist(silver_sql, "DDL Silver")
+        must_exist(gold_sql,   "DDL Gold")
     if shutil.which("docker") is None:
-        raise SystemExit("Erro: comando 'docker' não encontrado no PATH.")
+        raise SystemExit("Comando 'docker' não encontrado no PATH.")
 
     python_cmd = sys.executable
     if not python_cmd or "WindowsApps" in python_cmd or not Path(python_cmd).exists():
         raise SystemExit(
-            "Python inválido. Usa o executável real do Python, não o alias WindowsApps."
+            "Python inválido. Usa o executável real do Python (não o alias WindowsApps)."
         )
 
     # --- venv ---
-    venv_python = create_local_venv(pipeline_root, python_cmd)
-
-    # Instala dependências Flyte no venv
+    venv_python = create_venv(pipeline_root, python_cmd)
     requirements = workflows_dir / "requirements.txt"
     run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip", "-q"])
     if requirements.exists():
         run([str(venv_python), "-m", "pip", "install", "-r", str(requirements), "-q"])
     else:
-        run([str(venv_python), "-m", "pip", "install", "flytekit", "trino", "boto3", "pandas", "-q"])
+        run([str(venv_python), "-m", "pip", "install", "trino", "boto3", "pandas", "pyarrow", "-q"])
 
-    # --- Docker compose up ---
+    # --- Docker ---
     if not args.skip_docker:
-        ensure_docker_engine_running()
+        ensure_docker()
         compose_up = ["docker", "compose", "-f", str(compose_file), "up", "-d"]
         if args.build:
             compose_up.append("--build")
@@ -381,11 +230,11 @@ def main() -> None:
     else:
         print("\n>>> --skip-docker: compose up ignorado.")
 
-    # --- DDL (idempotente: IF NOT EXISTS) ---
+    # --- DDL ---
     if not args.skip_ddl:
-        print("\n" + "=" * 60)
+        print(f"\n{'=' * 58}")
         print("FASE 0 — DDL (schemas e tabelas Iceberg)")
-        print("=" * 60)
+        print(f"{'=' * 58}")
         apply_ddl(compose_file, bronze_sql, "Bronze")
         apply_ddl(compose_file, silver_sql, "Silver")
         apply_ddl(compose_file, gold_sql,   "Gold")
@@ -393,213 +242,71 @@ def main() -> None:
         print("\n>>> --skip-ddl: DDL ignorado.")
 
     # =========================================================================
-    # MODO --full : lê os CSVs na íntegra, sem especificar datas
+    # FASE 1 — Bronze ingest
     # =========================================================================
-    if args.full:
-        # --- Fase 1: Bronze ingest COMPLETO ---
-        print("\n" + "=" * 60)
-        print("FASE 1 — Bronze ingest COMPLETO (todos os dados raw)")
-        print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_ingest_bronze.py", "ingest_bronze_full",
-            {}, remote=args.remote,
-        )
+    print(f"\n{'=' * 58}")
+    print("FASE 1 — Bronze ingest (consumo + preços)")
+    print(f"{'=' * 58}")
+    run_script(venv_python, workflows_dir / "bronze.py")
 
-        # --- Quality gate Bronze ---
-        if not args.no_quality:
-            print("\n" + "=" * 60)
-            print("QUALITY GATE — Bronze")
-            print("=" * 60)
-            wait_for_trino(compose_file)
-            pyflyte_run(
-                venv_python, workflows_dir,
-                "flyte_quality_checks.py", "quality_gate_bronze",
-                {}, remote=args.remote,
-            )
-
-        # --- Fase 2: Silver transform COMPLETO ---
-        print("\n" + "=" * 60)
-        print("FASE 2 — Silver transform COMPLETO (todo o período Bronze)")
-        print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_bronze_to_silver.py", "bronze_to_silver_full",
-            {}, remote=args.remote,
-        )
-
-        # --- Quality gate Silver ---
-        if not args.no_quality:
-            print("\n" + "=" * 60)
-            print("QUALITY GATE — Silver")
-            print("=" * 60)
-            wait_for_trino(compose_file)
-            pyflyte_run(
-                venv_python, workflows_dir,
-                "flyte_quality_checks.py", "quality_gate_silver",
-                {}, remote=args.remote,
-            )
-
-        # --- Fase 3: Gold transform COMPLETO ---
-        print("\n" + "=" * 60)
-        print("FASE 3 — Gold transform COMPLETO (todo o período Silver)")
-        print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_silver_to_gold.py", "silver_to_gold_full",
-            {}, remote=args.remote,
-        )
-
-        # --- Quality gate Gold ---
-        if not args.no_quality:
-            print("\n" + "=" * 60)
-            print("QUALITY GATE — Gold")
-            print("=" * 60)
-            wait_for_trino(compose_file)
-            pyflyte_run(
-                venv_python, workflows_dir,
-                "flyte_quality_checks.py", "quality_gate_gold",
-                {}, remote=args.remote,
-            )
-
-        # --- Validação final ---
-        print("\n" + "=" * 60)
-        print("VALIDAÇÃO FINAL — contagem Gold (total)")
-        print("=" * 60)
-        validation_sql = (
-            "SELECT 'dp_energy_market_hourly' AS tabela, COUNT(*) AS total_linhas, "
-            "CAST(MIN(ts_utc) AS VARCHAR) AS inicio, CAST(MAX(ts_utc) AS VARCHAR) AS fim "
-            "FROM iceberg.gold.dp_energy_market_hourly "
-            "UNION ALL "
-            "SELECT 'feat_load_forecasting_hourly', COUNT(*), "
-            "CAST(MIN(ts_utc) AS VARCHAR), CAST(MAX(ts_utc) AS VARCHAR) "
-            "FROM iceberg.gold.feat_load_forecasting_hourly;"
-        )
-        subprocess.run(
-            [
-                "docker", "compose", "-f", str(compose_file),
-                "exec", "-T", "trino", "trino",
-                "--execute", validation_sql,
-            ],
-            text=True,
-        )
-
-        print(f"\n{'=' * 60}")
-        print(f"Pipeline Medallion consumo_preco concluída com sucesso!")
-        print(f"  Período  : todo o intervalo disponível nos 2 ficheiros raw")
-        print(f"  Bronze   : bronze.consumo_raw + bronze.preco_raw")
-        print(f"  Silver   : silver.consumo_hourly + silver.preco_hourly")
-        print(f"  Gold     : gold.dp_energy_market_hourly + gold.feat_load_forecasting_hourly")
-        print(f"{'=' * 60}\n")
-        return
+    if not args.no_quality:
+        run_quality(venv_python, workflows_dir, "bronze")
 
     # =========================================================================
-    # MODO mês específico (--year / --month)
+    # FASE 2 — Silver transform
     # =========================================================================
-    year  = args.year
-    month = args.month
-    process_date = args.date or f"{year}-{month:02d}-01"
+    print(f"\n{'=' * 58}")
+    print("FASE 2 — Silver transform (agregação + normalização UTC)")
+    print(f"{'=' * 58}")
+    run_script(venv_python, workflows_dir / "silver.py")
 
-    # --- Bronze ingest (um dia / data de referência) ---
-    print("\n" + "=" * 60)
-    print(f"FASE 1 — Bronze ingest  (date={process_date})")
-    print("=" * 60)
-    pyflyte_run(
-        venv_python, workflows_dir,
-        "flyte_ingest_bronze.py", "ingest_bronze",
-        {"process_date": process_date}, remote=args.remote,
-    )
-
-    # --- Quality gate Bronze ---
     if not args.no_quality:
-        print("\n" + "=" * 60)
-        print("QUALITY GATE — Bronze")
-        print("=" * 60)
-        wait_for_trino(compose_file)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_quality_checks.py", "quality_gate_bronze",
-            {}, remote=args.remote,
-        )
+        run_quality(venv_python, workflows_dir, "silver")
 
-    # --- Silver transform ---
-    print("\n" + "=" * 60)
-    print(f"FASE 2 — Silver transform  (year={year}, month={month})")
-    print("=" * 60)
-    pyflyte_run(
-        venv_python, workflows_dir,
-        "flyte_bronze_to_silver.py", "bronze_to_silver",
-        {"process_date": process_date}, remote=args.remote,
-    )
+    # =========================================================================
+    # FASE 3 — Gold build
+    # =========================================================================
+    print(f"\n{'=' * 58}")
+    print("FASE 3 — Gold build (features + ML table)")
+    print(f"{'=' * 58}")
+    run_script(venv_python, workflows_dir / "gold.py")
 
-    # --- Quality gate Silver ---
     if not args.no_quality:
-        print("\n" + "=" * 60)
-        print("QUALITY GATE — Silver")
-        print("=" * 60)
-        wait_for_trino(compose_file)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_quality_checks.py", "quality_gate_silver",
-            {}, remote=args.remote,
-        )
+        run_quality(venv_python, workflows_dir, "gold")
 
-    # --- Gold transform ---
-    print("\n" + "=" * 60)
-    print("FASE 3 — Gold transform  (full)")
-    print("=" * 60)
-    pyflyte_run(
-        venv_python, workflows_dir,
-        "flyte_silver_to_gold.py", "silver_to_gold_full",
-        {}, remote=args.remote,
-    )
-
-    # --- Quality gate Gold ---
-    if not args.no_quality:
-        print("\n" + "=" * 60)
-        print("QUALITY GATE — Gold")
-        print("=" * 60)
-        wait_for_trino(compose_file)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_quality_checks.py", "quality_gate_gold",
-            {}, remote=args.remote,
-        )
-
-    # --- Validação final ---
-    print("\n" + "=" * 60)
-    print("VALIDAÇÃO FINAL — contagem Gold")
-    print("=" * 60)
+    # =========================================================================
+    # Validação final
+    # =========================================================================
+    print(f"\n{'=' * 58}")
+    print("VALIDAÇÃO FINAL — contagem tabelas Gold")
+    print(f"{'=' * 58}")
     validation_sql = (
-        f"SELECT 'dp_energy_market_hourly' AS tabela, COUNT(*) AS total_linhas "
-        f"FROM iceberg.gold.dp_energy_market_hourly "
-        f"WHERE year = {year} AND month = {month} "
-        f"UNION ALL "
-        f"SELECT 'feat_load_forecasting_hourly', COUNT(*) "
-        f"FROM iceberg.gold.feat_load_forecasting_hourly "
-        f"WHERE year = {year} AND month = {month};"
+        "SELECT 'dp_energy_market_hourly' AS tabela, COUNT(*) AS total_linhas, "
+        "CAST(MIN(ts_utc) AS VARCHAR) AS inicio, CAST(MAX(ts_utc) AS VARCHAR) AS fim "
+        "FROM iceberg.gold.dp_energy_market_hourly "
+        "UNION ALL "
+        "SELECT 'feat_load_forecasting_hourly', COUNT(*), "
+        "CAST(MIN(ts_utc) AS VARCHAR), CAST(MAX(ts_utc) AS VARCHAR) "
+        "FROM iceberg.gold.feat_load_forecasting_hourly;"
     )
     subprocess.run(
-        [
-            "docker", "compose", "-f", str(compose_file),
-            "exec", "-T", "trino", "trino",
-            "--execute", validation_sql,
-        ],
+        ["docker", "compose", "-f", str(compose_file),
+         "exec", "-T", "trino", "trino", "--execute", validation_sql],
         text=True,
     )
 
-    print(f"\n{'=' * 60}")
-    print(f"Pipeline Medallion consumo_preco concluída com sucesso!")
-    print(f"  Período : {year}-{month:02d}")
-    print(f"  Bronze  : process_date={process_date}")
-    print(f"  Silver  : silver.consumo_hourly + silver.preco_hourly")
-    print(f"  Gold    : gold.dp_energy_market_hourly + gold.feat_load_forecasting_hourly")
-    print(f"{'=' * 60}\n")
+    print(f"\n{'=' * 58}")
+    print("Pipeline consumo_preco concluída com sucesso!")
+    print("  Bronze : bronze.consumo_raw + bronze.preco_raw")
+    print("  Silver : silver.consumo_hourly + silver.preco_hourly")
+    print("  Gold   : gold.dp_energy_market_hourly")
+    print("           gold.feat_load_forecasting_hourly")
+    print(f"{'=' * 58}\n")
 
 
 if __name__ == "__main__":
     try:
         main()
     except subprocess.CalledProcessError as exc:
-        print(f"\nErro: comando falhou (exit code {exc.returncode})", file=sys.stderr)
+        print(f"\nErro: comando falhou (exit {exc.returncode})", file=sys.stderr)
         sys.exit(exc.returncode)

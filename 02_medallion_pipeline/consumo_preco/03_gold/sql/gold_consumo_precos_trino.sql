@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Gold DDL — consumo_preco
 -- Tabelas Iceberg nativas, particionadas por year/month.
--- Carregadas via workflow Flyte (flyte_silver_to_gold.py).
+-- Carregadas por workflows/gold.py via Trino.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -103,43 +103,3 @@ COMMENT ON COLUMN iceberg.gold.feat_load_forecasting_hourly.price_lag_1h IS 'Fea
 COMMENT ON COLUMN iceberg.gold.feat_load_forecasting_hourly.rolling_avg_consumo_24h IS 'Feature: média móvel de consumo nas últimas 24 horas.';
 COMMENT ON COLUMN iceberg.gold.feat_load_forecasting_hourly.rolling_avg_price_24h IS 'Feature: média móvel de preço nas últimas 24 horas.';
 
--- -----------------------------------------------------------------------------
--- Tabela 3: quality_log
--- Histórico de execuções dos gates de qualidade (Bronze / Silver / Gold).
--- Persistida automaticamente por flyte_quality_checks.quality_gate().
--- Permite auditoria, trending de WARNs e alertas retroativos.
--- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS iceberg.gold.quality_log (
-    run_ts          TIMESTAMP(6) WITH TIME ZONE,  -- momento exacto da execução
-    pipeline        VARCHAR,                        -- 'consumo_preco'
-    layer           VARCHAR,                        -- 'bronze' | 'silver' | 'gold'
-    check_name      VARCHAR,                        -- nome do check (igual ao SQL)
-    status          VARCHAR,                        -- 'PASS' | 'WARN' | 'FAIL'
-    valor_pct       DOUBLE,                         -- valor observado (%)
-    threshold_pct   DOUBLE,                         -- limiar de referência (%)
-    detalhe         VARCHAR,                        -- mensagem descritiva do resultado
-    run_date        DATE                            -- partição: data lógica da execução
-)
-WITH (
-    format = 'PARQUET',
-    partitioning = ARRAY['run_date'],
-    location = 's3a://warehouse/gold/quality_log/'
-);
-
-ALTER TABLE iceberg.gold.quality_log
-SET PROPERTIES
-    format_version = 2,
-    object_store_layout_enabled = true;
-
-COMMENT ON TABLE iceberg.gold.quality_log IS
-'Histórico de execuções dos quality gates. Cada linha representa um check individual (PASS/WARN/FAIL) registado por flyte_quality_checks.quality_gate().';
-
-COMMENT ON COLUMN iceberg.gold.quality_log.run_ts IS 'Timestamp UTC do momento em que o quality gate foi executado.';
-COMMENT ON COLUMN iceberg.gold.quality_log.pipeline IS 'Identificador do pipeline (ex: consumo_preco).';
-COMMENT ON COLUMN iceberg.gold.quality_log.layer IS 'Camada avaliada: bronze, silver ou gold.';
-COMMENT ON COLUMN iceberg.gold.quality_log.check_name IS 'Nome do check conforme definido no SQL de qualidade.';
-COMMENT ON COLUMN iceberg.gold.quality_log.status IS 'Resultado do check: PASS, WARN ou FAIL.';
-COMMENT ON COLUMN iceberg.gold.quality_log.valor_pct IS 'Valor percentual observado pelo check.';
-COMMENT ON COLUMN iceberg.gold.quality_log.threshold_pct IS 'Limiar configurado para este check.';
-COMMENT ON COLUMN iceberg.gold.quality_log.detalhe IS 'Mensagem descritiva com contagens e contexto do resultado.';
-COMMENT ON COLUMN iceberg.gold.quality_log.run_date IS 'Data lógica da execução (partição da tabela).';

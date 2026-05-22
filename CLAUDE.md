@@ -57,7 +57,7 @@ flytectl demo start   # waits several minutes for Helm + K3s startup
 **Connecting Flyte tasks to Compose services** — Flyte task pods are isolated from Compose. Use `host.docker.internal` as the hostname:
 
 | Service | URL from Flyte tasks |
-|---|---|
+| --- | --- |
 | MinIO S3 API | `http://host.docker.internal:9000` |
 | MLflow | `http://host.docker.internal:15000` |
 | Trino | `http://host.docker.internal:8080` |
@@ -65,7 +65,7 @@ flytectl demo start   # waits several minutes for Helm + K3s startup
 
 Set these env vars in Flyte task environments:
 
-```
+```text
 MLFLOW_S3_ENDPOINT_URL=http://host.docker.internal:9000
 AWS_ACCESS_KEY_ID=minioadmin
 AWS_SECRET_ACCESS_KEY=minioadmin
@@ -74,6 +74,8 @@ AWS_SECRET_ACCESS_KEY=minioadmin
 > On Linux, start the Flyte sandbox with `--add-host host.docker.internal:host-gateway`. On Windows/macOS (Docker Desktop) this works out of the box.
 
 Flyte config files: `01_docker_stack/flyte/Dockerfile` + `flyte-core-overrides.yaml`.
+
+**Flyte execution model** — Workflows always run **locally** (not submitted to the remote K3s cluster) via `python -m flytekit.clis.sdk_in_container.pyflyte run`. DP-01 has a single monolithic `flyte_workflow.py`; DP-02 has modular tasks under `workflows/` (one file per layer); DP-03 has no Flyte workflow — it is orchestrated directly by the run script.
 
 ## Data Pipeline Commands
 
@@ -92,6 +94,19 @@ python 02_medallion_pipeline/meteo_producao/run_medallion_meteo_producao.py --sk
 
 The orchestrators handle: Docker readiness checks, Python venv creation, DDL execution via Trino, Silver/Gold transformations, and quality gates. They are idempotent — safe to re-run.
 
+### Python Virtual Environments
+
+Each orchestrator auto-creates and manages its own venv:
+
+| Venv | Used by |
+| --- | --- |
+| `.venv_medallion/` | DP-01 pipeline |
+| `.venv_medallion_consumo_preco/` | DP-02 pipeline |
+| `.venv_medallion_meteo_producao/` | DP-03 pipeline |
+| `.venv/` | ML training scripts (`03_ml_pipeline/`) and general use |
+
+Do not manually manage these pipeline venvs — the orchestrators recreate them as needed. For ML training, create `.venv/` manually (see ML Training section).
+
 ## ML Training
 
 ```powershell
@@ -104,11 +119,11 @@ python 03_ml_pipeline/preco_consumo_mlflow_flow.py      # DP-02: GB load forecas
 python 03_ml_pipeline/meteo_producao_mlflow_flow.py     # DP-03: RF production forecast + GB price impact
 ```
 
-Results visible at http://localhost:15000.
+Results visible at <http://localhost:15000>.
 
 ## Application Backends
 
-No framework — backends use raw Python `BaseHTTPRequestHandler`. Set env vars before starting (see ML Training section for values). Run from each backend's own directory:
+No framework — backends use raw Python `BaseHTTPRequestHandler`. Run from each backend's own directory:
 
 ```powershell
 # DP-01 (port 8081) — has server.py wrapper at backend root
@@ -123,11 +138,25 @@ cd 04_application/meteo_producao/backend && python -m app.main
 
 Open frontends directly in a browser (static HTML files under `04_application/*/frontend/index.html`).
 
+### Backend Configuration
+
+DP-02 (`consumo_preco`) reads all connection settings from environment variables with sensible defaults:
+
+```text
+TRINO_HOST=localhost       TRINO_PORT=8080
+TRINO_USER=admin           TRINO_CATALOG=iceberg
+TRINO_SCHEMA=gold          TRINO_TABLE=dp_energy_market_hourly
+API_HOST=0.0.0.0           PORT=8000
+CACHE_TTL_SECONDS=60
+```
+
+DP-01 and DP-03 backends use hardcoded `localhost:8080` Trino defaults in their `config.py` files.
+
 ## Architecture
 
 ### Medallion Layers
 
-```
+```text
 Raw Sources (CSV upload / Open-Meteo API)
   └─> BRONZE  — raw ingest; Hive external tables + Iceberg managed; Parquet on MinIO
   └─> SILVER  — deduplication, range validation, quality flags (Portugal-specific rules)
@@ -136,17 +165,24 @@ Raw Sources (CSV upload / Open-Meteo API)
 ```
 
 SQL DDL and transformation scripts live under each layer directory:
+
 - `02_medallion_pipeline/<dp_name>/01_bronze/sql/`
 - `02_medallion_pipeline/<dp_name>/02_silver/sql/`
 - `02_medallion_pipeline/<dp_name>/03_gold/sql/`
 
 Python fetch scripts (for APIs/CSV uploads) live in `01_bronze/scripts/python/`.
 
+### Quality Gate Architecture
+
+There are **no unit tests** — quality assurance is done entirely via SQL checks in `02_medallion_pipeline/<dp_name>/04_quality/sql/`. Each DP has a set of SQL files that query Bronze, Silver, and Gold tables and return `PASS / WARN / FAIL` statuses with percentage thresholds. The orchestrators run these after each layer transform and abort on failures.
+
+Quality checks cover: null rates, duplicate detection, out-of-range values (Portugal-specific rules), daily completeness, deduplication verification, join integrity, and lag/rolling feature validity.
+
 ### Backend MVC Pattern
 
 All three backends follow the same structure:
 
-```
+```text
 HTTP Handler (route) → Controller → Service → Repository → Trino Client
 ```
 
@@ -154,15 +190,16 @@ Each backend directory contains `models/`, `controllers/`, `services/`, `reposit
 
 ### Data Products
 
-| # | Name | Source | Grain | Models |
-|---|------|--------|-------|--------|
-| DP-01 | `producao_consumo` | REN/ERSE CSV | Hourly | RF deficit classifier |
-| DP-02 | `consumo_preco` | OMIE day-ahead prices | Hourly | GB load forecast |
-| DP-03 | `meteo_producao` | Open-Meteo API + production | Daily | RF production + GB price impact |
+| # | Name | Source | Grain | Gold Table | Models |
+| --- | --- | --- | --- | --- | --- |
+| DP-01 | `producao_consumo` | REN/ERSE CSV | Hourly | `iceberg.gold.dp_energia_balance_hourly` | RF deficit classifier |
+| DP-02 | `consumo_preco` | OMIE day-ahead prices | Hourly | `iceberg.gold.dp_energy_market_hourly` | GB load forecast |
+| DP-03 | `meteo_producao` | Open-Meteo API + production | Daily | `iceberg.gold.dp_meteo_producao_daily_features` | RF production + GB price impact |
 
 ### Query Engine
 
 All SQL runs on **Trino** with two catalogs:
+
 - `hive` — external tables (raw Parquet/CSV on MinIO)
 - `iceberg` — managed tables (Silver and Gold layers)
 

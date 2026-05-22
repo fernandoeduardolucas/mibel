@@ -203,7 +203,9 @@ def run_quality_checks(compose_file: Path, sql_file: Path, layer_name: str) -> N
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise SystemExit(
-            f"Quality gate {layer_name} falhou ao executar checks:\n{result.stderr.strip()}"
+            f"Quality gate {layer_name} falhou ao executar checks:\n"
+            f"STDERR: {result.stderr.strip()}\n"
+            f"STDOUT: {result.stdout.strip()}"
         )
 
     lines = result.stdout.strip().splitlines()

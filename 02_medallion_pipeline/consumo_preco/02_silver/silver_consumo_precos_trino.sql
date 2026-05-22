@@ -23,13 +23,21 @@ CREATE TABLE IF NOT EXISTS iceberg.silver.consumo_hourly (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['year', 'month'],
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
+        ARRAY['silver', 'consumo_preco', '1', 'hourly', 'bronze.consumo_raw']
+    ),
     location = 's3a://warehouse/silver/consumo_hourly/'
 );
 
 ALTER TABLE iceberg.silver.consumo_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true;
+    object_store_layout_enabled = true,
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
+        ARRAY['silver', 'consumo_preco', '1', 'hourly', 'bronze.consumo_raw']
+    );
 
 COMMENT ON TABLE iceberg.silver.consumo_hourly IS
 'Tabela Silver com consumo elétrico nacional horário normalizado para UTC. Agrega registos de 15 minutos do Bronze e converte kW para MWh.';
@@ -54,13 +62,21 @@ CREATE TABLE IF NOT EXISTS iceberg.silver.preco_hourly (
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['year', 'month'],
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
+        ARRAY['silver', 'consumo_preco', '1', 'hourly', 'bronze.preco_raw']
+    ),
     location = 's3a://warehouse/silver/preco_hourly/'
 );
 
 ALTER TABLE iceberg.silver.preco_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true;
+    object_store_layout_enabled = true,
+    extra_properties = MAP(
+        ARRAY['layer', 'domain', 'schema_version', 'grain', 'upstream_table'],
+        ARRAY['silver', 'consumo_preco', '1', 'hourly', 'bronze.preco_raw']
+    );
 
 COMMENT ON TABLE iceberg.silver.preco_hourly IS
 'Tabela Silver com preços day-ahead OMIE/MIBEL normalizados para UTC. Converte a numeração original de horas (1-24) para timestamp UTC. Hora 25 (DST outono) é descartada.';

@@ -85,8 +85,11 @@ Each data product has its own Python orchestrator. Always pass `--skip-docker` i
 # DP-01: Production vs Consumption (no --skip-docker flag; manages Docker internally)
 python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py
 
-# DP-02: Consumption vs Price
-python 02_medallion_pipeline/consumo_preco/run_medallion_consumo_precos.py --skip-docker
+# DP-02: Consumption vs Price (static CSV pipeline)
+python 02_medallion_pipeline/DP02_Consumo_Preco/run_medallion_consumo_precos.py --skip-docker
+
+# DP-02: Consumption vs Price (streaming API pipeline)
+python 02_medallion_pipeline/DP02_Consumo_Preco/Streaming_Data/run_streaming_pipeline.py --skip-docker --days 7
 
 # DP-03: Meteo + Production (fetches live data from Open-Meteo API)
 python 02_medallion_pipeline/meteo_producao/run_medallion_meteo_producao.py --skip-docker
@@ -101,7 +104,8 @@ Each orchestrator auto-creates and manages its own venv:
 | Venv | Used by |
 | --- | --- |
 | `.venv_medallion/` | DP-01 pipeline |
-| `.venv_medallion_consumo_preco/` | DP-02 pipeline |
+| `.venv_medallion_consumo_preco/` | DP-02 static pipeline |
+| `.venv_streaming_dp02/` | DP-02 streaming pipeline |
 | `.venv_medallion_meteo_producao/` | DP-03 pipeline |
 | `.venv/` | ML training scripts (`03_ml_pipeline/`) and general use |
 

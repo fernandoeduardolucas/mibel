@@ -163,12 +163,18 @@ def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
 # DDL helper — aplica ficheiro SQL via Trino CLI dentro do Docker
 # ---------------------------------------------------------------------------
 
-def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str) -> None:
+_DDL_KEYWORDS = ("CREATE", "ALTER", "COMMENT", "DROP")
+
+
+def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str, ddl_only: bool = False) -> None:
     print(f"\n>>> DDL {stage_name}: {sql_file.name}")
     sql_text = sql_file.read_text(encoding="utf-8")
     sql_clean = re.sub(r'--[^\n]*', '', sql_text)
     statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
     for stmt in statements:
+        first = stmt.split()[0].upper() if stmt.split() else ""
+        if ddl_only and first not in _DDL_KEYWORDS:
+            continue
         subprocess.run(
             [
                 "docker", "compose", "-f", str(compose_file),
@@ -302,7 +308,7 @@ def main() -> None:
         print("=" * 60)
         apply_ddl(compose_file, bronze_sql, "Bronze")
         apply_ddl(compose_file, silver_sql, "Silver")
-        apply_ddl(compose_file, gold_sql,   "Gold DDL (CREATE TABLE IF NOT EXISTS)")
+        apply_ddl(compose_file, gold_sql,   "Gold DDL (CREATE TABLE IF NOT EXISTS)", ddl_only=True)
     else:
         print("\n>>> --skip-ddl: DDL ignorado.")
 
@@ -361,10 +367,23 @@ def main() -> None:
     print("\n" + "=" * 60)
     print("FASE 3 - Silver -> Gold (Trino SQL - DP-03)")
     print("=" * 60)
+    # DELETE first so re-runs don't accumulate duplicate rows
+    subprocess.run(
+        [
+            "docker", "compose", "-f", str(compose_file),
+            "exec", "-T", "trino", "trino", "--execute",
+            "DELETE FROM iceberg.gold.dp_meteo_producao_daily_features WHERE 1=1;",
+        ],
+        capture_output=True,
+    )
     gold_text = gold_sql.read_text(encoding="utf-8")
     sql_clean = re.sub(r'--[^\n]*', '', gold_text)
+    # Run only INSERT/WITH statements (skip CREATE, SELECT validation queries)
     insert_stmts = [s.strip() for s in sql_clean.split(";") if s.strip()]
     for stmt in insert_stmts:
+        first = stmt.split()[0].upper() if stmt.split() else ""
+        if first not in ("INSERT", "WITH"):
+            continue
         subprocess.run(
             [
                 "docker", "compose", "-f", str(compose_file),

@@ -95,7 +95,7 @@ synthetic AS (
                 1.04
                 + 0.05 * sin(2 * pi() * ((hour(timestamp_utc) + 6) / 24.0))
                 + 0.03 * (
-                    (xxhash64(to_utf8(CAST(timestamp_utc AS varchar))) % 1000) / 1000.0
+                    (abs(from_big_endian_64(xxhash64(to_utf8(CAST(timestamp_utc AS varchar))))) % 1000) / 1000.0
                     - 0.5
                 )
             )

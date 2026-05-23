@@ -9,7 +9,20 @@
 --   iceberg.gold.dp_energia_balance_hourly
 -- =====================================================
 
-INSERT INTO iceberg.gold.dp_energia_balance_hourly
+INSERT INTO iceberg.gold.dp_energia_balance_hourly (
+    timestamp_utc,
+    consumo_total_kwh,
+    producao_total_kwh,
+    producao_dgm_kwh,
+    producao_pre_kwh,
+    saldo_kwh,
+    ratio_producao_consumo,
+    flag_defice,
+    flag_excedente,
+    flag_missing_source,
+    ano,
+    mes
+)
 WITH
 last_ts AS (
     SELECT MAX(timestamp_utc) AS max_ts
@@ -115,7 +128,9 @@ SELECT
     GREATEST(0.000001, producao_total_kwh / consumo_total_kwh) AS ratio_producao_consumo,
     false AS flag_defice,
     true AS flag_excedente,
-    flag_missing_source
+    flag_missing_source,
+    year(timestamp_utc) AS ano,
+    month(timestamp_utc) AS mes
 FROM synthetic;
 
 -- Check rápido de cobertura gerada

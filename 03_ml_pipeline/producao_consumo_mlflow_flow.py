@@ -86,6 +86,7 @@ os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 
 ML_METRICS_TABLE = os.getenv("ML_METRICS_TABLE", "ml_training_metrics")
+ML_PREDICTIONS_TABLE = os.getenv("ML_PREDICTIONS_TABLE", "ml_defice_predictions")
 
 
 def _resolve_tracking_uri(uri: str) -> str:
@@ -216,6 +217,66 @@ def persist_training_metrics(result_json: str, workflow_name: str) -> None:
     finally:
         conn.close()
 
+
+
+
+def _ensure_predictions_table_exists() -> None:
+    create_sql = f"""
+        CREATE TABLE IF NOT EXISTS {TRINO_CATALOG}.{TRINO_SCHEMA}.{ML_PREDICTIONS_TABLE} (
+            event_ts TIMESTAMP(6),
+            workflow_name VARCHAR,
+            experiment VARCHAR,
+            registered_model VARCHAR,
+            ref_timestamp_utc TIMESTAMP(6),
+            predicted_for_utc TIMESTAMP(6),
+            pred_class INTEGER,
+            pred_prob_defice DOUBLE
+        )
+    """
+
+    conn = _get_trino_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(create_sql)
+    finally:
+        conn.close()
+
+
+@task(container_image=image_spec)
+def persist_next_hour_prediction(result_json: str, workflow_name: str) -> None:
+    result = json.loads(result_json)
+    pred = result.get("next_hour_prediction", {})
+
+    experiment = _sql_quote(str(result.get("experiment", "")))
+    registered_model = _sql_quote(str(result.get("registered_model", "")))
+    workflow_name_sql = _sql_quote(workflow_name)
+
+    ref_ts = _sql_quote(str(pred.get("ref_timestamp_utc", "")))
+    pred_for_ts = _sql_quote(str(pred.get("predicted_for_utc", "")))
+    pred_class = int(pred.get("pred_class", 0))
+    pred_prob = float(pred.get("pred_prob_defice", 0.0))
+
+    _ensure_predictions_table_exists()
+
+    insert_sql = f"""
+        INSERT INTO {TRINO_CATALOG}.{TRINO_SCHEMA}.{ML_PREDICTIONS_TABLE} VALUES (
+            CURRENT_TIMESTAMP,
+            '{workflow_name_sql}',
+            '{experiment}',
+            '{registered_model}',
+            CAST('{ref_ts}' AS TIMESTAMP(6)),
+            CAST('{pred_for_ts}' AS TIMESTAMP(6)),
+            {pred_class},
+            {pred_prob}
+        )
+    """
+
+    conn = _get_trino_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(insert_sql)
+    finally:
+        conn.close()
 
 def _load_gold_table():
     import pandas as pd
@@ -391,6 +452,18 @@ def train_producao_consumo_model(test_ratio: float = 0.2, random_state: int = 42
 
     report = classification_report(y_test, preds, output_dict=True, zero_division=0)
 
+    # Inferência operacional: previsão de défice para a próxima hora
+    latest_features = X.tail(1)
+    latest_ts = ts.iloc[-1]
+    next_hour_pred_class = int(model.predict(latest_features)[0])
+    next_hour_pred_prob = float(model.predict_proba(latest_features)[0, 1])
+    next_hour_prediction = {
+        "ref_timestamp_utc": str(latest_ts),
+        "predicted_for_utc": str(latest_ts + pd.Timedelta(hours=1)),
+        "pred_class": next_hour_pred_class,
+        "pred_prob_defice": next_hour_pred_prob,
+    }
+
     mlflow.set_tracking_uri(_resolve_tracking_uri(MLFLOW_TRACKING_URI))
     mlflow.set_experiment(MLFLOW_EXPERIMENT)
 
@@ -452,6 +525,7 @@ def train_producao_consumo_model(test_ratio: float = 0.2, random_state: int = 42
         summary = {
             "experiment": MLFLOW_EXPERIMENT,
             "registered_model": "producao_consumo_defice_classifier",
+            "next_hour_prediction": next_hour_prediction,
             "metrics": {
                 "accuracy": accuracy,
                 "precision": precision,
@@ -467,6 +541,10 @@ def train_producao_consumo_model(test_ratio: float = 0.2, random_state: int = 42
 def producao_consumo_training_wf(test_ratio: float = 0.2, random_state: int = 42) -> str:
     result_json = train_producao_consumo_model(test_ratio=test_ratio, random_state=random_state)
     persist_training_metrics(
+        result_json=result_json,
+        workflow_name="producao_consumo_mlflow_flow.train_producao_consumo_model",
+    )
+    persist_next_hour_prediction(
         result_json=result_json,
         workflow_name="producao_consumo_mlflow_flow.train_producao_consumo_model",
     )

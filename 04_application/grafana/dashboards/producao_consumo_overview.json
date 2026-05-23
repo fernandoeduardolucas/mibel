@@ -1300,6 +1300,200 @@
       ],
       "title": "Histórico de qualidade do modelo (F1 vs ROC-AUC)",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 63
+      },
+      "id": 61,
+      "panels": [],
+      "title": "ML Serving -- Previsao Defice Proxima Hora",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "description": "Última classe prevista para a próxima hora (1=Défice, 0=Sem Défice)",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "text": "Sem Défice"
+                },
+                "1": {
+                  "text": "Défice"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 64
+      },
+      "id": 62,
+      "options": {
+        "colorMode": "background",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT pred_class AS value FROM iceberg.gold.ml_defice_predictions WHERE registered_model = 'producao_consumo_defice_classifier' ORDER BY event_ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Previsão Próxima Hora (Classe)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "description": "Probabilidade prevista de défice para a próxima hora",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.4
+              },
+              {
+                "color": "red",
+                "value": 0.7
+              }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 64
+      },
+      "id": 63,
+      "options": {
+        "colorMode": "background",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT pred_prob_defice AS value FROM iceberg.gold.ml_defice_predictions WHERE registered_model = 'producao_consumo_defice_classifier' ORDER BY event_ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Probabilidade de Défice (t+1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "description": "Hora de referência da observação usada para prever e hora alvo prevista",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 64
+      },
+      "id": 64,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT CAST(ref_timestamp_utc AS VARCHAR) AS \"Ref UTC\", CAST(predicted_for_utc AS VARCHAR) AS \"Prevista UTC\", pred_class AS \"Classe\", ROUND(pred_prob_defice,3) AS \"Prob\" FROM iceberg.gold.ml_defice_predictions WHERE registered_model = 'producao_consumo_defice_classifier' ORDER BY event_ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Última Inferência Gravada",
+      "type": "table"
     }
   ],
   "refresh": "5m",

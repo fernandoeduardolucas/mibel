@@ -85,6 +85,8 @@ os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "minioadmin")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 
+ML_METRICS_TABLE = os.getenv("ML_METRICS_TABLE", "ml_training_metrics")
+
 
 def _resolve_tracking_uri(uri: str) -> str:
     """Resolve host do MLflow URI e faz fallback para localhost quando necessário."""
@@ -144,6 +146,75 @@ def _get_trino_connection():
             "query_max_execution_time": "8m",
         },
     )
+
+
+def _sql_quote(value: str) -> str:
+    """Escapa aspas simples para literal SQL string."""
+    return value.replace("'", "''")
+
+
+def _ensure_metrics_table_exists() -> None:
+    create_sql = f"""
+        CREATE TABLE IF NOT EXISTS {TRINO_CATALOG}.{TRINO_SCHEMA}.{ML_METRICS_TABLE} (
+            event_ts TIMESTAMP(6),
+            workflow_name VARCHAR,
+            run_id VARCHAR,
+            experiment VARCHAR,
+            registered_model VARCHAR,
+            accuracy DOUBLE,
+            precision DOUBLE,
+            recall DOUBLE,
+            f1 DOUBLE,
+            roc_auc DOUBLE
+        )
+    """
+
+    conn = _get_trino_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(create_sql)
+    finally:
+        conn.close()
+
+
+@task(container_image=image_spec)
+def persist_training_metrics(result_json: str, workflow_name: str) -> None:
+    result = json.loads(result_json)
+    metrics = result.get("metrics", {})
+
+    experiment = _sql_quote(str(result.get("experiment", "")))
+    registered_model = _sql_quote(str(result.get("registered_model", "")))
+    workflow_name_sql = _sql_quote(workflow_name)
+
+    accuracy = float(metrics.get("accuracy", 0.0))
+    precision = float(metrics.get("precision", 0.0))
+    recall = float(metrics.get("recall", 0.0))
+    f1 = float(metrics.get("f1", 0.0))
+    roc_auc = float(metrics.get("roc_auc", 0.0))
+
+    _ensure_metrics_table_exists()
+
+    insert_sql = f"""
+        INSERT INTO {TRINO_CATALOG}.{TRINO_SCHEMA}.{ML_METRICS_TABLE} VALUES (
+            CURRENT_TIMESTAMP,
+            '{workflow_name_sql}',
+            NULL,
+            '{experiment}',
+            '{registered_model}',
+            {accuracy},
+            {precision},
+            {recall},
+            {f1},
+            {roc_auc}
+        )
+    """
+
+    conn = _get_trino_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(insert_sql)
+    finally:
+        conn.close()
 
 
 def _load_gold_table():
@@ -394,7 +465,12 @@ def train_producao_consumo_model(test_ratio: float = 0.2, random_state: int = 42
 
 @workflow
 def producao_consumo_training_wf(test_ratio: float = 0.2, random_state: int = 42) -> str:
-    return train_producao_consumo_model(test_ratio=test_ratio, random_state=random_state)
+    result_json = train_producao_consumo_model(test_ratio=test_ratio, random_state=random_state)
+    persist_training_metrics(
+        result_json=result_json,
+        workflow_name="producao_consumo_mlflow_flow.train_producao_consumo_model",
+    )
+    return result_json
 
 
 if __name__ == "__main__":

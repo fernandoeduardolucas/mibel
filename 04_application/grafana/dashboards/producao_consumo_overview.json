@@ -947,6 +947,359 @@
       ],
       "title": "Registos por Dia -- Cobertura Gold",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 50
+      },
+      "id": 55,
+      "panels": [],
+      "title": "ML -- Producao/Consumo Defice Classifier (Flyte/MLflow)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "description": "Último valor de accuracy do modelo producao_consumo_defice_classifier",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.7
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 51
+      },
+      "id": 56,
+      "options": {
+        "colorMode": "background",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT accuracy AS value FROM iceberg.gold.ml_training_metrics WHERE registered_model = 'producao_consumo_defice_classifier' ORDER BY event_ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Accuracy",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "description": "Último valor de precision do modelo producao_consumo_defice_classifier",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.7
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 51
+      },
+      "id": 57,
+      "options": {
+        "colorMode": "background",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT precision AS value FROM iceberg.gold.ml_training_metrics WHERE registered_model = 'producao_consumo_defice_classifier' ORDER BY event_ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Precision",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "description": "Último valor de recall do modelo producao_consumo_defice_classifier",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.7
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 51
+      },
+      "id": 58,
+      "options": {
+        "colorMode": "background",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT recall AS value FROM iceberg.gold.ml_training_metrics WHERE registered_model = 'producao_consumo_defice_classifier' ORDER BY event_ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Recall",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "description": "Último valor de f1 do modelo producao_consumo_defice_classifier",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.7
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 51
+      },
+      "id": 59,
+      "options": {
+        "colorMode": "background",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 0,
+          "rawSQL": "SELECT f1 AS value FROM iceberg.gold.ml_training_metrics WHERE registered_model = 'producao_consumo_defice_classifier' ORDER BY event_ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "F1 Score",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "trino-datasource",
+        "uid": "trino-iceberg"
+      },
+      "description": "Evolução temporal do F1 e ROC-AUC para o classificador de défice",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 3,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 3,
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 55
+      },
+      "id": 60,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSQL": "SELECT event_ts AS time, f1 AS value, 'f1' AS metric FROM iceberg.gold.ml_training_metrics WHERE registered_model = 'producao_consumo_defice_classifier' ORDER BY event_ts",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "trino-datasource",
+            "uid": "trino-iceberg"
+          },
+          "format": 1,
+          "rawSQL": "SELECT event_ts AS time, roc_auc AS value, 'roc_auc' AS metric FROM iceberg.gold.ml_training_metrics WHERE registered_model = 'producao_consumo_defice_classifier' ORDER BY event_ts",
+          "refId": "B"
+        }
+      ],
+      "title": "Histórico de qualidade do modelo (F1 vs ROC-AUC)",
+      "type": "timeseries"
     }
   ],
   "refresh": "5m",

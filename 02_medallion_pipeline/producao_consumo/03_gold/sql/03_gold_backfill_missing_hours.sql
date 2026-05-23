@@ -122,7 +122,20 @@ SELECT *
 FROM filled;
 
 -- ETAPA 5) Inserir na tabela principal apenas as horas missing imputadas
-INSERT INTO iceberg.gold.dp_energia_balance_hourly
+INSERT INTO iceberg.gold.dp_energia_balance_hourly (
+    timestamp_utc,
+    consumo_total_kwh,
+    producao_total_kwh,
+    producao_dgm_kwh,
+    producao_pre_kwh,
+    saldo_kwh,
+    ratio_producao_consumo,
+    flag_defice,
+    flag_excedente,
+    flag_missing_source,
+    ano,
+    mes
+)
 SELECT
     timestamp_utc,
     consumo_total_kwh,
@@ -146,7 +159,9 @@ SELECT
          AND producao_total_kwh > consumo_total_kwh
         THEN true ELSE false
     END AS flag_excedente,
-    true AS flag_missing_source
+    true AS flag_missing_source,
+    year(timestamp_utc) AS ano,
+    month(timestamp_utc) AS mes
 FROM iceberg.gold.gold_hourly_missing_filled;
 
 -- ETAPA 6) Check rápido: quantas horas continuam em falta

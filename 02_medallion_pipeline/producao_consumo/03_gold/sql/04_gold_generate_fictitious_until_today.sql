@@ -5,6 +5,10 @@
 --   da tabela gold até a hora atual (UTC), preenchendo TODAS as colunas.
 -- Regra adicional:
 --   Não gerar valores numéricos a zero para linhas fictícias.
+-- Estratégia de realismo:
+--   1) Aprende perfis horários e semanais com histórico real (flag_missing_source=false)
+--   2) Preserva relação produção/consumo observada na mesma hora
+--   3) Adiciona ruído determinístico suave (sem quebras abruptas)
 -- Tabela alvo:
 --   iceberg.gold.dp_energia_balance_hourly
 -- =====================================================
@@ -28,26 +32,6 @@ last_ts AS (
     SELECT MAX(timestamp_utc) AS max_ts
     FROM iceberg.gold.dp_energia_balance_hourly
 ),
-base_values AS (
-    SELECT
-        COALESCE(
-            max_by(consumo_total_kwh, timestamp_utc) FILTER (WHERE consumo_total_kwh IS NOT NULL AND consumo_total_kwh > 0),
-            50000.0
-        ) AS base_consumo,
-        COALESCE(
-            max_by(producao_total_kwh, timestamp_utc) FILTER (WHERE producao_total_kwh IS NOT NULL AND producao_total_kwh > 0),
-            62000.0
-        ) AS base_producao,
-        COALESCE(
-            max_by(producao_dgm_kwh, timestamp_utc) FILTER (WHERE producao_dgm_kwh IS NOT NULL AND producao_dgm_kwh > 0),
-            29000.0
-        ) AS base_dgm,
-        COALESCE(
-            max_by(producao_pre_kwh, timestamp_utc) FILTER (WHERE producao_pre_kwh IS NOT NULL AND producao_pre_kwh > 0),
-            33000.0
-        ) AS base_pre
-    FROM iceberg.gold.dp_energia_balance_hourly
-),
 range_limits AS (
     SELECT
         date_add('hour', 1, date_trunc('hour', max_ts)) AS start_ts,
@@ -66,72 +50,112 @@ range_hours AS (
         )
     ) AS t(ts)
 ),
-synthetic_raw AS (
+hist AS (
     SELECT
-        r.timestamp_utc,
-        GREATEST(
-            100.0,
-            b.base_consumo
-            * (1 + 0.10 * sin(2 * pi() * (hour(r.timestamp_utc) / 24.0)))
-            * (1 + 0.02 * sin(2 * pi() * (day_of_year(r.timestamp_utc) / 365.0)))
-        ) AS consumo_total_kwh,
-        GREATEST(
-            120.0,
-            b.base_producao
-            * (1 + 0.12 * sin(2 * pi() * ((hour(r.timestamp_utc) - 2) / 24.0)))
-            * (1 + 0.02 * sin(2 * pi() * (day_of_year(r.timestamp_utc) / 365.0)))
-        ) AS producao_total_kwh,
-        GREATEST(
-            60.0,
-            b.base_dgm
-            * (1 + 0.11 * sin(2 * pi() * ((hour(r.timestamp_utc) - 1) / 24.0)))
-            * (1 + 0.02 * sin(2 * pi() * (day_of_year(r.timestamp_utc) / 365.0)))
-        ) AS producao_dgm_kwh,
-        GREATEST(
-            60.0,
-            b.base_pre
-            * (1 + 0.13 * sin(2 * pi() * ((hour(r.timestamp_utc) - 3) / 24.0)))
-            * (1 + 0.02 * sin(2 * pi() * (day_of_year(r.timestamp_utc) / 365.0)))
-        ) AS producao_pre_kwh
-    FROM range_hours r
-    CROSS JOIN base_values b
+        timestamp_utc,
+        hour(timestamp_utc) AS h,
+        day_of_week(timestamp_utc) AS dow,
+        month(timestamp_utc) AS m,
+        consumo_total_kwh,
+        producao_total_kwh,
+        producao_dgm_kwh,
+        producao_pre_kwh,
+        GREATEST(0.000001, producao_total_kwh / NULLIF(consumo_total_kwh, 0.0)) AS ratio_pc,
+        GREATEST(0.0, producao_dgm_kwh / NULLIF(producao_total_kwh, 0.0)) AS share_dgm
+    FROM iceberg.gold.dp_energia_balance_hourly
+    WHERE flag_missing_source = false
+      AND consumo_total_kwh > 0
+      AND producao_total_kwh > 0
+),
+global_stats AS (
+    SELECT
+        COALESCE(avg(consumo_total_kwh), 50000.0) AS avg_consumo,
+        COALESCE(avg(producao_total_kwh), 62000.0) AS avg_producao,
+        COALESCE(avg(ratio_pc), 1.12) AS avg_ratio_pc,
+        COALESCE(avg(share_dgm), 0.47) AS avg_share_dgm
+    FROM hist
+),
+profile_hour AS (
+    SELECT
+        h,
+        avg(consumo_total_kwh) AS avg_consumo_h,
+        avg(ratio_pc) AS avg_ratio_pc_h,
+        avg(share_dgm) AS avg_share_dgm_h
+    FROM hist
+    GROUP BY 1
+),
+profile_dow AS (
+    SELECT
+        dow,
+        avg(consumo_total_kwh) AS avg_consumo_dow
+    FROM hist
+    GROUP BY 1
+),
+profile_month AS (
+    SELECT
+        m,
+        avg(consumo_total_kwh) AS avg_consumo_m
+    FROM hist
+    GROUP BY 1
+),
+seasonal_factors AS (
+    SELECT
+        h.h,
+        h.avg_consumo_h / NULLIF(g.avg_consumo, 0.0) AS fator_hora,
+        h.avg_ratio_pc_h AS ratio_pc_h,
+        h.avg_share_dgm_h AS share_dgm_h
+    FROM profile_hour h
+    CROSS JOIN global_stats g
 ),
 synthetic AS (
     SELECT
-        timestamp_utc,
-        consumo_total_kwh,
-        -- Evita séries quase idênticas: aplica spread horário + componente pseudoaleatória
-        -- determinística por timestamp, preservando produção > consumo.
+        r.timestamp_utc,
+        -- Consumo com fatores por hora + dia da semana + mês + ruído determinístico suave
         GREATEST(
-            consumo_total_kwh * 1.03,
-            producao_total_kwh * (
-                1.04
-                + 0.05 * sin(2 * pi() * ((hour(timestamp_utc) + 6) / 24.0))
-                + 0.03 * (
-                    (abs(from_big_endian_64(xxhash64(to_utf8(CAST(timestamp_utc AS varchar))))) % 1000) / 1000.0
+            100.0,
+            g.avg_consumo
+            * COALESCE(sf.fator_hora, 1.0)
+            * COALESCE(pd.avg_consumo_dow / NULLIF(g.avg_consumo, 0.0), 1.0)
+            * COALESCE(pm.avg_consumo_m / NULLIF(g.avg_consumo, 0.0), 1.0)
+            * (
+                1.0
+                + 0.018 * sin(2 * pi() * (hour(r.timestamp_utc) / 24.0))
+                + 0.012 * (
+                    (abs(from_big_endian_64(xxhash64(to_utf8(CAST(r.timestamp_utc AS varchar))))) % 1000) / 1000.0
                     - 0.5
                 )
             )
-        ) AS producao_total_kwh,
-        producao_dgm_kwh,
-        producao_pre_kwh,
-        true AS flag_missing_source
-    FROM synthetic_raw
+        ) AS consumo_total_kwh,
+        COALESCE(sf.ratio_pc_h, g.avg_ratio_pc) AS ratio_pc,
+        COALESCE(sf.share_dgm_h, g.avg_share_dgm) AS share_dgm
+    FROM range_hours r
+    CROSS JOIN global_stats g
+    LEFT JOIN seasonal_factors sf ON sf.h = hour(r.timestamp_utc)
+    LEFT JOIN profile_dow pd ON pd.dow = day_of_week(r.timestamp_utc)
+    LEFT JOIN profile_month pm ON pm.m = month(r.timestamp_utc)
+),
+final_values AS (
+    SELECT
+        timestamp_utc,
+        consumo_total_kwh,
+        GREATEST(consumo_total_kwh * 1.01, consumo_total_kwh * ratio_pc) AS producao_total_kwh,
+        LEAST(0.95, GREATEST(0.05, share_dgm)) AS share_dgm
+    FROM synthetic
 )
 SELECT
     timestamp_utc,
     consumo_total_kwh,
     producao_total_kwh,
-    producao_dgm_kwh,
-    producao_pre_kwh,
+    producao_total_kwh * share_dgm AS producao_dgm_kwh,
+    producao_total_kwh * (1.0 - share_dgm) AS producao_pre_kwh,
     producao_total_kwh - consumo_total_kwh AS saldo_kwh,
     GREATEST(0.000001, producao_total_kwh / consumo_total_kwh) AS ratio_producao_consumo,
     false AS flag_defice,
     true AS flag_excedente,
-    flag_missing_source,
+    true AS flag_missing_source,
     year(timestamp_utc) AS ano,
     month(timestamp_utc) AS mes
-FROM synthetic;
+FROM final_values;
 
 -- Check rápido de cobertura gerada
 SELECT

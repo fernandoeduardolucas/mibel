@@ -17,15 +17,20 @@ import socket
 import tempfile
 from datetime import datetime, timezone
 
-DEFAULT_FEATURE_TABLE_CANDIDATES = (
-    "iceberg.gold.feat_load_forecasting_api_hourly",
-    "iceberg.gold.feat_load_forecasting_hourly",
+DEFAULT_FEATURE_TABLE_NAMES = (
+    "feat_load_forecasting_api_hourly",
+    "feat_load_forecasting_hourly",
 )
+DEFAULT_FEATURE_TABLE_CANDIDATES = tuple(f"iceberg.gold.{name}" for name in DEFAULT_FEATURE_TABLE_NAMES)
 FEATURE_TABLE = os.getenv("FEATURE_TABLE", DEFAULT_FEATURE_TABLE_CANDIDATES[0])
 
-DEFAULT_DP_TABLE_CANDIDATES = (
-    "iceberg.gold.dp_energy_market_api_hourly",
-    "iceberg.gold.dp_energy_market_hourly",
+DEFAULT_DP_TABLE_NAMES = (
+    "dp_energy_market_api_hourly",
+    "dp_energy_market_hourly",
+)
+DEFAULT_DP_TABLE_CANDIDATES = tuple(f"iceberg.gold.{name}" for name in DEFAULT_DP_TABLE_NAMES)
+TABLE_SEARCH_SCHEMAS = tuple(
+    schema.strip() for schema in os.getenv("TABLE_SEARCH_SCHEMAS", "gold").split(",") if schema.strip()
 )
 
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
@@ -55,6 +60,34 @@ def _table_exists(cur, table_fqn: str) -> bool:
     return len(cur.fetchall()) > 0
 
 
+def _find_existing_table_in_any_catalog(cur, table_names: tuple[str, ...], schema_candidates: tuple[str, ...] = TABLE_SEARCH_SCHEMAS) -> str | None:
+    """Procura tabelas em múltiplos catálogos e schemas visíveis ao utilizador Trino."""
+    cur.execute("SHOW CATALOGS")
+    catalogs = [row[0] for row in cur.fetchall()]
+
+    for catalog in catalogs:
+        if catalog == "system":
+            continue
+        try:
+            cur.execute(f"SHOW SCHEMAS FROM {catalog}")
+            schemas = [row[0] for row in cur.fetchall()]
+        except Exception:
+            continue
+
+        # prioriza schemas configurados; depois tenta os restantes
+        prioritized = [s for s in schema_candidates if s in schemas]
+        remaining = [s for s in schemas if s not in prioritized]
+        for schema_name in prioritized + remaining:
+            for table_name in table_names:
+                candidate = f"{catalog}.{schema_name}.{table_name}"
+                try:
+                    if _table_exists(cur, candidate):
+                        return candidate
+                except Exception:
+                    continue
+    return None
+
+
 def _resolve_feature_table(cur) -> str:
     if FEATURE_TABLE:
         if "." in FEATURE_TABLE and FEATURE_TABLE.count(".") >= 2 and _table_exists(cur, FEATURE_TABLE):
@@ -63,6 +96,10 @@ def _resolve_feature_table(cur) -> str:
     for candidate in DEFAULT_FEATURE_TABLE_CANDIDATES:
         if _table_exists(cur, candidate):
             return candidate
+
+    any_catalog_match = _find_existing_table_in_any_catalog(cur, DEFAULT_FEATURE_TABLE_NAMES)
+    if any_catalog_match:
+        return any_catalog_match
 
     raise ValueError(
         "Nenhuma feature table encontrada. Esperado uma destas tabelas: "
@@ -75,6 +112,11 @@ def _resolve_dp_table(cur) -> str:
     for candidate in DEFAULT_DP_TABLE_CANDIDATES:
         if _table_exists(cur, candidate):
             return candidate
+
+    any_catalog_match = _find_existing_table_in_any_catalog(cur, DEFAULT_DP_TABLE_NAMES)
+    if any_catalog_match:
+        return any_catalog_match
+
     raise ValueError(
         "Nenhuma tabela base DP encontrada para construir features on-the-fly. Esperado uma destas tabelas: "
         + ", ".join(DEFAULT_DP_TABLE_CANDIDATES)
@@ -154,14 +196,52 @@ def _create_feature_table_if_missing(cur, feature_table_fqn: str) -> bool:
     cur.fetchall()
     return True
 
+
+def _create_dp_table_if_missing(cur, dp_table_fqn: str) -> bool:
+    """Cria a tabela DP base se não existir. Retorna True se criou."""
+    if _table_exists(cur, dp_table_fqn):
+        return False
+
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS {dp_table_fqn} (
+            ts_utc                  TIMESTAMP(6) WITH TIME ZONE,
+            consumo_total           DOUBLE,
+            market_price_pt         DOUBLE,
+            hora                    INTEGER,
+            dia_semana              INTEGER,
+            is_weekend              BOOLEAN,
+            consumo_lag_1h          DOUBLE,
+            consumo_lag_24h         DOUBLE,
+            price_lag_1h            DOUBLE,
+            rolling_avg_consumo_24h DOUBLE,
+            rolling_avg_price_24h   DOUBLE,
+            process_date            DATE,
+            year                    INTEGER,
+            month                   INTEGER
+        )
+        WITH (
+            format = 'PARQUET',
+            partitioning = ARRAY['year', 'month']
+        )
+    """)
+    cur.fetchall()
+    return True
+
+
+def _ensure_base_tables(cur) -> None:
+    """Garante que as tabelas base padrão existem no catálogo iceberg.gold."""
+    _create_dp_table_if_missing(cur, "iceberg.gold.dp_energy_market_api_hourly")
+    _create_dp_table_if_missing(cur, "iceberg.gold.dp_energy_market_hourly")
+    _create_feature_table_if_missing(cur, "iceberg.gold.feat_load_forecasting_api_hourly")
+    _create_feature_table_if_missing(cur, "iceberg.gold.feat_load_forecasting_hourly")
+
 def _load_data():
     import pandas as pd
 
     conn = _get_conn()
     cur = conn.cursor()
     try:
-        _create_feature_table_if_missing(cur, "iceberg.gold.feat_load_forecasting_api_hourly")
-        _create_feature_table_if_missing(cur, "iceberg.gold.feat_load_forecasting_hourly")
+        _ensure_base_tables(cur)
         try:
             table_fqn = _resolve_feature_table(cur)
             sql = f"""

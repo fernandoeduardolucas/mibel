@@ -32,7 +32,7 @@ WITH (
   partitioning = ARRAY['day(event_ts)']
 );
 
--- 1) Kafka -> Bronze
+-- 1) Kafka -> Bronze (incremental por event_id)
 INSERT INTO iceberg.bronze.producao_consumo_streaming
 SELECT
   event_id,
@@ -42,9 +42,14 @@ SELECT
   saldo_kwh,
   origem,
   current_timestamp(6) AS ingest_ts
-FROM kafka.default.producao_consumo_events;
+FROM kafka.default.producao_consumo_events k
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM iceberg.bronze.producao_consumo_streaming b
+  WHERE b.event_id = k.event_id
+);
 
--- 2) Bronze -> Gold (deduplicação por event_id + enriquecimento)
+-- 2) Bronze -> Gold (incremental por event_id + enriquecimento)
 INSERT INTO iceberg.gold.dp_producao_consumo_streaming
 SELECT
   event_id,
@@ -60,9 +65,9 @@ SELECT
   saldo_kwh > 0 AS flag_excedente,
   origem,
   ingest_ts
-FROM (
-  SELECT *,
-         ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY ingest_ts DESC) AS rn
-  FROM iceberg.bronze.producao_consumo_streaming
-)
-WHERE rn = 1;
+FROM iceberg.bronze.producao_consumo_streaming b
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM iceberg.gold.dp_producao_consumo_streaming g
+  WHERE g.event_id = b.event_id
+);

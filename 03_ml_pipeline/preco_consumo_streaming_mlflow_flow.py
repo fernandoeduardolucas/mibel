@@ -17,16 +17,18 @@ import socket
 import tempfile
 from datetime import datetime, timezone
 
-DEFAULT_FEATURE_TABLE_CANDIDATES = (
-    "iceberg.gold.feat_load_forecasting_api_hourly",
-    "iceberg.gold.feat_load_forecasting_hourly",
+DEFAULT_FEATURE_TABLE_NAMES = (
+    "feat_load_forecasting_api_hourly",
+    "feat_load_forecasting_hourly",
 )
+DEFAULT_FEATURE_TABLE_CANDIDATES = tuple(f"iceberg.gold.{name}" for name in DEFAULT_FEATURE_TABLE_NAMES)
 FEATURE_TABLE = os.getenv("FEATURE_TABLE", DEFAULT_FEATURE_TABLE_CANDIDATES[0])
 
-DEFAULT_DP_TABLE_CANDIDATES = (
-    "iceberg.gold.dp_energy_market_api_hourly",
-    "iceberg.gold.dp_energy_market_hourly",
+DEFAULT_DP_TABLE_NAMES = (
+    "dp_energy_market_api_hourly",
+    "dp_energy_market_hourly",
 )
+DEFAULT_DP_TABLE_CANDIDATES = tuple(f"iceberg.gold.{name}" for name in DEFAULT_DP_TABLE_NAMES)
 
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
@@ -55,6 +57,23 @@ def _table_exists(cur, table_fqn: str) -> bool:
     return len(cur.fetchall()) > 0
 
 
+def _find_existing_table_in_any_catalog(cur, table_names: tuple[str, ...], schema_name: str = "gold") -> str | None:
+    """Procura a tabela no schema indicado em qualquer catálogo disponível no Trino."""
+    for table_name in table_names:
+        cur.execute("SHOW CATALOGS")
+        catalogs = [row[0] for row in cur.fetchall()]
+        for catalog in catalogs:
+            if catalog == "system":
+                continue
+            candidate = f"{catalog}.{schema_name}.{table_name}"
+            try:
+                if _table_exists(cur, candidate):
+                    return candidate
+            except Exception:
+                continue
+    return None
+
+
 def _resolve_feature_table(cur) -> str:
     if FEATURE_TABLE:
         if "." in FEATURE_TABLE and FEATURE_TABLE.count(".") >= 2 and _table_exists(cur, FEATURE_TABLE):
@@ -63,6 +82,10 @@ def _resolve_feature_table(cur) -> str:
     for candidate in DEFAULT_FEATURE_TABLE_CANDIDATES:
         if _table_exists(cur, candidate):
             return candidate
+
+    any_catalog_match = _find_existing_table_in_any_catalog(cur, DEFAULT_FEATURE_TABLE_NAMES)
+    if any_catalog_match:
+        return any_catalog_match
 
     raise ValueError(
         "Nenhuma feature table encontrada. Esperado uma destas tabelas: "
@@ -75,6 +98,11 @@ def _resolve_dp_table(cur) -> str:
     for candidate in DEFAULT_DP_TABLE_CANDIDATES:
         if _table_exists(cur, candidate):
             return candidate
+
+    any_catalog_match = _find_existing_table_in_any_catalog(cur, DEFAULT_DP_TABLE_NAMES)
+    if any_catalog_match:
+        return any_catalog_match
+
     raise ValueError(
         "Nenhuma tabela base DP encontrada para construir features on-the-fly. Esperado uma destas tabelas: "
         + ", ".join(DEFAULT_DP_TABLE_CANDIDATES)

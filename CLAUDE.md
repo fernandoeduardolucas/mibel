@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MIBEL is a local-first energy analytics platform for Portugal's electricity market. It implements a **medallion data architecture** (Bronze → Silver → Gold) with three independent data products (DPs), ML pipelines, and HTTP API + static HTML frontend layers. All infrastructure runs via Docker Compose.
+MIBEL is a local-first energy analytics platform for Portugal's electricity market. It implements a **medallion data architecture** (Bronze → Silver → Gold) with three independent data products (DPs), ML pipelines, and Grafana dashboards for visualization. All infrastructure runs via Docker Compose.
 
 ## Infrastructure
 
@@ -75,7 +75,16 @@ AWS_SECRET_ACCESS_KEY=minioadmin
 
 Flyte config files: `01_docker_stack/flyte/Dockerfile` + `flyte-core-overrides.yaml`.
 
-**Flyte execution model** — Workflows always run **locally** (not submitted to the remote K3s cluster) via `python -m flytekit.clis.sdk_in_container.pyflyte run`. DP-01 has a single monolithic `flyte_workflow.py`; DP-02 has modular tasks under `workflows/` (one file per layer); DP-03 has no Flyte workflow — it is orchestrated directly by the run script.
+**Flyte execution model** — Two modes depending on the data product:
+
+| DP | Flyte mode | Notes |
+| --- | --- | --- |
+| DP-01 | Local | Monolithic `flyte_workflow.py`; tasks run in local Python process |
+| DP-02 Static | **Remote** | Modular `workflows/` (one file per layer); tasks run in K3s pods; sandbox managed by `run_medallion_consumo_precos.py` |
+| DP-02 Streaming | Local | Tasks run in local Python process |
+| DP-03 | None | Orchestrated directly by run script (no Flyte) |
+
+**DP-02 Static remote execution** — The orchestrator auto-starts the sandbox if not running (builds `mibel-flyte:latest` from `01_docker_stack/flyte/Dockerfile`, then `docker run --privileged`). Tasks in K3s pods connect to Trino/MinIO via `host.docker.internal`. Fast registration (`--copy all`) uploads local code (including `04_quality/sql/`) to MinIO `flyte/` bucket. A `.flyteignore` at `Static_Data/` excludes raw CSVs from the upload. Flyte config: `workflows/flyte-config.yaml`.
 
 ## Data Pipeline Commands
 
@@ -96,6 +105,21 @@ python 02_medallion_pipeline/meteo_producao/run_medallion_meteo_producao.py --sk
 ```
 
 The orchestrators handle: Docker readiness checks, Python venv creation, DDL execution via Trino, Silver/Gold transformations, and quality gates. They are idempotent — safe to re-run.
+
+DP-02 static pipeline supports additional granular flags:
+
+- `--skip-docker` — skip compose up (stack already running)
+- `--skip-ddl` — skip DDL re-application (tables already created)
+- `--skip-upload` — skip re-uploading CSVs to MinIO
+- `--skip-flyte` — skip Flyte sandbox check/start (sandbox already running externally)
+- `--no-quality` — skip quality gates (useful in dev)
+- `--year YYYY --month M` — run for a specific month only
+
+Quick re-run when stack + sandbox are already running:
+
+```powershell
+python 02_medallion_pipeline/DP02_Consumo_Preco/Static_Data/run_medallion_consumo_precos.py --skip-docker --skip-ddl --skip-flyte
+```
 
 ### Python Virtual Environments
 
@@ -125,36 +149,22 @@ python 03_ml_pipeline/meteo_producao_mlflow_flow.py     # DP-03: RF production f
 
 Results visible at <http://localhost:15000>.
 
-## Application Backends
+## Grafana Dashboards
 
-No framework — backends use raw Python `BaseHTTPRequestHandler`. Run from each backend's own directory:
+All three data products are served exclusively via Grafana (auto-provisioned from `04_application/grafana/`):
+
+| DP | Dashboard |
+| --- | --- |
+| DP-01 | `producao_consumo_overview.json` |
+| DP-02 Static | `consumo_preco_overview.json` |
+| DP-02 Streaming | `consumo_preco_streaming_overview.json` |
+| DP-03 | `meteo_producao_overview.json` |
+
+Reload dashboards without restarting the stack:
 
 ```powershell
-# DP-01 (port 8081) — has server.py wrapper at backend root
-cd 04_application/producao_consumo/backend && python server.py
-
-# DP-02 (port 8000)
-cd 04_application/backend/consumo_preco && python server.py
-
-# DP-03 (port 8083) — no server.py; use -m to resolve app imports
-cd 04_application/meteo_producao/backend && python -m app.main
+curl -X POST http://localhost:3300/api/admin/provisioning/dashboards/reload -u admin:admin
 ```
-
-Open frontends directly in a browser (static HTML files under `04_application/*/frontend/index.html`).
-
-### Backend Configuration
-
-DP-02 (`consumo_preco`) reads all connection settings from environment variables with sensible defaults:
-
-```text
-TRINO_HOST=localhost       TRINO_PORT=8080
-TRINO_USER=admin           TRINO_CATALOG=iceberg
-TRINO_SCHEMA=gold          TRINO_TABLE=dp_energy_market_hourly
-API_HOST=0.0.0.0           PORT=8000
-CACHE_TTL_SECONDS=60
-```
-
-DP-01 and DP-03 backends use hardcoded `localhost:8080` Trino defaults in their `config.py` files.
 
 ## Architecture
 
@@ -165,7 +175,7 @@ Raw Sources (CSV upload / Open-Meteo API)
   └─> BRONZE  — raw ingest; Hive external tables + Iceberg managed; Parquet on MinIO
   └─> SILVER  — deduplication, range validation, quality flags (Portugal-specific rules)
   └─> GOLD    — joins, aggregations, lag/rolling features; ML-ready and query-ready
-  └─> Applications (HTTP APIs) + Grafana dashboards + ML training
+  └─> Grafana dashboards + ML training (MLflow)
 ```
 
 SQL DDL and transformation scripts live under each layer directory:
@@ -181,16 +191,6 @@ Python fetch scripts (for APIs/CSV uploads) live in `01_bronze/scripts/python/`.
 There are **no unit tests** — quality assurance is done entirely via SQL checks in `02_medallion_pipeline/<dp_name>/04_quality/sql/`. Each DP has a set of SQL files that query Bronze, Silver, and Gold tables and return `PASS / WARN / FAIL` statuses with percentage thresholds. The orchestrators run these after each layer transform and abort on failures.
 
 Quality checks cover: null rates, duplicate detection, out-of-range values (Portugal-specific rules), daily completeness, deduplication verification, join integrity, and lag/rolling feature validity.
-
-### Backend MVC Pattern
-
-All three backends follow the same structure:
-
-```text
-HTTP Handler (route) → Controller → Service → Repository → Trino Client
-```
-
-Each backend directory contains `models/`, `controllers/`, `services/`, `repositories/` packages.
 
 ### Data Products
 

@@ -25,15 +25,26 @@ from io import BytesIO
 import boto3
 import pandas as pd
 import trino
-from flytekit import task, workflow
+from flytekit import task, workflow, ImageSpec
+
+# ---------------------------------------------------------------------------
+# ImageSpec — container para execução remota em Flyte (K3s)
+# Define a imagem de container para execução remota em Flyte (K3s).
+# Em execução local (sem --remote) este parâmetro é ignorado.
+# ---------------------------------------------------------------------------
+ingest_image = ImageSpec(
+    name="dp02_ingest_bronze",
+    registry="localhost:30000",
+    packages=["trino>=0.328.0", "boto3>=1.34.0", "pandas>=2.2.0"],
+)
 
 # ---------------------------------------------------------------------------
 # Configuração (via variáveis de ambiente para portabilidade)
 # ---------------------------------------------------------------------------
-TRINO_HOST       = os.getenv("TRINO_HOST", "localhost")
+TRINO_HOST       = os.getenv("TRINO_HOST", "host.docker.internal")
 TRINO_PORT       = int(os.getenv("TRINO_PORT", "8080"))
 
-MINIO_ENDPOINT   = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
+MINIO_ENDPOINT   = os.getenv("MINIO_ENDPOINT", "http://host.docker.internal:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 RAW_BUCKET       = os.getenv("RAW_BUCKET", "warehouse")
@@ -120,7 +131,7 @@ def _exec(cur, sql: str) -> None:
 # ---------------------------------------------------------------------------
 # Task: ingestão completa de consumo (todos os dias)
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, container_image=ingest_image)
 def ingest_consumo_full() -> int:
     """
     Lê consumo-total-nacional.csv completo do MinIO e carrega em Bronze.
@@ -192,7 +203,7 @@ def ingest_consumo_full() -> int:
 # ---------------------------------------------------------------------------
 # Task: ingestão completa de preços (todos os dias)
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, container_image=ingest_image)
 def ingest_preco_full() -> int:
     """
     Lê o CSV de preços day-ahead completo do MinIO e carrega em Bronze.

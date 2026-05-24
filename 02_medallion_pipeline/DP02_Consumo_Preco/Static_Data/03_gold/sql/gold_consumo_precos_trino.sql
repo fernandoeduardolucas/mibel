@@ -7,7 +7,8 @@
 -- -----------------------------------------------------------------------------
 -- Schema
 -- -----------------------------------------------------------------------------
-CREATE SCHEMA IF NOT EXISTS iceberg.gold;
+CREATE SCHEMA IF NOT EXISTS iceberg.gold
+WITH (location = 's3a://warehouse/gold/');
 
 -- -----------------------------------------------------------------------------
 -- Tabela 1: dp_energy_market_hourly
@@ -16,39 +17,31 @@ CREATE SCHEMA IF NOT EXISTS iceberg.gold;
 -- Consumidores: dashboard, API, exploração analítica, base para ML
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS iceberg.gold.dp_energy_market_hourly (
-    ts_utc                   TIMESTAMP(6) WITH TIME ZONE,  -- chave de negócio (UTC)
-    consumo_total            DOUBLE,                        -- consumo horário em MWh
-    market_price_pt          DOUBLE,                        -- preço PT em €/MWh
-    hora                     INTEGER,                       -- hora do dia (0-23)
-    dia_semana               INTEGER,                       -- dia da semana (0=Seg … 6=Dom)
-    is_weekend               BOOLEAN,                       -- indicador fim de semana
-    consumo_lag_1h           DOUBLE,                        -- consumo da hora anterior
-    consumo_lag_24h          DOUBLE,                        -- consumo da mesma hora dia anterior
-    price_lag_1h             DOUBLE,                        -- preço da hora anterior
-    rolling_avg_consumo_24h  DOUBLE,                        -- média móvel consumo 24h
-    rolling_avg_price_24h    DOUBLE,                        -- média móvel preço 24h
-    process_date             DATE,                          -- data lógica da execução
-    year                     INTEGER,                       -- ano (partição)
-    month                    INTEGER                        -- mês (partição)
+    ts_utc                   TIMESTAMP(6) WITH TIME ZONE,
+    consumo_total            DOUBLE,
+    market_price_pt          DOUBLE,
+    hora                     INTEGER,
+    dia_semana               INTEGER,
+    is_weekend               BOOLEAN,
+    consumo_lag_1h           DOUBLE,
+    consumo_lag_24h          DOUBLE,
+    price_lag_1h             DOUBLE,
+    rolling_avg_consumo_24h  DOUBLE,
+    rolling_avg_price_24h    DOUBLE,
+    process_date             DATE,
+    year                     INTEGER,
+    month                    INTEGER
 )
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['year', 'month'],
-    extra_properties = MAP(
-        ARRAY['layer', 'data_product', 'schema_version', 'product_version', 'deprecated', 'domain', 'grain'],
-        ARRAY['gold', 'dp_energy_market_hourly', '1', 'v1', 'false', 'consumo_preco', 'hourly']
-    ),
     location = 's3a://warehouse/gold/dp_energy_market_hourly/'
 );
 
 ALTER TABLE iceberg.gold.dp_energy_market_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'data_product', 'schema_version', 'product_version', 'deprecated', 'domain', 'grain'],
-        ARRAY['gold', 'dp_energy_market_hourly', '1', 'v1', 'false', 'consumo_preco', 'hourly']
-    );
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.gold.dp_energy_market_hourly IS
 'Produto Gold principal: consumo elétrico nacional horário integrado com preço day-ahead MIBEL PT. Inclui features temporais e de lag para análise e serving.';
@@ -73,40 +66,32 @@ COMMENT ON COLUMN iceberg.gold.dp_energy_market_hourly.process_date IS 'Data ló
 -- Consumidores: workflow de treino ML, MLflow
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS iceberg.gold.feat_load_forecasting_hourly (
-    ts_utc                   TIMESTAMP(6) WITH TIME ZONE,  -- chave temporal
-    consumo_total            DOUBLE,                        -- feature: consumo atual
-    market_price_pt          DOUBLE,                        -- feature: preço atual
-    hora                     INTEGER,                       -- feature: hora do dia
-    dia_semana               INTEGER,                       -- feature: dia da semana
-    is_weekend               BOOLEAN,                       -- feature: fim de semana
-    consumo_lag_1h           DOUBLE,                        -- feature: lag 1h consumo
-    consumo_lag_24h          DOUBLE,                        -- feature: lag 24h consumo
-    price_lag_1h             DOUBLE,                        -- feature: lag 1h preço
-    rolling_avg_consumo_24h  DOUBLE,                        -- feature: rolling avg consumo
-    rolling_avg_price_24h    DOUBLE,                        -- feature: rolling avg preço
-    consumo_next_hour        DOUBLE,                        -- TARGET: consumo da hora seguinte
-    process_date             DATE,                          -- data lógica da execução
-    year                     INTEGER,                       -- ano (partição)
-    month                    INTEGER                        -- mês (partição)
+    ts_utc                   TIMESTAMP(6) WITH TIME ZONE,
+    consumo_total            DOUBLE,
+    market_price_pt          DOUBLE,
+    hora                     INTEGER,
+    dia_semana               INTEGER,
+    is_weekend               BOOLEAN,
+    consumo_lag_1h           DOUBLE,
+    consumo_lag_24h          DOUBLE,
+    price_lag_1h             DOUBLE,
+    rolling_avg_consumo_24h  DOUBLE,
+    rolling_avg_price_24h    DOUBLE,
+    consumo_next_hour        DOUBLE,
+    process_date             DATE,
+    year                     INTEGER,
+    month                    INTEGER
 )
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['year', 'month'],
-    extra_properties = MAP(
-        ARRAY['layer', 'data_product', 'schema_version', 'feature_schema_version', 'product_version', 'deprecated', 'upstream_table'],
-        ARRAY['gold', 'feat_load_forecasting_hourly', '1', '1', 'v1', 'false', 'gold.dp_energy_market_hourly']
-    ),
     location = 's3a://warehouse/gold/feat_load_forecasting_hourly/'
 );
 
 ALTER TABLE iceberg.gold.feat_load_forecasting_hourly
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'data_product', 'schema_version', 'feature_schema_version', 'product_version', 'deprecated', 'upstream_table'],
-        ARRAY['gold', 'feat_load_forecasting_hourly', '1', '1', 'v1', 'false', 'gold.dp_energy_market_hourly']
-    );
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.gold.feat_load_forecasting_hourly IS
 'Feature table Gold para treino de modelos de previsão de consumo horário. Derivada do produto analítico principal com adição do target consumo_next_hour.';

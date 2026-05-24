@@ -23,10 +23,19 @@ import re
 from pathlib import Path
 
 import trino
-from flytekit import task, workflow
+from flytekit import task, workflow, ImageSpec
 from flytekit.exceptions.user import FlyteRecoverableException
 
-TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
+# ---------------------------------------------------------------------------
+# ImageSpec — container para execução remota em Flyte (K3s)
+# ---------------------------------------------------------------------------
+quality_image = ImageSpec(
+    name="dp02_quality",
+    registry="localhost:30000",
+    packages=["trino>=0.328.0"],
+)
+
+TRINO_HOST = os.getenv("TRINO_HOST", "host.docker.internal")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
 # Ficheiros SQL em 04_quality/sql/ relativo à raiz do sub-pipeline consumo_preco
@@ -84,7 +93,7 @@ def _run_checks(layer: str) -> list[dict]:
     return rows
 
 
-@task(retries=2)
+@task(retries=2, container_image=quality_image)
 def quality_gate(layer: str) -> int:
     """
     Gate de qualidade para a camada indicada ('bronze', 'silver' ou 'gold').

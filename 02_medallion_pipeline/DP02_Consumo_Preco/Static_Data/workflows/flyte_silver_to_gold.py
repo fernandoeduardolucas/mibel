@@ -17,9 +17,18 @@ from __future__ import annotations
 import os
 
 import trino
-from flytekit import task, workflow
+from flytekit import task, workflow, ImageSpec
 
-TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
+# ---------------------------------------------------------------------------
+# ImageSpec — container para execução remota em Flyte (K3s)
+# ---------------------------------------------------------------------------
+gold_image = ImageSpec(
+    name="dp02_silver_gold",
+    registry="localhost:30000",
+    packages=["trino>=0.328.0"],
+)
+
+TRINO_HOST = os.getenv("TRINO_HOST", "host.docker.internal")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
 
@@ -41,7 +50,7 @@ def _exec(cur, sql: str) -> None:
 # ---------------------------------------------------------------------------
 # Task 1: produto analítico principal — histórico completo
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, container_image=gold_image)
 def build_dp_energy_market_full() -> int:
     """
     Constrói gold.dp_energy_market_hourly para todo o histórico Silver.
@@ -115,7 +124,7 @@ def build_dp_energy_market_full() -> int:
 # ---------------------------------------------------------------------------
 # Task 2: feature table ML — histórico completo
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, container_image=gold_image)
 def build_feat_load_forecasting_full(upstream_rows: int) -> int:
     """
     Constrói gold.feat_load_forecasting_hourly para todo o histórico Gold.

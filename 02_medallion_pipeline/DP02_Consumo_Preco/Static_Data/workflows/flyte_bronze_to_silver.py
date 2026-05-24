@@ -24,9 +24,18 @@ import os
 from datetime import date, timedelta
 
 import trino
-from flytekit import task, workflow
+from flytekit import task, workflow, ImageSpec
 
-TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
+# ---------------------------------------------------------------------------
+# ImageSpec — container para execução remota em Flyte (K3s)
+# ---------------------------------------------------------------------------
+silver_image = ImageSpec(
+    name="dp02_bronze_silver",
+    registry="localhost:30000",
+    packages=["trino>=0.328.0"],
+)
+
+TRINO_HOST = os.getenv("TRINO_HOST", "host.docker.internal")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
 
@@ -58,7 +67,7 @@ def _day_bounds(process_date: date) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 # Task 1: consumo Bronze → Silver
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, container_image=silver_image)
 def transform_consumo_silver(process_date: date) -> int:
     """
     Agrega os registos de 15 min do Bronze num único registo horário UTC.
@@ -108,7 +117,7 @@ def transform_consumo_silver(process_date: date) -> int:
 # ---------------------------------------------------------------------------
 # Task 2: preços Bronze → Silver
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, container_image=silver_image)
 def transform_preco_silver(process_date: date) -> int:
     """
     Normaliza preços day-ahead para timestamp UTC.
@@ -173,7 +182,7 @@ def transform_preco_silver(process_date: date) -> int:
 # ---------------------------------------------------------------------------
 # Task 3: consumo Bronze → Silver completo
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, container_image=silver_image)
 def transform_consumo_silver_full() -> int:
     """
     Agrega todo o histórico de consumo Bronze para Silver.
@@ -207,7 +216,7 @@ def transform_consumo_silver_full() -> int:
 # ---------------------------------------------------------------------------
 # Task 4: preços Bronze → Silver completo
 # ---------------------------------------------------------------------------
-@task(retries=3)
+@task(retries=3, container_image=silver_image)
 def transform_preco_silver_full() -> int:
     """
     Normaliza todo o histórico de preços Bronze para Silver.

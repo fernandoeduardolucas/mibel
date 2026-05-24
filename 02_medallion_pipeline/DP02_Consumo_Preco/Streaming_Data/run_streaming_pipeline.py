@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
 """
-Orquestrador — Streaming_Data pipeline (DP-02 API).
+Orquestrador - Streaming_Data pipeline (DP-02 API).
 
-Obtém dados de consumo e preços via Energy-Charts API (Fraunhofer ISE)
+Obtém dados de consumo e preços via ENTSO-E Transparency Platform
 e executa a pipeline Medallion completa:
-  Bronze (API fetch) → Quality → Silver → Quality → Gold → Quality
+  Bronze (API fetch) -> Quality -> Silver -> Quality -> Gold -> Quality
 
-Fontes:
-  - Consumo horário: https://api.energy-charts.info/total_power?country=pt (ENTSO-E)
-  - Preços horários: https://api.energy-charts.info/price?bzn=PT (OMIE/MIBEL)
+Fontes (ENTSO-E Transparency Platform -- transparency.entsoe.eu):
+  - Consumo horario PT : Actual Total Load query_load('PT')       -- MW horario
+  - Precos day-ahead PT: query_day_ahead_prices('PT')             -- EUR/MWh
+  - Precos day-ahead ES: query_day_ahead_prices('ES')             -- EUR/MWh (novo!)
 
-Sem autenticação. Tabelas Iceberg com sufixo _api coexistem com o pipeline estático.
+PRE-REQUISITO: variavel de ambiente ENTSOE_TOKEN
+  PowerShell : $env:ENTSOE_TOKEN = "<o-teu-token>"
+  Linux/Mac  : export ENTSOE_TOKEN=<o-teu-token>
+
+  Token gratuito: email para transparency@entsoe.eu -- 'RESTful API access' (~3 dias)
+
+Tabelas Iceberg com sufixo _api coexistem com o pipeline estatico.
 
 Exemplos:
     python run_streaming_pipeline.py --days 7 --skip-docker
     python run_streaming_pipeline.py --start 2024-01-01 --end 2024-12-31 --skip-docker
     python run_streaming_pipeline.py --today --skip-docker --no-quality
-    python run_streaming_pipeline.py --skip-docker --skip-ddl
+    python run_streaming_pipeline.py --full --skip-docker --skip-ddl
 """
 
 from __future__ import annotations
@@ -171,7 +178,7 @@ def pyflyte_run(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Orquestrador Streaming_Data pipeline (DP-02 API — Energy-Charts)"
+        description="Orquestrador Streaming_Data pipeline (DP-02 API)"
     )
 
     grp = parser.add_mutually_exclusive_group()
@@ -186,6 +193,17 @@ def main() -> None:
                         help="Data início (usar com --end)")
     parser.add_argument("--end",   type=str, metavar="YYYY-MM-DD",
                         help="Data fim (usar com --start)")
+
+    parser.add_argument(
+        "--source",
+        choices=["entsoe", "energycharts"],
+        default="entsoe",
+        help=(
+            "Fonte de dados para o fetch Bronze (default: entsoe). "
+            "Use 'energycharts' como fallback se não tiveres ENTSOE_TOKEN: "
+            "sem autenticação, redistribui ENTSO-E via Fraunhofer ISE."
+        ),
+    )
 
     parser.add_argument("--build",       action="store_true", help="faz --build no compose up")
     parser.add_argument("--skip-docker", action="store_true", help="salta o compose up")
@@ -254,7 +272,7 @@ def main() -> None:
     # --- DDL ---
     if not args.skip_ddl:
         print("\n" + "=" * 60)
-        print("FASE 0 — DDL (tabelas Iceberg _api)")
+        print("FASE 0 - DDL (tabelas Iceberg _api)")
         print("=" * 60)
         apply_ddl(compose_file, bronze_sql, "Bronze API")
         apply_ddl(compose_file, silver_sql, "Silver API")
@@ -266,38 +284,58 @@ def main() -> None:
     end_str   = end_date.isoformat()
 
     print(f"\n{'=' * 60}")
-    print(f"Pipeline Streaming_Data (DP-02 API) — {start_str} → {end_str}")
+    print(f"Pipeline Streaming_Data (DP-02 API) - {start_str} -> {end_str}")
     print(f"{'=' * 60}")
 
     # --- FASE 1: Bronze fetch (consumo + preço em paralelo) ---
     print("\n" + "=" * 60)
-    print(f"FASE 1 — Bronze fetch API ({start_str} → {end_str})")
+    print(f"FASE 1 - Bronze fetch ({args.source.upper()}) ({start_str} -> {end_str})")
     print("=" * 60)
-    # Chunk por ano para ranges grandes (evita timeouts da Energy-Charts API)
+
+    if args.source == "entsoe":
+        if not os.environ.get("ENTSOE_TOKEN"):
+            raise SystemExit(
+                "\n[ERRO] ENTSOE_TOKEN nao definido.\n"
+                "Token gratuito ENTSO-E Transparency Platform:\n"
+                "  1. Email: transparency@entsoe.eu -- assunto 'RESTful API access'\n"
+                "  2. Aguarda ~3 dias uteis\n"
+                "  3. PowerShell: $env:ENTSOE_TOKEN = '<o-teu-token>'\n"
+                "     Linux/Mac : export ENTSOE_TOKEN=<o-teu-token>\n"
+                "\nAlternativa sem token:\n"
+                "  python run_streaming_pipeline.py --source energycharts --skip-docker --days 7\n"
+            )
+        bronze_workflow_file = "flyte_fetch_bronze_api.py"
+        bronze_workflow_name = "fetch_bronze_api"
+    else:
+        print("  [INFO] Energy-Charts: sem autenticacao necessaria (Fraunhofer ISE).")
+        bronze_workflow_file = "flyte_fetch_bronze_energycharts.py"
+        bronze_workflow_name = "fetch_bronze_energycharts"
+
+    # Chunk por ano para ranges grandes (evita timeouts da API)
     CHUNK_THRESHOLD_DAYS = 180
     total_days = (end_date - start_date).days
     if total_days > CHUNK_THRESHOLD_DAYS:
         chunk_start = start_date
         while chunk_start <= end_date:
             chunk_end = min(date(chunk_start.year, 12, 31), end_date)
-            print(f"\n  Chunk: {chunk_start} → {chunk_end}")
+            print(f"\n  Chunk: {chunk_start} -> {chunk_end}")
             pyflyte_run(
                 venv_python, workflows_dir,
-                "flyte_fetch_bronze_api.py", "fetch_bronze_api",
+                bronze_workflow_file, bronze_workflow_name,
                 {"start_date": chunk_start.isoformat(), "end_date": chunk_end.isoformat()},
             )
             chunk_start = date(chunk_start.year + 1, 1, 1)
     else:
         pyflyte_run(
             venv_python, workflows_dir,
-            "flyte_fetch_bronze_api.py", "fetch_bronze_api",
+            bronze_workflow_file, bronze_workflow_name,
             {"start_date": start_str, "end_date": end_str},
         )
 
     # --- Quality gate Bronze ---
     if not args.no_quality:
         print("\n" + "=" * 60)
-        print("QUALITY GATE — Bronze API")
+        print("QUALITY GATE - Bronze API")
         print("=" * 60)
         pyflyte_run(
             venv_python, workflows_dir,
@@ -305,9 +343,9 @@ def main() -> None:
             {},
         )
 
-    # --- FASE 2: Silver transform (completo — garante consistência com histórico) ---
+    # --- FASE 2: Silver transform (completo - garante consistência com histórico) ---
     print("\n" + "=" * 60)
-    print("FASE 2 — Silver transform COMPLETO")
+    print("FASE 2 - Silver transform COMPLETO")
     print("=" * 60)
     pyflyte_run(
         venv_python, workflows_dir,
@@ -318,7 +356,7 @@ def main() -> None:
     # --- Quality gate Silver ---
     if not args.no_quality:
         print("\n" + "=" * 60)
-        print("QUALITY GATE — Silver API")
+        print("QUALITY GATE - Silver API")
         print("=" * 60)
         pyflyte_run(
             venv_python, workflows_dir,
@@ -328,7 +366,7 @@ def main() -> None:
 
     # --- FASE 3: Gold transform (window functions requerem histórico completo) ---
     print("\n" + "=" * 60)
-    print("FASE 3 — Gold transform COMPLETO")
+    print("FASE 3 - Gold transform COMPLETO")
     print("=" * 60)
     pyflyte_run(
         venv_python, workflows_dir,
@@ -339,7 +377,7 @@ def main() -> None:
     # --- Quality gate Gold ---
     if not args.no_quality:
         print("\n" + "=" * 60)
-        print("QUALITY GATE — Gold API")
+        print("QUALITY GATE - Gold API")
         print("=" * 60)
         pyflyte_run(
             venv_python, workflows_dir,
@@ -349,7 +387,7 @@ def main() -> None:
 
     # --- Validação final ---
     print("\n" + "=" * 60)
-    print("VALIDAÇÃO FINAL — tabelas Gold API")
+    print("VALIDACAO FINAL - tabelas Gold API")
     print("=" * 60)
     validation_sql = (
         "SELECT 'dp_energy_market_api_hourly' AS tabela, COUNT(*) AS total_linhas, "
@@ -371,11 +409,12 @@ def main() -> None:
 
     print(f"\n{'=' * 60}")
     print("Streaming_Data pipeline (DP-02 API) concluída com sucesso!")
-    print(f"  Período  : {start_str} → {end_str}")
+    print(f"  Período  : {start_str} -> {end_str}")
     print(f"  Bronze   : bronze.consumo_api_raw + bronze.preco_api_raw")
     print(f"  Silver   : silver.consumo_api_hourly + silver.preco_api_hourly")
     print(f"  Gold     : gold.dp_energy_market_api_hourly + gold.feat_load_forecasting_api_hourly")
-    print(f"  Fontes   : Energy-Charts API (Fraunhofer ISE) — sem autenticação")
+    fonte_label = "Energy-Charts API (Fraunhofer ISE) — sem autenticação" if args.source == "energycharts" else "ENTSO-E Transparency Platform (token)"
+    print(f"  Fonte    : {fonte_label}")
     print(f"{'=' * 60}\n")
 
 

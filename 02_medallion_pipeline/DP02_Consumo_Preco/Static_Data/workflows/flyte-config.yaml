@@ -1,0 +1,32 @@
+# Configuração Flyte para execução remota no sandbox local (K3s).
+# Usado pelo orquestrador run_medallion_consumo_precos.py com:
+#   pyflyte run --remote --config workflows/flyte-config.yaml ...
+#
+# Pré-requisito: sandbox Flyte a correr em localhost:30080
+#   docker build -t mibel-flyte:latest 01_docker_stack/flyte/
+#   docker run --privileged -d --name mibel-flyte-sandbox \
+#     -p 30080:30080 -p 30000:30000 mibel-flyte:latest
+
+admin:
+  # Endpoint do Flyte control plane (sandbox K3s)
+  endpoint: localhost:30080
+  authType: Pkce
+  insecure: true
+
+storage:
+  # O orquestrador (host) faz upload dos artefactos de fast registration
+  # para o MinIO do Compose em localhost:9000.
+  # Os pods K3s acedem ao mesmo MinIO via host.docker.internal:9000
+  # (configurado em 01_docker_stack/flyte/flyte-core-overrides.yaml).
+  type: minio
+  connection:
+    endpoint: "http://localhost:9000"
+    access-key: minioadmin
+    secret-key: minioadmin
+    disable-ssl: true
+    region: us-east-1
+  container: "flyte"
+
+logger:
+  show-source: true
+  level: 0

@@ -1,3 +1,11 @@
+# Secrets — ficheiros .env reais NUNCA devem ser committed
+# O template (.env.example) é público e SIM deve ser committed
+.env
+**/.env
+# mas permite os templates
+!.env.example
+!**/.env.example
+
 # Virtual environments
 .venv*/
 **/.venv*/

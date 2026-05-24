@@ -79,74 +79,101 @@
 
 ---
 
-## DP-02 — `dp_energy_market_hourly` + `feat_load_forecasting_hourly`
+## DP-02 — `dp_energy_market_api_hourly` + `feat_load_forecasting_api_hourly`
+
+> **Fonte de dados:** ENTSO-E Transparency Platform (`transparency.entsoe.eu`) — fonte primária oficial europeia.
+> Pipeline implementado em `02_medallion_pipeline/DP02_Consumo_Preco/Streaming_Data/`.
 
 ### 1) Perguntas analíticas, métricas e consumidores
 
-**Perguntas analíticas**
-- Qual o **custo estimado horário** do consumo nacional face ao preço day-ahead?
-- Em que períodos o preço day-ahead impacta mais o custo total?
-- Qual a correlação entre preço spot e volume de consumo por período?
+**Pergunta central de negócio**
+> *Em que intervalo horário diário é mais vantajoso vender energia renovável à rede?*
 
-**Métricas (produto analítico — `dp_energy_market_hourly`)**
-- `consumo_total` — consumo horário em MWh
-- `market_price_pt` — preço day-ahead PT em €/MWh
-- `consumo_lag_1h`, `consumo_lag_24h` — lags de consumo
+**Perguntas analíticas de suporte**
+- Qual o **perfil horário do preço day-ahead** (0–23h) — que horas têm preço sistematicamente mais alto?
+- Em que horas o **índice de oportunidade** (preço relativo alto + consumo relativo baixo) é máximo?
+- Qual a **evolução mensal e anual** do preço day-ahead em Portugal?
+- Qual a **correlação e divergência** entre preço PT e preço ES no mercado MIBEL?
+- Em que horas e períodos ocorrem **preços negativos** (excesso de oferta renovável)?
+
+**Métricas (produto analítico — `dp_energy_market_api_hourly`)**
+- `market_price_pt` — preço day-ahead Portugal em €/MWh (ENTSO-E `query_day_ahead_prices('PT')`)
+- `consumo_total` — carga eléctrica nacional horária em MWh (ENTSO-E `query_load('PT')`)
+- `consumo_lag_1h`, `consumo_lag_24h` — lags de consumo (window functions)
 - `price_lag_1h` — lag de preço
 - `rolling_avg_consumo_24h`, `rolling_avg_price_24h` — médias móveis 24h
-- `hora`, `dia_semana`, `is_weekend` — features temporais
+- `hora` (0–23), `dia_semana` (0=Seg … 6=Dom), `is_weekend` — features temporais
 
-**Feature table ML (`feat_load_forecasting_hourly`)**
-- Mesmas features do produto analítico + `consumo_next_hour` (TARGET)
-- Derivada de `dp_energy_market_hourly`; consumida exclusivamente pelo workflow de treino
+**Feature table ML (`feat_load_forecasting_api_hourly`)**
+- Todas as features acima + `consumo_next_hour` (TARGET: `LEAD(consumo_total, 1)`)
+- Primeiras 24h e última linha excluídas (lags nulos / sem target futuro)
+- Consumida exclusivamente pelo workflow de treino GradientBoostingRegressor (MLflow)
 
 **Consumidores**
-- Dashboard de custos energéticos (`frontend/consumo_preco`).
-- API HTTP para análise de custos (`backend/consumo_preco`).
-- Equipa ML — workflow de load forecasting (MLflow + Flyte).
+- Dashboard Grafana: `consumo_preco_streaming_overview` — foco no preço e janela ótima de venda.
+- Equipa ML — workflow de load forecasting (MLflow + Flyte): GBR, R² ≈ 0.989, MAPE ≈ 1.30%.
 
 ### 2) Grão e chaves
 
-- **Grão**: 1 registo por hora UTC (resultado do join consumo↔preço OMIE day-ahead).
+- **Grão**: 1 registo por hora UTC (INNER JOIN `silver.consumo_api_hourly` × `silver.preco_api_hourly`).
 - **Chave primária de negócio**: `ts_utc`.
+- **Cobertura**: 2022-01-01 até hoje (ENTSO-E cobre desde 2015; pipeline arranca em 2022).
 - **Particionamento**: `year`, `month` (Iceberg partition spec v2).
 
 ### 3) Contrato de dados (schema + SLAs/SLOs)
 
-**Schema v1 — `dp_energy_market_hourly` (gold)**
-- `ts_utc TIMESTAMP(6) WITH TIME ZONE NOT NULL`
-- `consumo_total DOUBLE` — MWh
-- `market_price_pt DOUBLE` — €/MWh
-- `hora INTEGER` — 0-23
-- `dia_semana INTEGER` — 0=Seg … 6=Dom
-- `is_weekend BOOLEAN`
-- `consumo_lag_1h DOUBLE`, `consumo_lag_24h DOUBLE`
-- `price_lag_1h DOUBLE`
-- `rolling_avg_consumo_24h DOUBLE`, `rolling_avg_price_24h DOUBLE`
-- `process_date DATE`, `year INTEGER`, `month INTEGER`
+**Schema v1 — `iceberg.gold.dp_energy_market_api_hourly`**
 
-**Schema v1 — `feat_load_forecasting_hourly` (feature table ML)**
-- Todas as colunas acima, mais:
-- `consumo_next_hour DOUBLE` — TARGET: consumo da hora seguinte (LEAD)
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `ts_utc` | `TIMESTAMP(6) WITH TIME ZONE NOT NULL` | Chave temporal primária (início da hora UTC) |
+| `consumo_total` | `DOUBLE` | Carga horária nacional em MWh |
+| `market_price_pt` | `DOUBLE` | Preço day-ahead Portugal em €/MWh |
+| `hora` | `INTEGER` | Hora do dia 0–23 |
+| `dia_semana` | `INTEGER` | 0=Segunda … 6=Domingo |
+| `is_weekend` | `BOOLEAN` | Sábado ou Domingo |
+| `consumo_lag_1h` | `DOUBLE` | Consumo 1h antes |
+| `consumo_lag_24h` | `DOUBLE` | Consumo 24h antes |
+| `price_lag_1h` | `DOUBLE` | Preço 1h antes |
+| `rolling_avg_consumo_24h` | `DOUBLE` | Média móvel 24h de consumo |
+| `rolling_avg_price_24h` | `DOUBLE` | Média móvel 24h de preço |
+| `process_date` | `DATE` | Data de execução do pipeline |
+| `year` | `INTEGER` | Ano (partição) |
+| `month` | `INTEGER` | Mês (partição) |
+
+**Schema v1 — `iceberg.gold.feat_load_forecasting_api_hourly`**
+
+Todas as colunas acima, mais:
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `consumo_next_hour` | `DOUBLE` | **TARGET ML** — consumo da hora seguinte via `LEAD` |
 
 **Regras de qualidade**
-- Unicidade de `ts_utc`.
-- `consumo_total >= 0`; `market_price_pt >= 0`.
-- Null rate de `consumo_next_hour` em `feat_load_forecasting_hourly`: **0%**.
-- Consistência de lag: `consumo_lag_1h(t)` deve igualar `consumo_total(t-1)`.
+
+| Regra | Critério |
+|-------|---------|
+| Unicidade `ts_utc` | 0 duplicados → PASS |
+| `consumo_total >= 0` | Valores negativos → FAIL |
+| `market_price_pt` não-nulo | 0% nulos → PASS |
+| Null rate `consumo_next_hour` (feat table) | **0%** → PASS |
+| Consistência lag | `consumo_lag_1h(t) = consumo_total(t-1)` com tolerância 0.001 MWh |
+| Taxa de junção consumo×preço | ≥ 98% das horas → PASS |
+| Preços negativos | Contabilizados e reportados (WARN — ocorrem no MIBEL) |
 
 **SLAs/SLOs**
 - Atualização: até **T+45 min** após fecho da hora.
-- Freshness máxima: **4 horas**.
-- Taxa de junção consumo×preço: **>= 98.0%** das horas do período.
-- Percentual de valores nulos em métricas core: **0%**.
+- Freshness máxima aceitável: **4 horas**.
+- Taxa de junção consumo×preço: **≥ 98.0%** das horas do período.
+- Null rate em métricas core: **0%**.
 
 ### 4) Estratégia de schema evolution/versionamento
 
 - Versão contratual nos metadados da tabela Iceberg (`schema_version`, `product_version`).
+- Sufixo `_api` distingue as tabelas do pipeline streaming das do pipeline estático (Static_Data).
 - Evolução de features compatível (minor): adicionar novas colunas de lag/rolling sem alterar as existentes.
-- Mudança de fórmula de custo ou target: nova versão major + janela de coexistência de 30 dias.
-- `feat_load_forecasting_hourly` versionada independentemente (`feature_schema_version`) para rastreabilidade de treino.
+- Mudança de fórmula de preço ou target: nova versão major + janela de coexistência de 30 dias.
+- `feat_load_forecasting_api_hourly` versionada independentemente (`feature_schema_version`) para rastreabilidade de treino MLflow.
 
 ---
 

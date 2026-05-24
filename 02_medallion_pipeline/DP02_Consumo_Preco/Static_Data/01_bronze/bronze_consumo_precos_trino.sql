@@ -5,9 +5,52 @@
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- Schema
+-- Landing zone
+-- Schema Hive externo que aponta para os CSVs raw em MinIO.
+-- Os CSVs devem ser copiados para warehouse/landing/ antes de executar DDL.
+-- Alternativa ao boto3 direto: permite query SQL dos ficheiros raw via Trino.
 -- -----------------------------------------------------------------------------
-CREATE SCHEMA IF NOT EXISTS iceberg.bronze;
+CREATE SCHEMA IF NOT EXISTS hive.landing
+WITH (location = 's3a://warehouse/landing/');
+
+CREATE TABLE IF NOT EXISTS hive.landing.consumo_raw_csv (
+    datahora   VARCHAR,
+    dia        VARCHAR,
+    mes        VARCHAR,
+    ano        VARCHAR,
+    date_raw   VARCHAR,
+    time_raw   VARCHAR,
+    bt         VARCHAR,
+    mt         VARCHAR,
+    at         VARCHAR,
+    mat        VARCHAR,
+    total      VARCHAR
+)
+WITH (
+    format = 'CSV',
+    external_location = 's3a://warehouse/landing/consumo/',
+    skip_header_line_count = 1,
+    csv_separator = ','
+);
+
+CREATE TABLE IF NOT EXISTS hive.landing.preco_raw_csv (
+    date_raw            VARCHAR,
+    hour                VARCHAR,
+    price_portugal_raw  VARCHAR,
+    price_spain_raw     VARCHAR
+)
+WITH (
+    format = 'CSV',
+    external_location = 's3a://warehouse/landing/preco/',
+    skip_header_line_count = 3,
+    csv_separator = ';'
+);
+
+-- -----------------------------------------------------------------------------
+-- Schema Bronze (Iceberg)
+-- -----------------------------------------------------------------------------
+CREATE SCHEMA IF NOT EXISTS iceberg.bronze
+WITH (location = 's3a://warehouse/bronze/');
 
 -- -----------------------------------------------------------------------------
 -- Tabela 1: consumo_raw
@@ -15,37 +58,29 @@ CREATE SCHEMA IF NOT EXISTS iceberg.bronze;
 -- Preserva todas as colunas da fonte + metadados de ingestão.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS iceberg.bronze.consumo_raw (
-    datahora          TIMESTAMP(6) WITH TIME ZONE,  -- timestamp original da fonte (UTC)
-    dia               INTEGER,                       -- dia do mês (campo redundante da fonte)
-    mes               INTEGER,                       -- mês (campo redundante da fonte)
-    ano               INTEGER,                       -- ano (campo redundante da fonte)
-    date_raw          VARCHAR,                       -- campo date original da fonte
-    time_raw          VARCHAR,                       -- campo time original da fonte
-    bt                DOUBLE,                        -- consumo BT (kW)
-    mt                DOUBLE,                        -- consumo MT (kW)
-    at                DOUBLE,                        -- consumo AT (kW)
-    mat               DOUBLE,                        -- consumo MAT (kW)
-    total             DOUBLE,                        -- consumo total nacional (kW)
-    process_date      DATE                           -- data lógica de ingestão (partição)
+    datahora          TIMESTAMP(6) WITH TIME ZONE,
+    dia               INTEGER,
+    mes               INTEGER,
+    ano               INTEGER,
+    date_raw          VARCHAR,
+    time_raw          VARCHAR,
+    bt                DOUBLE,
+    mt                DOUBLE,
+    at                DOUBLE,
+    mat               DOUBLE,
+    total             DOUBLE,
+    process_date      DATE
 )
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['process_date'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'consumo_preco', '1', 'indefinite', 'ren_csv']
-    ),
     location = 's3a://warehouse/bronze/consumo_raw/'
 );
 
 ALTER TABLE iceberg.bronze.consumo_raw
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'consumo_preco', '1', 'indefinite', 'ren_csv']
-    );
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.bronze.consumo_raw IS
 'Tabela Bronze com consumo elétrico nacional a 15 minutos, ingerida do CSV REN. Preserva todas as colunas da fonte sem transformação.';
@@ -60,30 +95,22 @@ COMMENT ON COLUMN iceberg.bronze.consumo_raw.process_date IS 'Data lógica de in
 -- Preserva a numeração original das horas (1-25) sem interpretação UTC.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS iceberg.bronze.preco_raw (
-    date_raw              VARCHAR,   -- data original da fonte (string)
-    hour                  INTEGER,   -- hora original OMIE (1-24, ou 25 em mudança DST)
-    price_portugal_raw    DOUBLE,    -- preço Portugal (€/MWh)
-    price_spain_raw       DOUBLE,    -- preço Espanha (€/MWh)
-    process_date          DATE       -- data lógica de ingestão (partição)
+    date_raw              VARCHAR,
+    hour                  INTEGER,
+    price_portugal_raw    DOUBLE,
+    price_spain_raw       DOUBLE,
+    process_date          DATE
 )
 WITH (
     format = 'PARQUET',
     partitioning = ARRAY['process_date'],
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'consumo_preco', '1', 'indefinite', 'omie_csv']
-    ),
     location = 's3a://warehouse/bronze/preco_raw/'
 );
 
 ALTER TABLE iceberg.bronze.preco_raw
 SET PROPERTIES
     format_version = 2,
-    object_store_layout_enabled = true,
-    extra_properties = MAP(
-        ARRAY['layer', 'domain', 'schema_version', 'retention_policy', 'source_system'],
-        ARRAY['bronze', 'consumo_preco', '1', 'indefinite', 'omie_csv']
-    );
+    object_store_layout_enabled = true;
 
 COMMENT ON TABLE iceberg.bronze.preco_raw IS
 'Tabela Bronze com preços day-ahead OMIE/MIBEL. Preserva numeração original das horas (1-25) sem interpretação UTC.';

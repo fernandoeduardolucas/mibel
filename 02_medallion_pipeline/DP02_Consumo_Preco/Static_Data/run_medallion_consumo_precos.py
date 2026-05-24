@@ -6,25 +6,34 @@ Fontes de dados:
   - Consumo: consumo-total-nacional.csv (REN, granularidade 15 min)
   - Preços:  Day-ahead Market Prices_*.csv (OMIE, granularidade horária)
 
+Modo de execução:
+  Os workflows Flyte correm em modo REMOTO no sandbox Flyte (K3s).
+  O sandbox é iniciado automaticamente se não estiver a correr.
+  Os tasks nos pods K3s ligam ao Trino e MinIO via host.docker.internal.
+
+  O DP-02 Streaming (run_streaming_pipeline.py) usa execução LOCAL Flyte.
+
 Fluxo padrão (sem parâmetros, equivalente a --full):
   1. Verifica pré-requisitos (Docker, Python)
   2. Sobe stack Docker Compose (se não estiver a correr)
   3. Espera Trino disponível
-  4. Cria/instala venv local com dependências Flyte
-  5. Aplica DDL via Trino CLI (cria schemas e tabelas Iceberg se não existirem)
-  6. Faz upload dos CSVs raw para MinIO (warehouse/raw/)
-  7. Executa ingestão Bronze COMPLETA via Flyte (lê CSVs do MinIO)
-  8. Quality gate Bronze
-  9. Executa transformação Silver COMPLETA via Flyte
- 10. Quality gate Silver
- 11. Executa transformação Gold COMPLETA via Flyte
- 12. Quality gate Gold
- 13. Validação final: COUNT e intervalo das tabelas Gold
+  4. Verifica/arranca sandbox Flyte (mibel-flyte-sandbox)
+  5. Aguarda sandbox ficar disponível (~3-5 min na 1ª vez)
+  6. Cria/instala venv local com dependências Flyte
+  7. Aplica DDL via Trino CLI (cria schemas e tabelas Iceberg se não existirem)
+  8. Faz upload dos CSVs raw para MinIO (warehouse/raw/)
+  9. Executa ingestão Bronze COMPLETA via Flyte Remoto
+ 10. Quality gate Bronze (remoto)
+ 11. Executa transformação Silver COMPLETA via Flyte Remoto
+ 12. Quality gate Silver (remoto)
+ 13. Executa transformação Gold COMPLETA via Flyte Remoto
+ 14. Quality gate Gold (remoto)
+ 15. Validação final: COUNT e intervalo das tabelas Gold
 
-Execução rápida (stack já a correr, DDL já aplicado):
-    python run_medallion_consumo_precos.py --skip-docker --skip-ddl
+Execução rápida (stack + sandbox já a correr, DDL já aplicado):
+    python run_medallion_consumo_precos.py --skip-docker --skip-ddl --skip-flyte
 
-Execução completa (inclui Docker e DDL):
+Execução completa (inclui Docker, Flyte sandbox e DDL):
     python run_medallion_consumo_precos.py
 
 Execução de um mês específico:
@@ -34,8 +43,12 @@ Flags úteis:
     --skip-docker    não faz compose up (stack já a correr)
     --skip-ddl       não reaplicar o DDL (tabelas já criadas)
     --skip-upload    não re-faz upload dos CSVs para MinIO
+    --skip-flyte     não verifica/arranca o sandbox Flyte (já a correr externamente)
     --build          faz --build no compose up
     --no-quality     salta os quality gates (útil em dev)
+
+UI do Flyte (execuções remotas):
+    http://localhost:30080
 """
 
 from __future__ import annotations
@@ -48,7 +61,20 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
+
+
+# ---------------------------------------------------------------------------
+# Constantes — Flyte sandbox
+# ---------------------------------------------------------------------------
+
+FLYTE_SANDBOX_IMAGE = "mibel-flyte:latest"
+FLYTE_SANDBOX_NAME  = "mibel-flyte-sandbox"
+FLYTE_SANDBOX_URL   = "http://localhost:30080"
+
+FLYTE_PROJECT = "flytesnacks"
+FLYTE_DOMAIN  = "development"
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +123,7 @@ def must_exist(path: Path, description: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Docker helpers
+# Docker helpers — Compose stack
 # ---------------------------------------------------------------------------
 
 def docker_engine_running() -> bool:
@@ -156,6 +182,87 @@ def wait_for_trino(compose_file: Path, attempts: int = 30, sleep_seconds: int = 
 
 
 # ---------------------------------------------------------------------------
+# Flyte sandbox helpers
+# ---------------------------------------------------------------------------
+
+def flyte_sandbox_running() -> bool:
+    """Verifica se o container do sandbox Flyte está em execução."""
+    result = subprocess.run(
+        ["docker", "ps", "--filter", f"name={FLYTE_SANDBOX_NAME}", "--format", "{{.Names}}"],
+        text=True, capture_output=True,
+    )
+    return FLYTE_SANDBOX_NAME in result.stdout
+
+
+def build_flyte_image(docker_root: Path) -> None:
+    """Constrói a imagem customizada do sandbox Flyte."""
+    flyte_dir = docker_root / "flyte"
+    must_exist(flyte_dir, "directório 01_docker_stack/flyte/ (Dockerfile do sandbox)")
+    print(f"\n>>> A construir imagem Flyte sandbox: {FLYTE_SANDBOX_IMAGE}")
+    run(["docker", "build", "-t", FLYTE_SANDBOX_IMAGE, str(flyte_dir)])
+
+
+def start_flyte_sandbox() -> None:
+    """Arranca o container do sandbox Flyte em modo privilegiado."""
+    # Remove container parado com o mesmo nome (se existir)
+    subprocess.run(
+        ["docker", "rm", "-f", FLYTE_SANDBOX_NAME],
+        text=True, capture_output=True,
+    )
+    print(f"\n>>> A arrancar sandbox Flyte: {FLYTE_SANDBOX_NAME}")
+    run([
+        "docker", "run", "--privileged", "-d",
+        "--name", FLYTE_SANDBOX_NAME,
+        "--add-host", "host.docker.internal:host-gateway",
+        "-p", "30080:30080",
+        "-p", "30000:30000",
+        FLYTE_SANDBOX_IMAGE,
+    ])
+    print(
+        f">>> Sandbox iniciado. UI disponível (após arranque) em: {FLYTE_SANDBOX_URL}\n"
+        ">>> A aguardar K3s + Helm (3-10 min na 1ª vez) ..."
+    )
+
+
+def wait_for_flyte_sandbox(attempts: int = 72, sleep_seconds: int = 10) -> None:
+    """
+    Aguarda o sandbox Flyte ficar disponível.
+    Default: 72 tentativas × 10 s = 12 min máximo.
+    Na 1ª inicialização pode demorar 3-10 min (K3s + Helm chart).
+    """
+    health_url = f"{FLYTE_SANDBOX_URL}/healthz"
+    for attempt in range(1, attempts + 1):
+        print(f"\n>>> Flyte sandbox disponível? ({attempt}/{attempts})")
+        try:
+            with urllib.request.urlopen(health_url, timeout=5) as resp:
+                if resp.status == 200:
+                    print(f">>> Flyte sandbox OK — UI: {FLYTE_SANDBOX_URL}")
+                    return
+        except Exception:
+            pass
+        time.sleep(sleep_seconds)
+    raise SystemExit(
+        f"Erro: Flyte sandbox não ficou disponível em {attempts * sleep_seconds}s.\n"
+        f"Verifica os logs: docker logs {FLYTE_SANDBOX_NAME}"
+    )
+
+
+def ensure_flyte_sandbox(docker_root: Path) -> None:
+    """
+    Garante que o sandbox Flyte está a correr.
+    Constrói a imagem e arranca o container se necessário.
+    """
+    if flyte_sandbox_running():
+        print(f"\n>>> Flyte sandbox já a correr: {FLYTE_SANDBOX_NAME}")
+        return
+
+    print("\n>>> Sandbox Flyte não encontrado. A preparar...")
+    build_flyte_image(docker_root)
+    start_flyte_sandbox()
+    wait_for_flyte_sandbox()
+
+
+# ---------------------------------------------------------------------------
 # Venv helper
 # ---------------------------------------------------------------------------
 
@@ -208,7 +315,7 @@ def upload_raw_csvs_to_minio(raw_dir: Path) -> None:
         check=True,
     )
 
-    import boto3  # noqa: PLC0415 — importação intencional pós-install
+    import boto3  # noqa: PLC0415
 
     s3 = boto3.client(
         "s3",
@@ -219,7 +326,6 @@ def upload_raw_csvs_to_minio(raw_dir: Path) -> None:
 
     bucket = "warehouse"
 
-    # Garante que o bucket existe
     try:
         s3.head_bucket(Bucket=bucket)
     except Exception:
@@ -243,26 +349,38 @@ def upload_raw_csvs_to_minio(raw_dir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# pyflyte runner
+# pyflyte runner — modo REMOTO (Flyte K3s sandbox)
 # ---------------------------------------------------------------------------
 
 def pyflyte_run(
     venv_python: Path,
-    workflows_dir: Path,
+    pipeline_root: Path,
     workflow_file: str,
     workflow_name: str,
     params: dict[str, str],
+    flyte_config: Path,
 ) -> None:
-    """Invoca pyflyte run no venv local."""
+    """
+    Invoca pyflyte run em modo remoto (Flyte K3s sandbox).
+
+    Usa --copy all para copiar os ficheiros locais (incluindo SQL de qualidade)
+    para o MinIO e disponibilizá-los nos pods K3s.
+    O cwd é pipeline_root para que 04_quality/sql/ seja incluído no tarball.
+    """
     cmd = [
         str(venv_python), "-m", "flytekit.clis.sdk_in_container.pyflyte",
         "run",
-        str(workflows_dir / workflow_file),
+        "--remote",
+        "--copy", "all",
+        "--config", str(flyte_config),
+        "--project", FLYTE_PROJECT,
+        "--domain", FLYTE_DOMAIN,
+        workflow_file,
         workflow_name,
     ]
     for key, value in params.items():
         cmd += [f"--{key}", value]
-    run(cmd, cwd=workflows_dir)
+    run(cmd, cwd=pipeline_root)
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +389,7 @@ def pyflyte_run(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Orquestrador Medallion consumo_preco (DP-02: Flyte + Iceberg)"
+        description="Orquestrador Medallion consumo_preco (DP-02: Flyte Remoto + Iceberg)"
     )
     parser.add_argument("--full", action="store_true",
                         help="Carrega a totalidade dos dados raw; também é o modo padrão")
@@ -285,6 +403,8 @@ def main() -> None:
     parser.add_argument("--skip-docker",  action="store_true", help="salta o compose up")
     parser.add_argument("--skip-ddl",     action="store_true", help="salta a aplicação de DDL")
     parser.add_argument("--skip-upload",  action="store_true", help="salta upload dos CSVs para MinIO")
+    parser.add_argument("--skip-flyte",   action="store_true",
+                        help="salta verificação/arranque do sandbox Flyte (já a correr externamente)")
     parser.add_argument("--no-quality",   action="store_true", help="salta os quality gates")
     args = parser.parse_args()
 
@@ -302,8 +422,10 @@ def main() -> None:
     repo_root     = pipeline_root.parent.parent.parent
 
     compose_file  = repo_root / "01_docker_stack" / "docker-compose.yml"
+    docker_root   = repo_root / "01_docker_stack"
     workflows_dir = pipeline_root / "workflows"
     raw_dir       = pipeline_root / "01_bronze" / "data" / "raw"
+    flyte_config  = workflows_dir / "flyte-config.yaml"
 
     bronze_sql = pipeline_root / "01_bronze" / "bronze_consumo_precos_trino.sql"
     silver_sql = pipeline_root / "02_silver" / "sql" / "silver_consumo_precos_trino.sql"
@@ -312,6 +434,7 @@ def main() -> None:
     # --- pré-requisitos ---
     must_exist(compose_file,  "docker-compose.yml")
     must_exist(workflows_dir, "pasta workflows/")
+    must_exist(flyte_config,  "workflows/flyte-config.yaml")
     must_exist(raw_dir,       "pasta com CSVs raw (01_bronze/data/raw/)")
     if not args.skip_ddl:
         must_exist(bronze_sql, "DDL Bronze SQL")
@@ -330,7 +453,6 @@ def main() -> None:
     # --- venv ---
     venv_python = create_local_venv(pipeline_root, python_cmd)
 
-    # Instala dependências no venv
     run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip", "-q"])
     requirements = workflows_dir / "requirements.txt"
     if requirements.exists():
@@ -349,6 +471,15 @@ def main() -> None:
         wait_for_trino(compose_file)
     else:
         print("\n>>> --skip-docker: compose up ignorado.")
+
+    # --- Flyte sandbox ---
+    if not args.skip_flyte:
+        print("\n" + "=" * 60)
+        print("FASE PRÉ — Sandbox Flyte (K3s remoto)")
+        print("=" * 60)
+        ensure_flyte_sandbox(docker_root)
+    else:
+        print(f"\n>>> --skip-flyte: assumindo sandbox '{FLYTE_SANDBOX_NAME}' já a correr.")
 
     # --- DDL (idempotente: IF NOT EXISTS) ---
     if not args.skip_ddl:
@@ -370,72 +501,53 @@ def main() -> None:
     else:
         print("\n>>> --skip-upload: upload de CSVs ignorado.")
 
+    # Alias para reduzir repetição na chamada pyflyte_run
+    def remote_run(wf_file: str, wf_name: str, params: dict[str, str] | None = None) -> None:
+        pyflyte_run(
+            venv_python, pipeline_root,
+            f"workflows/{wf_file}", wf_name,
+            params or {}, flyte_config,
+        )
+
     # =========================================================================
     # MODO --full : lê os CSVs na íntegra, sem especificar datas
     # =========================================================================
     if args.full:
-        # --- Fase 1: Bronze ingest COMPLETO ---
         print("\n" + "=" * 60)
         print("FASE 1 — Bronze ingest COMPLETO (todos os dados raw)")
+        print(f"         [remoto: {FLYTE_SANDBOX_URL}]")
         print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_ingest_bronze.py", "ingest_bronze_full",
-            {},
-        )
+        remote_run("flyte_ingest_bronze.py", "ingest_bronze_full")
 
-        # --- Quality gate Bronze ---
         if not args.no_quality:
             print("\n" + "=" * 60)
-            print("QUALITY GATE — Bronze")
+            print("QUALITY GATE — Bronze [remoto]")
             print("=" * 60)
-            pyflyte_run(
-                venv_python, workflows_dir,
-                "flyte_quality_checks.py", "quality_gate_bronze",
-                {},
-            )
+            remote_run("flyte_quality_checks.py", "quality_gate_bronze")
 
-        # --- Fase 2: Silver transform COMPLETO ---
         print("\n" + "=" * 60)
         print("FASE 2 — Silver transform COMPLETO (todo o período Bronze)")
+        print(f"         [remoto: {FLYTE_SANDBOX_URL}]")
         print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_bronze_to_silver.py", "bronze_to_silver_full",
-            {},
-        )
+        remote_run("flyte_bronze_to_silver.py", "bronze_to_silver_full")
 
-        # --- Quality gate Silver ---
         if not args.no_quality:
             print("\n" + "=" * 60)
-            print("QUALITY GATE — Silver")
+            print("QUALITY GATE — Silver [remoto]")
             print("=" * 60)
-            pyflyte_run(
-                venv_python, workflows_dir,
-                "flyte_quality_checks.py", "quality_gate_silver",
-                {},
-            )
+            remote_run("flyte_quality_checks.py", "quality_gate_silver")
 
-        # --- Fase 3: Gold transform COMPLETO ---
         print("\n" + "=" * 60)
         print("FASE 3 — Gold transform COMPLETO (todo o período Silver)")
+        print(f"         [remoto: {FLYTE_SANDBOX_URL}]")
         print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_silver_to_gold.py", "silver_to_gold_full",
-            {},
-        )
+        remote_run("flyte_silver_to_gold.py", "silver_to_gold_full")
 
-        # --- Quality gate Gold ---
         if not args.no_quality:
             print("\n" + "=" * 60)
-            print("QUALITY GATE — Gold")
+            print("QUALITY GATE — Gold [remoto]")
             print("=" * 60)
-            pyflyte_run(
-                venv_python, workflows_dir,
-                "flyte_quality_checks.py", "quality_gate_gold",
-                {},
-            )
+            remote_run("flyte_quality_checks.py", "quality_gate_gold")
 
         # --- Validação final ---
         print("\n" + "=" * 60)
@@ -461,6 +573,7 @@ def main() -> None:
 
         print(f"\n{'=' * 60}")
         print("Pipeline Medallion consumo_preco (DP-02) concluída com sucesso!")
+        print(f"  Execução : Flyte Remoto ({FLYTE_SANDBOX_URL})")
         print(f"  Período  : todo o intervalo disponível nos ficheiros raw")
         print(f"  Bronze   : bronze.consumo_raw + bronze.preco_raw")
         print(f"  Silver   : silver.consumo_hourly + silver.preco_hourly")
@@ -475,68 +588,41 @@ def main() -> None:
     month = args.month
     process_date = args.date or f"{year}-{month:02d}-01"
 
-    # --- Bronze ingest (completo — os CSVs contêm todo o histórico) ---
     print("\n" + "=" * 60)
     print(f"FASE 1 — Bronze ingest COMPLETO (process_date lógico={process_date})")
+    print(f"         [remoto: {FLYTE_SANDBOX_URL}]")
     print("=" * 60)
-    pyflyte_run(
-        venv_python, workflows_dir,
-        "flyte_ingest_bronze.py", "ingest_bronze_full",
-        {},
-    )
+    remote_run("flyte_ingest_bronze.py", "ingest_bronze_full")
 
-    # --- Quality gate Bronze ---
     if not args.no_quality:
         print("\n" + "=" * 60)
-        print("QUALITY GATE — Bronze")
+        print("QUALITY GATE — Bronze [remoto]")
         print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_quality_checks.py", "quality_gate_bronze",
-            {},
-        )
+        remote_run("flyte_quality_checks.py", "quality_gate_bronze")
 
-    # --- Silver transform para o mês ---
     print("\n" + "=" * 60)
-    print(f"FASE 2 — Silver transform  (process_date={process_date})")
+    print(f"FASE 2 — Silver transform  (process_date={process_date}) [remoto]")
     print("=" * 60)
-    pyflyte_run(
-        venv_python, workflows_dir,
-        "flyte_bronze_to_silver.py", "bronze_to_silver",
-        {"process_date": process_date},
-    )
+    remote_run("flyte_bronze_to_silver.py", "bronze_to_silver",
+               {"process_date": process_date})
 
-    # --- Quality gate Silver ---
     if not args.no_quality:
         print("\n" + "=" * 60)
-        print("QUALITY GATE — Silver")
+        print("QUALITY GATE — Silver [remoto]")
         print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_quality_checks.py", "quality_gate_silver",
-            {},
-        )
+        remote_run("flyte_quality_checks.py", "quality_gate_silver")
 
-    # --- Gold transform (sempre full — window functions precisam de todo o histórico) ---
     print("\n" + "=" * 60)
     print("FASE 3 — Gold transform COMPLETO (window functions requerem histórico completo)")
+    print(f"         [remoto: {FLYTE_SANDBOX_URL}]")
     print("=" * 60)
-    pyflyte_run(
-        venv_python, workflows_dir,
-        "flyte_silver_to_gold.py", "silver_to_gold_full",
-        {},
-    )
+    remote_run("flyte_silver_to_gold.py", "silver_to_gold_full")
 
-    # --- Quality gate Gold ---
     if not args.no_quality:
         print("\n" + "=" * 60)
-        print("QUALITY GATE — Gold")
+        print("QUALITY GATE — Gold [remoto]")
         print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_quality_checks.py", "quality_gate_gold",
-            {},
-        )
+        remote_run("flyte_quality_checks.py", "quality_gate_gold")
 
     # --- Validação final ---
     print("\n" + "=" * 60)
@@ -562,10 +648,11 @@ def main() -> None:
 
     print(f"\n{'=' * 60}")
     print("Pipeline Medallion consumo_preco (DP-02) concluída com sucesso!")
-    print(f"  Período : {year}-{month:02d}")
-    print(f"  Bronze  : bronze.consumo_raw + bronze.preco_raw (histórico completo)")
-    print(f"  Silver  : silver.consumo_hourly + silver.preco_hourly")
-    print(f"  Gold    : gold.dp_energy_market_hourly + gold.feat_load_forecasting_hourly")
+    print(f"  Execução : Flyte Remoto ({FLYTE_SANDBOX_URL})")
+    print(f"  Período  : {year}-{month:02d}")
+    print(f"  Bronze   : bronze.consumo_raw + bronze.preco_raw (histórico completo)")
+    print(f"  Silver   : silver.consumo_hourly + silver.preco_hourly")
+    print(f"  Gold     : gold.dp_energy_market_hourly + gold.feat_load_forecasting_hourly")
     print(f"{'=' * 60}\n")
 
 

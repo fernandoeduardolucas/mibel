@@ -1,7 +1,13 @@
 -- =============================================================================
--- Bronze DDL — Streaming_Data (DP-02 API pipeline)
--- Tabelas Iceberg com sufixo _api para coexistir com o pipeline estático.
--- Diferença face ao estático: ts_utc já normalizado na ingestão (sem date_raw/hour).
+-- Bronze DDL -- Streaming_Data (DP-02 API pipeline)
+-- Tabelas Iceberg com sufixo _api para coexistir com o pipeline estatico.
+-- Diferenca face ao estatico: ts_utc ja normalizado na ingesto (sem date_raw/hour).
+--
+-- Fonte de dados: ENTSO-E Transparency Platform (transparency.entsoe.eu)
+--   consumo_api_raw : Actual Total Load PT  -- query_load('PT')
+--   preco_api_raw   : Day-Ahead Prices PT+ES -- query_day_ahead_prices('PT'/'ES')
+--
+-- Requer: ENTSOE_TOKEN (token gratuito via transparency@entsoe.eu)
 -- =============================================================================
 
 CREATE SCHEMA IF NOT EXISTS iceberg.bronze;

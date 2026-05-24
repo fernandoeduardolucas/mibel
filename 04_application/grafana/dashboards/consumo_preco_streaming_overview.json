@@ -3,10 +3,7 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": {
-          "type": "grafana",
-          "uid": "-- Grafana --"
-        },
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -15,42 +12,43 @@
       }
     ]
   },
-  "description": "MIBEL — Consumo vs Preço Day-Ahead (Portugal) · Fonte API Energy-Charts · Produto Gold: dp_energy_market_api_hourly",
+  "description": "DP02 — Preço Day-Ahead Portugal MIBEL · Em que hora do dia é mais vantajoso vender energia renovável à rede? · Fonte: ENTSO-E · Gold: dp_energy_market_api_hourly",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "links": [],
   "panels": [
+
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 100,
-      "title": "📊 KPIs — Consumo · Preço · Correlação (API)",
+      "title": "KPIs — Preço Day-Ahead Portugal",
       "type": "row"
     },
+
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
-          "decimals": 0,
-          "mappings": [],
+          "decimals": 2,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 4000 },
-              { "color": "red", "value": 6000 }
+              { "color": "blue", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "orange", "value": 120 }
             ]
           },
-          "unit": "kwatth"
+          "unit": "currencyEUR"
         }
       },
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
       "id": 1,
       "options": {
         "colorMode": "background",
-        "graphMode": "none",
+        "graphMode": "area",
         "orientation": "auto",
         "reduceOptions": { "calcs": ["mean"] },
         "textMode": "auto"
@@ -59,26 +57,26 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "SELECT ROUND(AVG(consumo_total), 0) AS \"Consumo Médio (MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)",
+          "rawSql": "SELECT ROUND(AVG(market_price_pt), 2) AS \"Preço Médio PT (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)",
           "refId": "A"
         }
       ],
-      "title": "⚡ Consumo Médio Horário (MWh) — API",
+      "title": "Preço Médio Day-Ahead PT",
       "type": "stat"
     },
+
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
           "decimals": 2,
-          "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "yellow", "value": 80 },
-              { "color": "red", "value": 150 }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 200 },
+              { "color": "red", "value": 400 }
             ]
           },
           "unit": "currencyEUR"
@@ -90,43 +88,6 @@
         "colorMode": "background",
         "graphMode": "none",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["mean"] },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-          "format": 1,
-          "rawSql": "SELECT ROUND(AVG(market_price_pt), 2) AS \"Preço Médio (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)",
-          "refId": "A"
-        }
-      ],
-      "title": "💶 Preço Médio Day-Ahead PT (€/MWh) — API",
-      "type": "stat"
-    },
-    {
-      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "decimals": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 4000 },
-              { "color": "green", "value": 5000 }
-            ]
-          },
-          "unit": "kwatth"
-        }
-      },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
-      "id": 3,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "orientation": "auto",
         "reduceOptions": { "calcs": ["max"] },
         "textMode": "auto"
       },
@@ -134,13 +95,14 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "SELECT ROUND(MAX(consumo_total), 0) AS \"Pico de Consumo (MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)",
+          "rawSql": "SELECT ROUND(MAX(market_price_pt), 2) AS \"Pico de Preço PT (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)",
           "refId": "A"
         }
       ],
-      "title": "🔺 Pico de Consumo (MWh) — API",
+      "title": "Pico de Preço Day-Ahead PT",
       "type": "stat"
     },
+
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
       "fieldConfig": {
@@ -150,12 +112,50 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 100 },
-              { "color": "red", "value": 200 }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0 },
+              { "color": "red", "value": 50 }
             ]
           },
           "unit": "currencyEUR"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["min"] },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 1,
+          "rawSql": "SELECT ROUND(MIN(market_price_pt), 2) AS \"Preço Mínimo PT (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)",
+          "refId": "A"
+        }
+      ],
+      "title": "Preço Mínimo Day-Ahead PT",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "orange", "value": 50 }
+            ]
+          },
+          "unit": "short"
         }
       },
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
@@ -164,144 +164,54 @@
         "colorMode": "background",
         "graphMode": "none",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["max"] },
+        "reduceOptions": { "calcs": ["sum"] },
         "textMode": "auto"
       },
       "targets": [
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "SELECT ROUND(MAX(market_price_pt), 2) AS \"Pico de Preço (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)",
+          "rawSql": "SELECT COUNT(*) AS \"Horas com Preço Negativo\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND market_price_pt < 0",
           "refId": "A"
         }
       ],
-      "title": "🔺 Pico de Preço (€/MWh) — API",
+      "title": "Horas com Preço Negativo (MIBEL)",
       "type": "stat"
     },
+
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
       "id": 101,
-      "title": "📈 Séries Temporais — Consumo & Preço (API)",
+      "title": "Janela Ótima de Venda — Em que hora é mais vantajoso vender?",
       "type": "row"
     },
+
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Preço médio day-ahead por hora do dia. As horas com preço mais alto representam a janela mais vantajosa para vender energia renovável à rede.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "fillOpacity": 10,
-            "lineWidth": 1,
-            "showPoints": "never",
-            "spanNulls": false
-          },
-          "decimals": 0,
-          "unit": "kwatth"
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "Preço PT (€/MWh)" },
-            "properties": [
-              { "id": "unit", "value": "currencyEUR" },
-              { "id": "custom.axisPlacement", "value": "right" },
-              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+          "color": { "mode": "thresholds" },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#73BF69", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "orange", "value": 100 },
+              { "color": "red", "value": 150 }
             ]
           },
-          {
-            "matcher": { "id": "byName", "options": "Consumo (MWh)" },
-            "properties": [
-              { "id": "color", "value": { "fixedColor": "#5794F2", "mode": "fixed" } }
-            ]
-          }
-        ]
-      },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
-      "id": 10,
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "none" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-          "format": 0,
-          "rawSql": "SELECT\n  ts_utc AS \"time\",\n  ROUND(consumo_total, 1) AS \"Consumo (MWh)\",\n  ROUND(market_price_pt, 2) AS \"Preço PT (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\nORDER BY ts_utc",
-          "refId": "A"
-        }
-      ],
-      "title": "Consumo Horário (MWh) vs Preço Day-Ahead PT (€/MWh) — API",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
-      "id": 102,
-      "title": "📉 Médias Móveis 24h (API)",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "fillOpacity": 5, "lineWidth": 2, "showPoints": "never", "spanNulls": false }
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "Média Móvel Consumo 24h (MWh)" },
-            "properties": [
-              { "id": "unit", "value": "kwatth" },
-              { "id": "color", "value": { "fixedColor": "#5794F2", "mode": "fixed" } }
-            ]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Média Móvel Preço 24h (€/MWh)" },
-            "properties": [
-              { "id": "unit", "value": "currencyEUR" },
-              { "id": "custom.axisPlacement", "value": "right" },
-              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
-            ]
-          }
-        ]
-      },
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 17 },
-      "id": 11,
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "none" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-          "format": 0,
-          "rawSql": "SELECT\n  ts_utc AS \"time\",\n  ROUND(rolling_avg_consumo_24h, 1) AS \"Média Móvel Consumo 24h (MWh)\",\n  ROUND(rolling_avg_price_24h, 2) AS \"Média Móvel Preço 24h (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND rolling_avg_consumo_24h IS NOT NULL\nORDER BY ts_utc",
-          "refId": "A"
-        }
-      ],
-      "title": "Média Móvel 24h — Consumo & Preço (API)",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
-      "id": 103,
-      "title": "🕐 Perfil Horário & Padrão Semanal (API)",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "fillOpacity": 60, "lineWidth": 1 },
-          "decimals": 0,
-          "unit": "kwatth"
+          "unit": "currencyEUR"
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 27 },
+      "gridPos": { "h": 10, "w": 14, "x": 0, "y": 6 },
       "id": 20,
       "options": {
+        "barAlignment": 0,
+        "fillOpacity": 80,
+        "groupWidth": 0.7,
         "legend": { "displayMode": "list", "placement": "bottom" },
         "tooltip": { "mode": "single" },
         "xField": "Hora"
@@ -310,25 +220,308 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "SELECT\n  hora AS \"Hora\",\n  ROUND(AVG(consumo_total), 0) AS \"Consumo Médio (MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nGROUP BY hora\nORDER BY hora",
+          "rawSql": "SELECT\n  hora AS \"Hora\",\n  ROUND(AVG(market_price_pt), 2) AS \"Preço Médio PT (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND market_price_pt IS NOT NULL\nGROUP BY hora\nORDER BY hora",
           "refId": "A"
         }
       ],
-      "title": "Perfil Médio de Consumo por Hora do Dia (0–23h) — API",
+      "title": "Preço Médio Day-Ahead por Hora do Dia (0–23h)",
       "type": "barchart"
     },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Índice = preço normalizado − consumo normalizado. Valores positivos: hora com preço relativamente alto e consumo relativamente baixo — janela ideal para vender energia renovável.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": -10 },
+              { "color": "#73BF69", "value": 5 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 10, "w": 10, "x": 14, "y": 6 },
+      "id": 21,
+      "options": {
+        "barAlignment": 0,
+        "fillOpacity": 75,
+        "groupWidth": 0.7,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" },
+        "xField": "Hora"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 1,
+          "rawSql": "WITH hourly AS (\n  SELECT\n    hora,\n    AVG(market_price_pt) AS avg_price,\n    AVG(consumo_total) AS avg_consumo\n  FROM iceberg.gold.dp_energy_market_api_hourly\n  WHERE $__timeFilter(ts_utc)\n    AND market_price_pt IS NOT NULL\n    AND consumo_total IS NOT NULL\n  GROUP BY hora\n),\nmaxes AS (\n  SELECT MAX(avg_price) AS max_price, MAX(avg_consumo) AS max_consumo\n  FROM hourly\n)\nSELECT\n  h.hora AS \"Hora\",\n  ROUND(\n    (h.avg_price / m.max_price - h.avg_consumo / m.max_consumo) * 100,\n    1\n  ) AS \"Índice de Oportunidade (%)\"\nFROM hourly h, maxes m\nORDER BY h.hora",
+          "refId": "A"
+        }
+      ],
+      "title": "Índice de Oportunidade por Hora (Preço Alto / Consumo Baixo → Verde)",
+      "type": "barchart"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "id": 102,
+      "title": "Ranking de Horas para Venda — Top e Análise por Período",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Horas ordenadas por preço médio day-ahead. As primeiras linhas representam os momentos historicamente mais rentáveis para vender energia à rede.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "displayMode": "color-background" },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#73BF69", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "orange", "value": 120 },
+              { "color": "red", "value": 180 }
+            ]
+          },
+          "unit": "currencyEUR"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Hora do Dia" },
+            "properties": [
+              { "id": "custom.width", "value": 110 },
+              { "id": "unit", "value": "short" },
+              { "id": "custom.displayMode", "value": "auto" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Preço Máximo (€/MWh)" },
+            "properties": [ { "id": "custom.displayMode", "value": "color-background" } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Observações" },
+            "properties": [
+              { "id": "unit", "value": "short" },
+              { "id": "custom.displayMode", "value": "auto" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 17 },
+      "id": 30,
+      "options": {
+        "showHeader": true,
+        "sortBy": [ { "desc": true, "displayName": "Preço Médio (€/MWh)" } ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 1,
+          "rawSql": "SELECT\n  hora AS \"Hora do Dia\",\n  ROUND(AVG(market_price_pt), 2) AS \"Preço Médio (€/MWh)\",\n  ROUND(MAX(market_price_pt), 2) AS \"Preço Máximo (€/MWh)\",\n  ROUND(MIN(market_price_pt), 2) AS \"Preço Mínimo (€/MWh)\",\n  COUNT(*) AS \"Observações\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND market_price_pt IS NOT NULL\nGROUP BY hora\nORDER BY AVG(market_price_pt) DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Ranking de Horas por Preço Médio Day-Ahead (todas as 24h)",
+      "type": "table"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Top 15 eventos históricos com o maior preço registado. Útil para identificar padrões de pico extremo.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "displayMode": "color-background" },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 150 },
+              { "color": "orange", "value": 300 },
+              { "color": "red", "value": 500 }
+            ]
+          },
+          "unit": "currencyEUR"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Timestamp UTC" },
+            "properties": [ { "id": "custom.width", "value": 210 }, { "id": "custom.displayMode", "value": "auto" } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Hora do Dia" },
+            "properties": [ { "id": "custom.width", "value": 100 }, { "id": "unit", "value": "short" }, { "id": "custom.displayMode", "value": "auto" } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Consumo (MWh)" },
+            "properties": [ { "id": "unit", "value": "kwatth" }, { "id": "custom.displayMode", "value": "auto" } ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 17 },
+      "id": 31,
+      "options": {
+        "showHeader": true,
+        "sortBy": [ { "desc": true, "displayName": "Preço PT (€/MWh)" } ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 1,
+          "rawSql": "SELECT\n  CAST(ts_utc AS VARCHAR) AS \"Timestamp UTC\",\n  hora AS \"Hora do Dia\",\n  ROUND(market_price_pt, 2) AS \"Preço PT (€/MWh)\",\n  ROUND(consumo_total, 0) AS \"Consumo (MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\nORDER BY market_price_pt DESC\nLIMIT 15",
+          "refId": "A"
+        }
+      ],
+      "title": "Top 15 Momentos com Maior Preço Registado",
+      "type": "table"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
+      "id": 103,
+      "title": "Evolução Temporal do Preço Day-Ahead Portugal",
+      "type": "row"
+    },
+
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "fillOpacity": 60, "lineWidth": 1 },
-          "decimals": 0,
-          "unit": "kwatth"
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "custom": {
+            "fillOpacity": 12,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 2,
+          "unit": "currencyEUR"
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 27 },
-      "id": 21,
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 28 },
+      "id": 10,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 0,
+          "rawSql": "SELECT\n  ts_utc AS \"time\",\n  ROUND(market_price_pt, 2) AS \"Preço PT (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND market_price_pt IS NOT NULL\nORDER BY ts_utc",
+          "refId": "A"
+        }
+      ],
+      "title": "Preço Day-Ahead Horário — Portugal (€/MWh)",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
+      "id": 104,
+      "title": "Tendência — Média Móvel 24h e Agregação Mensal",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 2,
+          "unit": "currencyEUR"
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 39 },
+      "id": 11,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 0,
+          "rawSql": "SELECT\n  ts_utc AS \"time\",\n  ROUND(rolling_avg_price_24h, 2) AS \"Média Móvel Preço 24h (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND rolling_avg_price_24h IS NOT NULL\nORDER BY ts_utc",
+          "refId": "A"
+        }
+      ],
+      "title": "Média Móvel 24h — Preço Day-Ahead Portugal (€/MWh)",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "custom": {
+            "fillOpacity": 15,
+            "lineWidth": 2,
+            "showPoints": "auto"
+          },
+          "decimals": 2,
+          "unit": "currencyEUR"
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 47 },
+      "id": 12,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 0,
+          "rawSql": "SELECT\n  DATE_TRUNC('month', ts_utc) AS \"time\",\n  ROUND(AVG(market_price_pt), 2) AS \"Preço Médio Mensal PT (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE market_price_pt IS NOT NULL\nGROUP BY DATE_TRUNC('month', ts_utc)\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Preço Médio Mensal — Portugal (€/MWh)",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
+      "id": 105,
+      "title": "Perfil Semanal & Volatilidade do Preço",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Preço médio day-ahead por dia da semana. Permite identificar padrões semanais de valorização da energia.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "custom": { "fillOpacity": 65, "lineWidth": 1 },
+          "decimals": 2,
+          "unit": "currencyEUR"
+        }
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 56 },
+      "id": 40,
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom" },
         "tooltip": { "mode": "single" },
@@ -338,152 +531,154 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "SELECT\n  CASE dia_semana\n    WHEN 0 THEN '0-Seg'\n    WHEN 1 THEN '1-Ter'\n    WHEN 2 THEN '2-Qua'\n    WHEN 3 THEN '3-Qui'\n    WHEN 4 THEN '4-Sex'\n    WHEN 5 THEN '5-Sab'\n    WHEN 6 THEN '6-Dom'\n  END AS \"Dia\",\n  ROUND(AVG(consumo_total), 0) AS \"Consumo Médio (MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nGROUP BY dia_semana\nORDER BY dia_semana",
+          "rawSql": "SELECT\n  CASE dia_semana\n    WHEN 0 THEN '0-Seg'\n    WHEN 1 THEN '1-Ter'\n    WHEN 2 THEN '2-Qua'\n    WHEN 3 THEN '3-Qui'\n    WHEN 4 THEN '4-Sex'\n    WHEN 5 THEN '5-Sab'\n    WHEN 6 THEN '6-Dom'\n  END AS \"Dia\",\n  ROUND(AVG(market_price_pt), 2) AS \"Preço Médio PT (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND market_price_pt IS NOT NULL\nGROUP BY dia_semana\nORDER BY dia_semana",
           "refId": "A"
         }
       ],
-      "title": "Consumo Médio por Dia da Semana (0=Seg … 6=Dom) — API",
+      "title": "Preço Médio por Dia da Semana",
       "type": "barchart"
     },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 },
-      "id": 104,
-      "title": "📊 Agregação Diária & Mensal (API)",
-      "type": "row"
-    },
+
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "fillOpacity": 15, "lineWidth": 1, "showPoints": "never" }
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "Consumo Total Diário (MWh)" },
-            "properties": [
-              { "id": "unit", "value": "kwatth" },
-              { "id": "color", "value": { "fixedColor": "#5794F2", "mode": "fixed" } }
-            ]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Preço Médio Diário (€/MWh)" },
-            "properties": [
-              { "id": "unit", "value": "currencyEUR" },
-              { "id": "custom.axisPlacement", "value": "right" },
-              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
-            ]
-          }
-        ]
-      },
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 37 },
-      "id": 30,
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "none" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-          "format": 0,
-          "rawSql": "SELECT\n  DATE_TRUNC('day', ts_utc) AS \"time\",\n  ROUND(SUM(consumo_total), 0) AS \"Consumo Total Diário (MWh)\",\n  ROUND(AVG(market_price_pt), 2) AS \"Preço Médio Diário (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\nGROUP BY DATE_TRUNC('day', ts_utc)\nORDER BY 1",
-          "refId": "A"
-        }
-      ],
-      "title": "Consumo Total Diário (MWh) & Preço Médio Diário (€/MWh) — API",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "fillOpacity": 20, "lineWidth": 2, "showPoints": "auto" }
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "Consumo Total Mensal (MWh)" },
-            "properties": [
-              { "id": "unit", "value": "kwatth" },
-              { "id": "color", "value": { "fixedColor": "#5794F2", "mode": "fixed" } }
-            ]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Preço Médio Mensal (€/MWh)" },
-            "properties": [
-              { "id": "unit", "value": "currencyEUR" },
-              { "id": "custom.axisPlacement", "value": "right" },
-              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
-            ]
-          }
-        ]
-      },
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 46 },
-      "id": 31,
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "none" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-          "format": 0,
-          "rawSql": "SELECT\n  DATE_TRUNC('month', ts_utc) AS \"time\",\n  ROUND(SUM(consumo_total), 0) AS \"Consumo Total Mensal (MWh)\",\n  ROUND(AVG(market_price_pt), 2) AS \"Preço Médio Mensal (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nGROUP BY DATE_TRUNC('month', ts_utc)\nORDER BY 1",
-          "refId": "A"
-        }
-      ],
-      "title": "Consumo & Preço — Agregação Mensal (API)",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 55 },
-      "id": 105,
-      "title": "🏆 Top Horas — Picos de Consumo & Preço (API)",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Spread = Preço Máximo − Preço Mínimo por hora do dia. Horas com maior spread têm maior volatilidade de preço — risco e oportunidade mais elevados.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
-          "custom": { "displayMode": "color-background" },
-          "decimals": 0,
+          "custom": { "fillOpacity": 65, "lineWidth": 1 },
+          "decimals": 2,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 5500 },
-              { "color": "red", "value": 6000 }
+              { "color": "blue", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 300 }
             ]
           },
-          "unit": "kwatth"
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "Hora UTC" },
-            "properties": [ { "id": "custom.width", "value": 200 } ]
-          }
-        ]
+          "unit": "currencyEUR"
+        }
       },
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 56 },
-      "id": 40,
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 56 },
+      "id": 41,
       "options": {
-        "showHeader": true,
-        "sortBy": [ { "desc": true, "displayName": "Consumo (MWh)" } ]
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" },
+        "xField": "Hora"
       },
       "targets": [
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "SELECT\n  CAST(ts_utc AS VARCHAR) AS \"Hora UTC\",\n  ROUND(consumo_total, 0) AS \"Consumo (MWh)\",\n  ROUND(market_price_pt, 2) AS \"Preço PT (€/MWh)\",\n  hora AS \"Hora do Dia\",\n  CASE is_weekend WHEN true THEN 'Sim' ELSE 'Não' END AS \"Fim Semana\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nORDER BY consumo_total DESC\nLIMIT 15",
+          "rawSql": "SELECT\n  hora AS \"Hora\",\n  ROUND(MAX(market_price_pt) - MIN(market_price_pt), 2) AS \"Spread de Preço (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND market_price_pt IS NOT NULL\nGROUP BY hora\nORDER BY hora",
           "refId": "A"
         }
       ],
-      "title": "Top 15 Horas por Consumo (API)",
-      "type": "table"
+      "title": "Volatilidade do Preço por Hora — Spread Max-Min (€/MWh)",
+      "type": "barchart"
     },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 65 },
+      "id": 106,
+      "title": "Portugal vs Espanha — Comparação MIBEL (ENTSO-E)",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "fillOpacity": 6,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 2,
+          "unit": "currencyEUR"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Preço PT (€/MWh)" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Preço ES (€/MWh)" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } },
+              { "id": "custom.axisPlacement", "value": "right" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 66 },
+      "id": 60,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 0,
+          "rawSql": "SELECT\n  ts_utc AS \"time\",\n  ROUND(price_portugal_eur_mwh, 2) AS \"Preço PT (€/MWh)\",\n  ROUND(price_spain_eur_mwh, 2) AS \"Preço ES (€/MWh)\"\nFROM iceberg.silver.preco_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND price_portugal_eur_mwh IS NOT NULL\n  AND price_spain_eur_mwh IS NOT NULL\nORDER BY ts_utc",
+          "refId": "A"
+        }
+      ],
+      "title": "Preço Day-Ahead Horário — Portugal vs Espanha (€/MWh)",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "custom": { "fillOpacity": 60, "lineWidth": 1 },
+          "decimals": 2,
+          "unit": "currencyEUR"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Preço Médio PT (€/MWh)" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Preço Médio ES (€/MWh)" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 75 },
+      "id": 61,
+      "options": {
+        "barAlignment": 0,
+        "fillOpacity": 65,
+        "groupWidth": 0.7,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" },
+        "xField": "Hora"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 1,
+          "rawSql": "SELECT\n  HOUR(ts_utc) AS \"Hora\",\n  ROUND(AVG(price_portugal_eur_mwh), 2) AS \"Preço Médio PT (€/MWh)\",\n  ROUND(AVG(price_spain_eur_mwh), 2) AS \"Preço Médio ES (€/MWh)\"\nFROM iceberg.silver.preco_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND price_portugal_eur_mwh IS NOT NULL\n  AND price_spain_eur_mwh IS NOT NULL\nGROUP BY HOUR(ts_utc)\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Preço Médio PT vs ES por Hora do Dia",
+      "type": "barchart"
+    },
+
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
       "fieldConfig": {
@@ -495,50 +690,51 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 100 },
-              { "color": "red", "value": 200 }
+              { "color": "yellow", "value": 60 },
+              { "color": "orange", "value": 120 }
             ]
           },
           "unit": "currencyEUR"
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Hora UTC" },
-            "properties": [ { "id": "custom.width", "value": 200 } ]
+            "matcher": { "id": "byName", "options": "Mês" },
+            "properties": [ { "id": "custom.width", "value": 130 }, { "id": "custom.displayMode", "value": "auto" } ]
           }
         ]
       },
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 56 },
-      "id": 41,
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 75 },
+      "id": 62,
       "options": {
         "showHeader": true,
-        "sortBy": [ { "desc": true, "displayName": "Preço PT (€/MWh)" } ]
+        "sortBy": [ { "desc": true, "displayName": "Mês" } ]
       },
       "targets": [
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "SELECT\n  CAST(ts_utc AS VARCHAR) AS \"Hora UTC\",\n  ROUND(market_price_pt, 2) AS \"Preço PT (€/MWh)\",\n  ROUND(consumo_total, 0) AS \"Consumo (MWh)\",\n  hora AS \"Hora do Dia\",\n  CASE is_weekend WHEN true THEN 'Sim' ELSE 'Não' END AS \"Fim Semana\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nORDER BY market_price_pt DESC\nLIMIT 15",
+          "rawSql": "SELECT\n  CAST(DATE_TRUNC('month', ts_utc) AS VARCHAR) AS \"Mês\",\n  ROUND(AVG(price_portugal_eur_mwh), 2) AS \"Preço Médio PT (€/MWh)\",\n  ROUND(AVG(price_spain_eur_mwh), 2) AS \"Preço Médio ES (€/MWh)\",\n  ROUND(MAX(price_portugal_eur_mwh), 2) AS \"Pico PT (€/MWh)\"\nFROM iceberg.silver.preco_api_hourly\nWHERE price_portugal_eur_mwh IS NOT NULL\nGROUP BY DATE_TRUNC('month', ts_utc)\nORDER BY DATE_TRUNC('month', ts_utc) DESC\nLIMIT 24",
           "refId": "A"
         }
       ],
-      "title": "Top 15 Horas por Preço Day-Ahead (API)",
+      "title": "Resumo Mensal — Preço Médio & Pico PT vs ES",
       "type": "table"
     },
+
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 66 },
-      "id": 106,
-      "title": "🤖 ML — Feature Table (Previsão de Consumo) — API",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 84 },
+      "id": 107,
+      "title": "ML — Feature Table para Previsão de Consumo (GBR)",
       "type": "row"
     },
+
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
           "decimals": 0,
-          "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [ { "color": "green", "value": null } ]
@@ -546,7 +742,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 67 },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 85 },
       "id": 50,
       "options": {
         "colorMode": "background",
@@ -561,9 +757,10 @@
           "refId": "A"
         }
       ],
-      "title": "Total de Exemplos ML — feat_load_forecasting_api",
+      "title": "Total de Exemplos ML",
       "type": "stat"
     },
+
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
       "fieldConfig": {
@@ -577,7 +774,7 @@
           "unit": "kwatth"
         }
       },
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 67 },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 85 },
       "id": 51,
       "options": {
         "colorMode": "background",
@@ -592,9 +789,10 @@
           "refId": "A"
         }
       ],
-      "title": "Target Médio — consumo_next_hour (MWh) — API",
+      "title": "Target Médio — consumo_next_hour (MWh)",
       "type": "stat"
     },
+
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
       "fieldConfig": {
@@ -612,7 +810,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 67 },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 85 },
       "id": 52,
       "options": {
         "colorMode": "background",
@@ -627,80 +825,28 @@
           "refId": "A"
         }
       ],
-      "title": "Nulos no Target (deve ser 0) — API",
+      "title": "Nulos no Target (deve ser 0)",
       "type": "stat"
     },
+
     {
-      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" }
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "Consumo Atual (MWh)" },
-            "properties": [
-              { "id": "unit", "value": "kwatth" },
-              { "id": "color", "value": { "fixedColor": "#5794F2", "mode": "fixed" } }
-            ]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Target: Próxima Hora (MWh)" },
-            "properties": [
-              { "id": "unit", "value": "kwatth" },
-              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }
-            ]
-          }
-        ]
-      },
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 71 },
-      "id": 53,
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "none" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-          "format": 0,
-          "rawSql": "SELECT\n  ts_utc AS \"time\",\n  ROUND(consumo_total, 1) AS \"Consumo Atual (MWh)\",\n  ROUND(consumo_next_hour, 1) AS \"Target: Próxima Hora (MWh)\"\nFROM iceberg.gold.feat_load_forecasting_api_hourly\nWHERE $__timeFilter(ts_utc)\nORDER BY ts_utc",
-          "refId": "A"
-        }
-      ],
-      "title": "Feature Table ML — Consumo Atual vs Target Próxima Hora (API)",
-      "type": "timeseries"
-    },
-    {
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 80 },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 89 },
       "id": 54,
       "options": {
-        "content": "## Fonte de Dados — Streaming API\n\n**Consumo:** Energy-Charts API (Fraunhofer ISE)  \n**Endpoint:** `https://api.energy-charts.info/total_power?country=pt`  \n**Dados ENTSO-E:** Carga total Portugal, granularidade horária\n\n**Preço:** Energy-Charts API (Fraunhofer ISE)  \n**Endpoint:** `https://api.energy-charts.info/price?bzn=PT`  \n**Dados OMIE/MIBEL:** Day-ahead market price PT, granularidade horária\n\n**Autenticação:** Nenhuma  \n**Atualização:** Diária (cron)  \n🔗 [Ver no MLflow](http://localhost:15000/#/experiments)",
+        "content": "## Fonte de Dados — ENTSO-E Transparency Platform\n\n**Consumo:** ENTSO-E — Actual Total Load Portugal (`query_load('PT')`)\n**Preço PT:** ENTSO-E — Day-Ahead Prices Portugal (`query_day_ahead_prices('PT')`)\n**Preço ES:** ENTSO-E — Day-Ahead Prices Espanha (`query_day_ahead_prices('ES')`)\n\nDados horários ENTSO-E · Cobertura: 2022-01-01 até hoje · Autenticação: `ENTSOE_TOKEN`\n\n**Modelo ML:** GradientBoostingRegressor · Target: `consumo_next_hour` · [Ver no MLflow](http://localhost:15000/#/experiments/1)\n\n**Pergunta central deste DP:** *Em que intervalo horário diário é mais vantajoso vender energia renovável à rede?*\nResposta: consultar o painel **\"Preço Médio Day-Ahead por Hora do Dia\"** e o **\"Índice de Oportunidade\"** — as horas com maior preço e menor consumo relativo são as janelas ótimas de venda.",
         "mode": "markdown"
       },
-      "title": "Fonte de Dados — Energy-Charts API",
+      "title": "Fonte & Metodologia",
       "type": "text"
     }
+
   ],
   "refresh": "5m",
-  "schemaVersion": 39,
-  "tags": [
-    "mibel",
-    "dp02",
-    "consumo",
-    "preco",
-    "day-ahead",
-    "streaming",
-    "api",
-    "energy-charts"
-  ],
-  "templating": { "list": [] },
-  "time": {
-    "from": "2026-01-01T00:00:00Z",
-    "to": "2026-04-30T23:59:59Z"
-  },
+  "schemaVersion": 38,
+  "tags": ["DP02", "streaming", "preco", "MIBEL", "ENTSO-E"],
+  "time": { "from": "now-90d", "to": "now" },
   "timepicker": {},
-  "timezone": "utc",
-  "title": "MIBEL -- Consumo & Precos Day-Ahead (Streaming API)",
-  "uid": "mibel-consumo-preco-api-v1"
+  "timezone": "Europe/Lisbon",
+  "title": "DP02 — Preço Day-Ahead Portugal: Quando Vender Energia Renovável?",
+  "version": 2
 }

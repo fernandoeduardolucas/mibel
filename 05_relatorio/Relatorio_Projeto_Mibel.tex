@@ -1,0 +1,548 @@
+% =============================================================================
+% MIBEL — Energy Analytics Platform
+% Relatório Técnico Final
+% MEI / TEAD 2.0 | ESTG-IPP | 2025-2026
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[portuguese]{babel}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{tabularx}
+\usepackage{multirow}
+
+% Cores
+\definecolor{mibel-blue}{RGB}{15,31,63}
+\definecolor{mibel-accent}{RGB}{24,56,119}
+\definecolor{code-bg}{RGB}{248,248,248}
+\definecolor{pass-green}{RGB}{22,163,74}
+\definecolor{fail-red}{RGB}{185,28,28}
+\definecolor{warn-orange}{RGB}{234,88,12}
+
+% Configuração de títulos
+\titleformat{\section}{\large\bfseries\color{mibel-blue}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries\color{mibel-accent}}{}{0em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{}{0em}{}
+
+% Cabeçalho / Rodapé
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{mibel-blue}{\textbf{MIBEL — Energy Analytics Platform}}}
+\fancyhead[R]{\small\textcolor{gray}{MEI / TEAD 2.0 | ESTG-IPP}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Listings (código inline)
+\lstset{
+  backgroundcolor=\color{code-bg},
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{gray!30},
+  xleftmargin=6pt,
+  xrightmargin=6pt,
+}
+
+% Hyperref
+\hypersetup{
+  colorlinks=true,
+  linkcolor=mibel-accent,
+  urlcolor=mibel-accent,
+  pdfauthor={Avelino Almeida; Fernando Lucas — MEI TEAD 2.0},
+  pdftitle={MIBEL Energy Analytics Platform — Relatório Técnico},
+}
+
+% Sem indentação, espaçamento entre parágrafos
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+
+% =============================================================================
+\begin{document}
+% =============================================================================
+
+% Capa
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\color{mibel-blue}\rule{\linewidth}{1.5pt}}\\[0.4cm]
+  {\Huge\bfseries\color{mibel-blue} MIBEL\\[0.3cm]
+   \Large Energy Analytics Platform}\\[0.3cm]
+  {\color{mibel-blue}\rule{\linewidth}{1.5pt}}\\[1.5cm]
+  {\large\textbf{Relatório Técnico Final}}\\[0.5cm]
+  {\large Mestrado em Engenharia Informática}\\
+  {\large Tecnologias e Engenharia de Dados (TEAD 2.0)}\\[0.5cm]
+  {\large ESTG --- Instituto Politécnico do Porto}\\[1.5cm]
+  \begin{tabular}{ll}
+    \textbf{Avelino Almeida} & \href{mailto:8220800@estg.ipp.pt}{8220800@estg.ipp.pt} \\[0.3cm]
+    \textbf{Fernando Lucas}  & \href{mailto:8030078@estg.ipp.pt}{8030078@estg.ipp.pt} \\
+  \end{tabular}\\[2cm]
+  {\large Ano Letivo 2025--2026}\\[1cm]
+  \vfill
+  {\small Versão 1.0 --- Maio 2026}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{Contexto e Cenário}
+
+\subsection{Enquadramento do Mercado Energético Ibérico}
+
+O MIBEL (\textit{Mercado Ibérico de Electricidade}) é o mercado grossista de eletricidade da Península Ibérica, criado em 2007 como resultado de um acordo bilateral entre Portugal e Espanha com o objetivo de harmonizar os mercados elétricos dos dois países. Em Portugal, a gestão da rede de transporte é da responsabilidade da REN (Rede Energética Nacional), entidade que publica dados horários de produção e consumo, enquanto os preços \textit{day-ahead} são determinados diariamente na bolsa de energia OMIE (Operador do Mercado Ibérico de Energia).
+
+A estrutura de preços do MIBEL é fortemente influenciada pela componente renovável: Portugal dispõe de uma capacidade instalada significativa em energia hídrica, eólica e fotovoltaica, o que torna os preços \textit{spot} particularmente sensíveis às condições meteorológicas. Em períodos de elevada produção renovável e baixa procura, é frequente observar-se preços negativos --- fenómeno que o presente projeto captura e documenta explicitamente nos quality gates. A volatilidade dos preços, a crescente penetração de produção renovável e a dependência de condições meteorológicas criam, em conjunto, um ambiente de elevada complexidade analítica que justifica a construção de uma plataforma de dados dedicada.
+
+\subsection{Cenário Criado pelo Grupo}
+
+O grupo definiu um cenário hipotético realista, inspirado nas necessidades analíticas de um comercializador de energia no mercado ibérico. Neste cenário, uma equipa de \textbf{Data Engineering e ML} tem como missão construir e operar uma plataforma de dados que suporte três casos de uso distintos:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Monitorizar} em tempo quase-real o equilíbrio entre produção e consumo nacionais, com geração de alertas quando o país se aproxima de uma situação de défice energético;
+  \item \textbf{Estimar} o custo horário da energia consumida com base no preço \textit{day-ahead} OMIE, combinando dados de consumo (REN) com preços de mercado (OMIE) para calcular o custo real de cada megawatt-hora consumido;
+  \item \textbf{Prever} a produção elétrica diária e o preço \textit{spot} a partir de variáveis meteorológicas, permitindo ao departamento comercial antecipar decisões de compra e venda de energia com até sete dias de antecedência.
+\end{enumerate}
+
+Para responder a este cenário de forma integrada, o grupo construiu a plataforma \textbf{MIBEL Energy Analytics Platform}: um lakehouse local completo, que processa dados históricos desde 2022, implementado com três Data Products independentes, cinco modelos de ML em produção e dashboards operacionais auto-provisionados. A plataforma corre integralmente em Docker Compose, sem dependências de serviços cloud externos, o que garante reprodutibilidade total e independência de custos de infraestrutura.
+
+\subsection{Fontes de Dados}
+
+A seleção das fontes de dados foi feita com base na sua disponibilidade pública, fiabilidade e alinhamento com os casos de uso definidos. Foram identificadas três fontes primárias:
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\linewidth}{llX}
+\toprule
+\textbf{Fonte} & \textbf{Data Product} & \textbf{Descrição} \\
+\midrule
+REN/ERSE CSV & DP-01 & Produção (DGM + PRE) e consumo nacional a 15 min; dados públicos disponíveis em \texttt{ren.pt} \\
+OMIE CSV & DP-02 & Preços \textit{day-ahead} hora a hora (€/MWh); cobrindo o mercado ibérico desde 2022 \\
+Open-Meteo API & DP-03 & Dados meteorológicos horários para Portugal continental; API REST gratuita com histórico reanálise ERA5 \\
+Energy-Charts API & DP-02 Streaming & Consumo e produção via API pública da Fraunhofer ISE; usado como alternativa ao ENTSO-E sem necessidade de token \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+A opção pela Open-Meteo como fonte meteorológica no DP-03 deveu-se à combinação de acesso gratuito sem autenticação, cobertura histórica desde 1940 via reanálise ERA5 e disponibilidade de previsões com horizonte de 7 dias --- fundamental para o caso de uso de \textit{hedging} antecipado.
+
+\section{A) Especificação de Data Products}
+
+\subsection{Os Três Data Products}
+
+A especificação dos Data Products foi o ponto de partida do projeto, antes de qualquer implementação técnica. O grupo começou por definir os contratos de dados, as perguntas analíticas que cada produto deve responder e os SLAs operacionais, alinhando-os com o cenário de negócio descrito anteriormente. Esta abordagem \textit{data product first} garantiu que as escolhas técnicas posteriores (formato de tabela, granularidade, chaves de particionamento) servem os consumidores finais e não o inverso.
+
+Foram especificados três produtos de dados com contratos formais, SLAs/SLOs e estratégia de versionamento semântico:
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\linewidth}{lllX}
+\toprule
+\textbf{\#} & \textbf{Nome} & \textbf{Grão} & \textbf{Gold Table} \\
+\midrule
+DP-01 & \texttt{producao\_consumo} & Horário & \texttt{dp\_energia\_balance\_hourly} \\
+DP-02 & \texttt{consumo\_preco} & Horário & \texttt{dp\_energy\_market\_hourly} \\
+DP-03 & \texttt{meteo\_producao} & Diário & \texttt{dp\_meteo\_producao\_daily\_features} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+O grão horário para DP-01 e DP-02 resulta de uma decisão de agregação deliberada: os dados brutos da REN chegam a 15 minutos, mas o preço OMIE é publicado por hora. A agregação para hora na camada Silver permite o join natural entre consumo e preço sem necessidade de interpolação.
+
+\subsection{Contratos e SLAs}
+
+Cada Data Product define um contrato formal que inclui: as perguntas analíticas que o produto responde, as métricas de negócio que calcula, o grão e a chave primária, o schema tipado com versão (v1), as regras de qualidade e os SLAs de \textit{freshness} e completude. O contrato funciona como uma interface pública: os consumidores (dashboards, modelos ML) dependem do schema v1 e os produtores (pipelines ETL) comprometem-se a respeitá-lo.
+
+Exemplo de SLAs definidos para o DP-01:
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textit{Freshness}: dados disponíveis até T+30~min após fecho da hora
+  \item \textit{Completude}: $\geq 99{,}0\%$ das horas no intervalo esperado
+  \item \textit{Unicidade}: chave \texttt{timestamp\_utc} sem duplicados
+  \item \textit{Qualidade}: \texttt{flag\_defice} e \texttt{flag\_excedente} mutuamente exclusivos
+\end{itemize}
+
+Os SLAs foram calibrados com base nas características reais das fontes: a REN publica dados com atraso de 15--30 minutos, pelo que o SLA de T+30min é alcançável em operação normal. A completude de 99\% tolera até $\sim$88 horas em falta por ano, margem adequada para manutenções planeadas e falhas pontuais de API.
+
+\subsection{Decisão de Impacto: \texttt{feature\_set\_version} no DP-03}
+
+O DP-03 inclui a coluna \texttt{feature\_set\_version} (obrigatória, não-nula) em todas as linhas da tabela Gold. Esta decisão surgiu de um problema recorrente em projetos ML: quando as \textit{features} de uma tabela evoluem (nova variável meteorológica, mudança de janela temporal de agregação), é impossível determinar com que versão de features um modelo registado no MLflow foi treinado, tornando a reprodutibilidade impossível.
+
+A solução implementada garante que cada \textit{run} de treino referencia explicitamente a versão do conjunto de \textit{features} utilizado, com as seguintes consequências práticas:
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textbf{Reprodutibilidade}: re-treino com dados históricos da mesma \texttt{feature\_set\_version} produz exatamente o mesmo conjunto de \textit{features} de entrada, independentemente de alterações posteriores à tabela Gold
+  \item \textbf{Rastreabilidade}: o registo MLflow associa \texttt{feature\_set\_version} a \texttt{dataset=iceberg.gold.<tabela>}, permitindo auditar que dados alimentaram cada modelo em produção
+  \item \textbf{Evolução segura}: uma nova transformação de \textit{feature} implica incrementar o número de versão major, sem quebrar consumidores que ainda referenciam a versão anterior
+\end{itemize}
+
+\section{B) Implementação do Lakehouse}
+
+\subsection{Stack Tecnológico e Justificação das Escolhas}
+
+O lakehouse corre integralmente em Docker Compose, sem dependências de serviços cloud externos. Esta escolha foi deliberada: o objetivo académico exige reprodutibilidade total (qualquer máquina com Docker replica o ambiente completo) e independência de custos de infraestrutura cloud. Cada serviço foi selecionado por ser a solução de referência na sua categoria e por integrar nativamente no ecossistema Apache Iceberg / Trino:
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\linewidth}{llX}
+\toprule
+\textbf{Serviço} & \textbf{Tecnologia} & \textbf{Função e justificação da escolha} \\
+\midrule
+Object Storage & MinIO & S3-compatível; armazena Parquet Bronze e artefactos ML. Escolhido por ser o standard de-facto para S3-on-premises, compatível com qualquer SDK boto3/S3 sem alteração de código \\
+Metastore & Hive 4.0 + MariaDB & Registo de schemas para catálogos Hive e Iceberg. A versão 4.0 suporta nativamente tabelas Iceberg sem patches adicionais \\
+Query Engine & Trino 440 & Federação multi-catálogo (Hive, Iceberg, Kafka); execução de SQL analítico sobre ficheiros Parquet em MinIO. Separação compute/storage permite escalar o motor de query independentemente do lakehouse \\
+ML Tracking & MLflow + Postgres & Registo de experimentos, métricas, modelos e artefactos. Backend Postgres garante persistência após recreação de contentores \\
+Dashboards & Grafana 10.4 & Visualização direta sobre Trino via plugin Trino datasource; sem ETL adicional entre Gold e dashboard \\
+Streaming & Redpanda & Broker Kafka-compatível para ingestão em \textit{stream} do DP-02. Redpanda foi preferido ao Kafka por ter menor footprint de memória e não requerer ZooKeeper \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Arquitetura Medallion: Bronze, Silver e Gold}
+
+A arquitetura medallion foi adotada por ser o padrão dominante em engenharia de dados moderna, com separação clara de responsabilidades entre camadas. A implementação concreta no MIBEL define o papel de cada camada da seguinte forma:
+
+\begin{description}[leftmargin=*]
+  \item[\textbf{Bronze}] Tabelas Hive \textit{external} sobre ficheiros Parquet em \texttt{s3://warehouse/bronze/}. Não há qualquer transformação de dados --- a camada Bronze preserva o dado original exatamente como foi recebido da fonte, servindo como ponto de auditoria e reprocessamento. Se uma transformação Silver ou Gold produzir resultados incorretos, é possível reprocessar a partir do Bronze sem re-ingerir dados da fonte.
+  \item[\textbf{Silver}] Tabelas Iceberg \textit{managed} com deduplicação via \texttt{ROW\_NUMBER()}, validação de \textit{range} físico (limites realistas para Portugal continental) e classificação de cada linha com \texttt{\_quality\_flag}: \texttt{ok} / \texttt{null\_values} / \texttt{out\_of\_range}. A Silver é a camada de confiança: downstream nunca vê dados duplicados nem valores fisicamente impossíveis.
+  \item[\textbf{Gold}] Tabelas Iceberg \textit{managed} com joins \textit{cross-DP}, lags temporais (1h, 24h, 7d), \textit{rolling windows} e flags de negócio calculados em SQL Trino. A Gold é a única fonte de verdade para dashboards, modelos ML e quality gates --- nenhum consumidor acede a Bronze ou Silver diretamente.
+\end{description}
+
+\subsection{Decisão de Impacto: Hive para Bronze, Iceberg para Silver e Gold}
+
+A separação deliberada entre Hive (Bronze) e Iceberg (Silver/Gold) é uma das decisões de maior impacto arquitetural do projeto. Em vez de usar um único formato de tabela para todas as camadas, o grupo optou por formatos diferentes com base nas garantias necessárias em cada camada:
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textbf{Iceberg nas camadas Silver e Gold} oferece transações ACID (operações DELETE+INSERT atómicas), \textit{schema evolution} sem rewrite de ficheiros e \textit{time-travel} --- funcionalidades essenciais para auditar reprocessamentos, fazer rollback de transformações incorretas e garantir consistência durante escritas concorrentes
+  \item \textbf{Hive external na Bronze} elimina o custo de gestão ACID em dados raw, que são escritos uma única vez e nunca modificados. As tabelas Hive \textit{external} apontam diretamente para os ficheiros Parquet no MinIO sem overhead de gestão transacional, resultando em menor latência de ingestão e maior simplicidade operacional
+  \item A combinação das duas tecnologias no mesmo Hive Metastore e no mesmo catálogo Trino permite queries que cruzam Bronze e Silver sem infraestrutura adicional, o que é útil para debugging e validação de transformações
+\end{itemize}
+
+\section{C) Pipelines com Orquestração}
+
+\subsection{Runners Python Idempotentes}
+
+O grupo optou por implementar os orquestradores como scripts Python autónomos em vez de usar um orquestrador externo como Airflow ou Prefect para todos os DPs. Esta decisão foi justificada pela escala do projeto: para três Data Products com execução predominantemente batch, um orquestrador externo adicionaria complexidade operacional sem benefício proporcional. O Flyte foi adotado apenas onde há paralelismo natural entre tarefas (DP-02 Static com múltiplos meses de dados históricos).
+
+Cada orquestrador Python executa as seguintes fases em sequência, com verificações de saúde em cada etapa:
+
+\begin{enumerate}[leftmargin=*,noitemsep]
+  \item Verificação Docker + \texttt{compose up} (opcional com \texttt{--skip-docker}; o stack pode já estar a correr)
+  \item \textit{Health check} Trino com \texttt{SELECT 1} até resposta positiva (máx. 60s com \textit{retry})
+  \item Criação de \textit{venv} local isolado + instalação de dependências Python específicas do DP
+  \item DDL: \texttt{CREATE TABLE IF NOT EXISTS} para Bronze, Silver e Gold (idempotente; re-corridas seguras)
+  \item Fetch / upload de dados para MinIO (download de CSV da fonte ou chamada Open-Meteo API)
+  \item Bronze INSERT via Trino (carga de Parquet em tabela Hive \textit{external})
+  \item Silver INSERT com deduplicação via \texttt{ROW\_NUMBER() OVER (PARTITION BY ... ORDER BY ...)}, validação de \textit{range} e classificação \texttt{\_quality\_flag}
+  \item Gold INSERT com joins \textit{cross-DP}, lags temporais e \textit{rolling windows} calculados em SQL
+  \item Quality Gate automático (bloqueante em FAIL --- ver Secção~\ref{sec:quality})
+\end{enumerate}
+
+A idempotência é garantida em todas as fases: DDL usa \texttt{IF NOT EXISTS}, a Bronze verifica datas já carregadas antes de re-inserir, e a Gold usa DELETE+INSERT por intervalo de datas (ver subsecção abaixo).
+
+\subsection{DP-02 Streaming --- Pipeline de Ingestão Contínua}
+
+O DP-02 tem duas variantes de pipeline que coexistem e servem propósitos complementares, partilhando a mesma camada Gold para garantir consistência analítica:
+
+\begin{description}[leftmargin=*]
+  \item[\textbf{Static (OMIE CSV)}] Carrega dados históricos 2022--2024 via Flyte remoto em pods K3s; cada ficheiro mensal OMIE é processado em paralelo como uma tarefa Flyte independente. Adequado para análise retrospetiva, treino ML com dados históricos extensos e validação de modelos com janelas temporais longas.
+  \item[\textbf{Streaming (ENTSO-E / Energy-Charts API)}] Ingestão contínua dos últimos 12 meses via API; projetado para execução diária em \textit{cron}, mantendo os dados do dashboard sempre atualizados. O Energy-Charts (Fraunhofer ISE) serve como fonte primária por não requerer token de autenticação; o ENTSO-E Transparency Platform é suportado como alternativa com maior granularidade.
+\end{description}
+
+O orquestrador \texttt{run\_streaming\_pipeline.py} foi desenhado com mecanismos de resiliência que os restantes DPs não necessitam, dado que é o único a correr em modo quase-contínuo:
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textbf{Retry com backoff exponencial} --- 3 tentativas automáticas (2s $\rightarrow$ 4s $\rightarrow$ 8s) sobre cada chamada de API e cada tarefa Flyte; erros transitórios de rede ou de API não abortam o pipeline, sendo registados e retomados automaticamente
+  \item \textbf{Compactação automática Iceberg} --- \texttt{ALTER TABLE ... EXECUTE optimize} após cada run bem-sucedido; ingestões incrementais diárias geram muitos ficheiros pequenos (\textit{small-files problem}), que degradam a performance de queries analíticas; a compactação automática mantém o tamanho médio dos ficheiros acima de 128 MB
+  \item \textbf{SLA operacional monitorizado} --- \textit{freshness} máx. 7 dias e \textit{runtime} máx. 45 min; avisos são persistidos em tabela de auditoria e visíveis no dashboard de observabilidade
+  \item \textbf{Flags de controlo granulares}: \texttt{--source \{energycharts|entsoe\}}, \texttt{--start}, \texttt{--end}, \texttt{--today}, \texttt{--full}, \texttt{--clean}, permitindo reprocessamento cirúrgico de intervalos específicos sem re-correr o histórico completo
+\end{itemize}
+
+\subsection{Auditoria e Lineage --- DP-02 Streaming}
+
+Uma das capacidades mais relevantes do DP-02 Streaming é a persistência automática de metadados de execução em tabelas Iceberg dedicadas no schema \texttt{iceberg.audit}. Esta funcionalidade permite correlacionar qualquer dado da Gold com a execução específica que o produziu, fechando o ciclo de rastreabilidade dados $\leftrightarrow$ execução.
+
+Cada execução do pipeline Streaming persiste automaticamente dois registos:
+
+\begin{description}[leftmargin=*]
+  \item[\texttt{audit.pipeline\_runs}] Uma linha por run com: \texttt{run\_id} (UUID v4), \texttt{status} (SUCCESS/FAILED), \texttt{duration\_seconds}, contagens de linhas inseridas por camada (\texttt{rows\_bronze}, \texttt{rows\_silver}, \texttt{rows\_gold}), parâmetros de execução (\texttt{source}, \texttt{date\_from}, \texttt{date\_to}) e mensagem de erro em caso de falha.
+  \item[\texttt{audit.dataset\_lineage}] Grafo upstream $\rightarrow$ downstream materializado por execução, documentando a cadeia de transformações: \texttt{bronze.consumo\_api\_raw $\rightarrow$ silver.consumo\_api\_hourly $\rightarrow$ gold.dp\_energy\_market\_api\_hourly}. Cada aresta do grafo inclui o \texttt{run\_id}, permitindo reconstruir que runs produziram cada versão dos dados.
+\end{description}
+
+O logging estruturado prefixo os primeiros 8 caracteres do UUID em cada linha de log, correlacionando diretamente os registos do terminal com as linhas da tabela de auditoria:
+
+\begin{lstlisting}
+[3f2a1b9c] Pipeline iniciada - periodo=2024-01-01->2024-12-31  fonte=energycharts
+[3f2a1b9c] Bronze ingerido: 17544 linhas  (consumo + preco)
+[3f2a1b9c] Pipeline SUCCESS em 541s  (bronze=17544  silver=8772  gold=8748)
+\end{lstlisting}
+
+\subsection{Orquestração Flyte}
+
+O Flyte foi adotado para o DP-02 Static como motor de orquestração remota, dado que o processamento paralelo de múltiplos meses de dados históricos reduz significativamente o tempo total de carga. O Flyte Sandbox corre como contentor externo com K3s interno, acedendo aos serviços do Compose via \texttt{host.docker.internal} --- solução necessária porque os pods K3s não partilham a rede Docker Compose.
+
+Os scripts de pipeline são decorados com \texttt{@task} e \texttt{@workflow} do SDK Flyte, com \textit{stubs} locais que permitem execução sem o Flyte instalado (útil em ambientes de desenvolvimento rápido):
+
+\begin{lstlisting}[language=Python]
+try:
+    from flytekit import task, workflow
+except ModuleNotFoundError:
+    def task(*args, **kwargs):
+        def decorator(func): return func
+        return args[0] if args and callable(args[0]) else decorator
+    def workflow(func=None, **kwargs):
+        return func if func else lambda f: f
+\end{lstlisting}
+
+Esta abordagem de \textit{graceful degradation} garante que o código de pipeline funciona em modo local sem Flyte instalado, reduzindo a fricção durante desenvolvimento e debug, e corre em modo orquestrado em K3s quando o Flyte Sandbox está disponível.
+
+\subsection{Decisão de Impacto: Reprocessamento Incremental com DELETE+INSERT}
+
+O DP-01, DP-02 Static e DP-03 suportam reprocessamento incremental da camada Gold via flags \texttt{--date-from} / \texttt{--date-to}. A estratégia DELETE+INSERT (em vez de UPSERT ou INSERT OVERWRITE) foi escolhida após análise das alternativas:
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textbf{Atomicidade garantida pelo Iceberg}: o DELETE e o INSERT subsequente são commitados numa única transação Iceberg; nunca há um instante em que a Gold tem um intervalo apagado mas ainda não reescrito, eliminando o risco de queries intermediárias lerem dados incompletos
+  \item \textbf{Sem necessidade de chave de merge}: UPSERT em Iceberg requer uma chave de negócio bem definida e uma operação \texttt{MERGE INTO} com lógica de deduplicação; DELETE+INSERT elimina esta complexidade porque o intervalo é sempre substituído por completo
+  \item \textbf{Isolamento cirúrgico}: o reprocessamento de um mês específico não afeta dados de outros meses; é possível corrigir uma transformação Gold para Janeiro 2024 sem tocar nos restantes meses
+\end{itemize}
+
+\section{D) Serving}
+
+\subsection{Grafana como Camada de Serving}
+
+A estratégia de serving do projeto assenta exclusivamente em \textbf{Grafana 10.4}, que consulta diretamente as tabelas Gold via Trino. Esta abordagem contrasta com uma arquitetura alternativa comum que interpõe uma API REST Python entre o lakehouse e os dashboards. A escolha por Grafana direto sobre Trino foi tomada após comparar as duas opções no contexto do projeto.
+
+Todos os dashboards são auto-provisionados a partir de ficheiros JSON em \texttt{04\_application/grafana/dashboards/} e carregados automaticamente no arranque do Grafana, sem necessidade de configuração manual. O datasource Trino é configurado via variável de ambiente, apontando para o serviço Trino do Docker Compose.
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\linewidth}{llX}
+\toprule
+\textbf{DP} & \textbf{Dashboard} & \textbf{Gold Table consultada} \\
+\midrule
+DP-01 & \texttt{producao\_consumo\_overview.json} & \texttt{iceberg.gold.dp\_energia\_balance\_hourly} \\
+DP-02 Static & \texttt{consumo\_preco\_overview.json} & \texttt{iceberg.gold.dp\_energy\_market\_hourly} \\
+DP-02 Streaming & \texttt{consumo\_preco\_streaming\_overview.json} & \texttt{iceberg.gold.dp\_energy\_market\_api\_hourly} \\
+DP-03 & \texttt{meteo\_producao\_overview.json} & \texttt{iceberg.gold.dp\_meteo\_producao\_daily\_features} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Conteúdo dos Dashboards}
+
+Cada dashboard foi desenhado com foco no caso de uso de negócio do respetivo DP, não apenas como visualização genérica de dados. Os painéis foram estruturados para responder diretamente às perguntas analíticas definidas no contrato de cada Data Product:
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textbf{DP-01}: saldo líquido nacional (MWh = produção $-$ consumo), ratio produção/consumo por hora, contagem de horas de défice e excedente no período selecionado, série temporal horária com banda de tolerância; o dashboard responde à pergunta ``Portugal está em défice energético agora?''
+  \item \textbf{DP-02 Static}: preço médio \textit{day-ahead} por mês (€/MWh), custo estimado total da energia consumida, correlação entre preço e consumo, percentagem de horas com preço negativo; o dashboard responde à pergunta ``Quanto custou a energia em cada mês e que fatores determinaram esse custo?''
+  \item \textbf{DP-02 Streaming}: dados quase-em-tempo-real via ENTSO-E/Energy-Charts, \textit{rolling average} 24h do consumo, comparação Portugal vs.\ Espanha, indicador de \textit{freshness} com semáforo ligado diretamente à tabela \texttt{audit.pipeline\_runs}
+  \item \textbf{DP-03}: temperatura média diária e precipitação acumulada, produção renovável total (hídrica + eólica + solar), \textit{scatter plot} temperatura vs.\ produção com linha de tendência, preço \textit{spot} estimado pelo Modelo B
+\end{itemize}
+
+\subsection{Decisão de Impacto: Grafana sobre Trino como Única Camada de Serving}
+
+A decisão de usar Grafana diretamente sobre Trino, eliminando qualquer backend HTTP intermédio, tem impacto significativo na manutenibilidade e correção do sistema:
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textbf{Eliminação do \textit{serving skew}}: uma API Python intermediária teria de reimplementar parte da lógica de agregação e filtragem já presente na Gold; qualquer divergência entre a lógica da API e a lógica SQL introduz inconsistências silenciosas entre o que os dashboards mostram e o que os modelos ML usam para treinar
+  \item \textbf{Dashboards como código versionado}: os ficheiros JSON em git são a única fonte de verdade para os dashboards; qualquer alteração é rastreável, reversível e aplicável a qualquer instância do ambiente sem configuração manual
+  \item \textbf{Provisionamento instantâneo}: novos dashboards ou alterações a dashboards existentes são carregados via \texttt{POST /api/admin/provisioning/dashboards/reload} sem reiniciar o stack, com tempo de aplicação inferior a 1 segundo
+  \item \textbf{Redução da superfície operacional}: a eliminação de três servidores Python (um por DP com API REST) reduz o número de processos a monitorizar, de dependências a gerir e de potenciais pontos de falha
+\end{itemize}
+
+\section{E) Qualidade e Observabilidade}
+\label{sec:quality}
+
+\subsection{Filosofia de Quality Gates Bloqueantes}
+
+A abordagem de qualidade do projeto é diferente do que normalmente se observa em projetos académicos: em vez de validações \textit{best-effort} ou simples logging de anomalias, o grupo implementou quality gates \textbf{bloqueantes} que impedem dados de má qualidade de chegar a consumidores downstream. Esta decisão reflete uma visão de qualidade como propriedade sistémica e não como verificação pontual.
+
+Cada runner executa um quality gate automático após a carga da Gold. O padrão de output é uniforme e persistido em tabela de auditoria:
+
+\begin{lstlisting}
+check_name | status | valor_pct | threshold_pct | detalhe
+\end{lstlisting}
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textbf{\textcolor{pass-green}{PASS}}: valor dentro dos limites definidos no contrato do DP
+  \item \textbf{\textcolor{warn-orange}{WARN}}: anomalia não crítica que não viola o contrato mas merece atenção --- pipeline continua, log emitido, registo persistido em \texttt{quality\_log}
+  \item \textbf{\textcolor{fail-red}{FAIL}}: violação crítica do contrato --- \texttt{SystemExit} imediato; os dados corrompidos não chegam a dashboards, modelos ML ou APIs
+\end{itemize}
+
+Todos os resultados de todos os checks são persistidos automaticamente na tabela \texttt{iceberg.gold.quality\_log} (particionada por \texttt{run\_date}), permitindo auditoria histórica completa, \textit{trending} de WARNs ao longo do tempo e rastreabilidade de que execução produziu cada resultado de qualidade.
+
+\subsection{Cobertura de Checks}
+
+O grupo implementou 110 checks de qualidade distribuídos por todas as camadas (Bronze, Silver, Gold) de todos os Data Products:
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{DP} & \textbf{Bronze checks} & \textbf{Silver checks} & \textbf{Gold checks} & \textbf{Total} \\
+\midrule
+DP-01 & --- & 11 & 10 & 21 \\
+DP-02 Static & 11 & 13 & 14 & 38 \\
+DP-02 Streaming & 10 & 8 & 8 & 26 \\
+DP-03 & --- & 13 & 12 & 25 \\
+\midrule
+\textbf{Total} & & & & \textbf{110} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+O DP-02 é o mais extensivamente validado (38 + 26 = 64 checks) porque combina duas fontes de dados (consumo e preço) com comportamentos distintos, e porque opera em modo quase-contínuo onde anomalias de ingestão são mais prováveis.
+
+Os tipos de verificação implementados cobrem as principais dimensões de qualidade de dados:
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textbf{Null rates}: colunas críticas devem ter 0\% de nulos (FAIL) ou $<5$\% (WARN); o limiar de 5\% WARN foi calibrado para tolerância a lacunas pontuais de API sem bloquear pipelines desnecessariamente
+  \item \textbf{Range físico}: temperatura $\in [-10, 50]$°C, precipitação $\in [0, 200]$~mm, vento $\in [0, 80]$~m/s --- limiares definidos com base nas condições climatológicas de Portugal continental registadas no século XX
+  \item \textbf{Unicidade}: chaves de negócio (\texttt{timestamp\_utc}, \texttt{data\_hora}) sem duplicados na Silver e Gold
+  \item \textbf{Alinhamento temporal}: \textit{timestamps} alinhados à hora UTC ou a intervalos de 15~min (dados brutos REN)
+  \item \textbf{Lag consistency}: \texttt{temp\_lag\_1d} deve corresponder à temperatura observada no dia anterior (tolerância 0,01°C), validando que os lags temporais foram calculados corretamente
+  \item \textbf{Cobertura cross-DP}: $\geq 90$\% dos dias devem ter dados de meteo + produção + preço em simultâneo, garantindo que a Gold do DP-03 tem os três domínios representados
+  \item \textbf{Freshness}: dados com atraso $< 400$ dias (threshold adaptado ao dataset histórico que cobre 2022--2024)
+\end{itemize}
+
+\subsection{Anomalias Esperadas e Conhecimento de Domínio (DP-02)}
+
+Na execução de validação do DP-02 (\textit{consumo\_preco}), todos os 38 checks foram executados com resultado: 32 PASS, 6 WARN, 0 FAIL. Os WARNs são documentados e aceites porque representam características conhecidas do mercado energético ibérico ou artefactos controlados do processo de ingestão. Esta distinção entre WARN e FAIL é uma decisão de engenharia deliberada: incluir estas situações como FAIL causaria \textit{alert fatigue} e levaria à ignorância de alertas genuinamente críticos.
+
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{p{4.8cm}lrp{5.5cm}}
+\toprule
+\textbf{Check} & \textbf{Camada} & \textbf{Contagem} & \textbf{Explicação} \\
+\midrule
+\texttt{price\_portugal\_raw >= 0} & Bronze + Silver & 504 horas & Preços negativos são fenómeno real do MIBEL: excesso de produção renovável em períodos de baixa procura empurra o preço abaixo de zero. O dado é válido e preservado; o WARN garante rastreabilidade. \\
+\addlinespace
+\texttt{uniqueness (datahora,} \texttt{process\_date)} & Bronze & 24 grupos & Artefacto de re-ingest idempotente: uma segunda execução sobre o mesmo dia gera duplicados temporários na Bronze. A Silver absorve-os via \texttt{GROUP BY + AVG}, sem propagação para camadas superiores. \\
+\addlinespace
+\texttt{registos\_por\_dia >= 80} & Bronze & 2 dias & Dias de fronteira do ficheiro histórico com carga parcial ($<96$ registos de 15~min esperados). Não afecta a agregação horária da Silver porque as horas completas são processadas corretamente. \\
+\addlinespace
+\texttt{horas\_por\_dia >= 23} & Silver & 2 dias & Dias de transição DST (\textit{spring forward}): a hora 2 local não existe, pelo que o dia tem 23 horas. Comportamento esperado do calendário europeu de horário de verão. \\
+\bottomrule
+\end{tabular}
+\caption{WARNs observados no DP-02 e respectiva justificação de domínio.}
+\label{tab:warns_dp02}
+\end{table}
+
+\subsection{Observabilidade via Grafana}
+
+O ciclo de observabilidade é fechado através de painéis Grafana que consultam as tabelas de auditoria diretamente. O DP-02 Streaming expõe as seguintes métricas de pipeline no mesmo dashboard dos dados de negócio:
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item Histograma de \textit{duration\_seconds} por execução --- permite detetar degradação de performance ao longo do tempo
+  \item Série temporal de \texttt{rows\_gold} por run --- permite detetar gaps de ingestão (runs com zero linhas inseridas na Gold)
+  \item Painel de \textit{freshness} com semáforo: \texttt{CURRENT\_DATE - MAX(process\_date)} em dias; verde $<$ 3 dias, amarelo 3--7 dias, vermelho $>$ 7 dias
+  \item Tabela das últimas 10 execuções com status, duração e contagens de linhas por camada
+\end{itemize}
+
+Esta integração é especialmente importante porque o mesmo pipeline que produz os dados de negócio produz também os metadados de execução, visíveis no mesmo Grafana sem infraestrutura adicional de monitorização.
+
+\subsection{Decisão de Impacto: Quality Gate Bloqueante vs. Apenas Alertar}
+
+A decisão de bloquear o pipeline em FAIL (em vez de apenas emitir um alerta e continuar) tem impacto direto na qualidade de todo o sistema downstream:
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item Um erro de qualidade na Gold propagaria de forma silenciosa para modelos ML (métricas de avaliação inflacionadas por dados corrompidos), para dashboards (valores incorretos visíveis a stakeholders) e para qualquer consumidor externo
+  \item O custo de um FAIL na pipeline é baixo e conhecido: corrigir a causa raiz, re-correr o pipeline, verificar que os checks passam
+  \item O custo de um modelo ML treinado com dados corrompidos é alto e muitas vezes invisível: o modelo parece funcionar, as métricas parecem boas, mas as previsões em produção são sistematicamente erradas
+  \item A rastreabilidade dados $\leftrightarrow$ modelo (via MLflow tags) permite determinar retroativamente se um modelo em produção foi treinado com dados que posteriormente falharam checks de qualidade
+\end{itemize}
+
+\section{F) Machine Learning}
+
+\subsection{Modelos e Feature Tables}
+
+Para cada Data Product foram desenvolvidos modelos de ML alinhados com o caso de uso de negócio. A escolha dos algoritmos foi guiada pela natureza do problema (classificação vs. regressão) e pelas características das séries temporais energéticas (sazonalidade forte, dependência sequencial, não-linearidades):
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\linewidth}{lllX}
+\toprule
+\textbf{DP} & \textbf{Modelo} & \textbf{Target} & \textbf{Feature Table (Gold)} \\
+\midrule
+DP-01 & RandomForestClassifier & \texttt{flag\_defice} (t+1h) & \texttt{dp\_energia\_balance\_hourly} \\
+DP-02 Static & GradientBoostingRegressor & \texttt{consumo\_next\_hour} & \texttt{feat\_load\_forecasting\_hourly} \\
+DP-02 Streaming & GradientBoostingRegressor & \texttt{consumo\_next\_hour} & \texttt{feat\_load\_forecasting\_api\_hourly} \\
+DP-03 A & RandomForestRegressor & \texttt{producao\_total\_daily\_mwh} & \texttt{dp\_meteo\_producao\_daily\_features} \\
+DP-03 B & GradientBoostingRegressor & \texttt{preco\_spot\_medio\_eur\_mwh} & \texttt{dp\_meteo\_producao\_daily\_features} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+A escolha do \textbf{RandomForest} para o DP-01 (classificação de défice) deve-se à sua robustez com classes desbalanceadas (défice é um evento raro) e à interpretabilidade via \texttt{feature\_importances}. O \textbf{GradientBoosting} foi preferido para as tarefas de regressão por capturar melhor as não-linearidades e interações entre variáveis que são características dos mercados energéticos.
+
+O DP-02 Streaming tem a sua própria feature table (\texttt{feat\_load\_forecasting\_api\_hourly}) derivada dos dados ENTSO-E/Energy-Charts, com as mesmas colunas que a variante estática mas particionada por \texttt{year/month} para eficiência em ingestões incrementais diárias.
+
+\subsection{Rastreabilidade Completa de Dados por Versão de Modelo}
+
+Cada \textit{run} MLflow regista um conjunto de metadados que permite reconstruir completamente as condições em que o modelo foi treinado:
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item \textbf{Tags}: \texttt{dataset} (tabela Gold exata, e.g. \texttt{iceberg.gold.dp\_energia\_balance\_hourly}), \texttt{target}, \texttt{model\_type}, \texttt{domain}
+  \item \textbf{Params}: todos os hiperparâmetros do modelo + \texttt{train\_start/end}, \texttt{test\_start/end}, \texttt{n\_train}, \texttt{n\_test}, \texttt{random\_state}
+  \item \textbf{Métricas}: avaliação exclusivamente no conjunto de teste (MAE, RMSE, R², MAPE para regressão; Accuracy, F1 ponderado, ROC-AUC para classificação)
+  \item \textbf{Artefactos}: \texttt{feature\_importances.json} (rastreabilidade do contributo de cada \textit{feature}), \texttt{feature\_columns.json} (lista exata de colunas usadas, para reprodução do treino), \texttt{model/} (pipeline sklearn serializado com scaler + modelo)
+  \item \textbf{Model Registry}: 5 modelos registados com \texttt{registered\_model\_name}, permitindo comparação de versões e promoção explícita para produção
+\end{itemize}
+
+\subsection{Decisão de Impacto: Split Temporal e Feature Tables Pré-computadas}
+
+Duas decisões de ML têm impacto direto na validade das métricas de avaliação e na ausência de \textit{data leakage}:
+
+\textbf{Split temporal sem shuffle}: as séries temporais energéticas têm forte dependência sequencial --- o consumo às 14h de hoje está correlacionado com o consumo às 14h de ontem. Embaralhar os dados antes do split (abordagem comum para dados i.i.d.) introduz \textit{data leakage}: o modelo vê dados do futuro durante o treino, inflacionando artificialmente as métricas de avaliação. O split temporal garante que o conjunto de teste representa dados genuinamente não vistos, com um horizonte temporal real de 6 meses.
+
+\textbf{Feature tables pré-computadas na Gold}: lags (1h, 24h, 7d) e \textit{rolling windows} (média 24h, máximo 7d) são calculados uma única vez em SQL Trino e armazenados como colunas da tabela Gold. A alternativa --- calcular em Python durante cada run de treino --- introduz risco de \textit{training-serving skew}: se a implementação Python do lag diferir minimamente da implementação SQL em produção (e.g., tratamento diferente de nulos nas bordas da janela), as previsões do modelo degradam silenciosamente sem que as métricas de avaliação detetem o problema.
+
+\section{Relevância para o Negócio}
+
+\subsection{Impacto Hipotético dos Três Data Products}
+
+\subsubsection{DP-01 --- Monitorização de Défice Energético}
+
+Um comercializador que preveja défice com 1 hora de antecedência pode antecipar compras no mercado intradiário a preços mais favoráveis do que no mercado de balanço (tipicamente mais caro e com spreads de incerteza maiores). O modelo de classificação RandomForest com \textit{target} \texttt{flag\_defice} (t+1h) oferece diretamente este sinal de decisão, com a \texttt{feature\_importances} a revelar que as horas do dia e o saldo energético da hora anterior são os preditores mais relevantes.
+
+\subsubsection{DP-02 --- Estimativa de Custo Horário e Previsão de Carga}
+
+A feature table \texttt{feat\_load\_forecasting\_hourly} com lags 1h/24h e \textit{rolling window} 24h permite ao modelo GradientBoosting prever o consumo da próxima hora com base em padrões históricos recentes. Num cenário real, esta previsão alimentaria um sistema de otimização de portefólio: saber se o consumo sobe ou desce na próxima hora determina se é vantajoso comprar antecipadamente no mercado \textit{day-ahead} ou aguardar pelo mercado intradiário.
+
+\subsubsection{DP-03 --- Previsão Meteo $\rightarrow$ Produção $\rightarrow$ Preço}
+
+A cadeia de modelos (Modelo A: produção renovável a partir de meteorologia; Modelo B: preço \textit{spot} a partir de produção + meteorologia) reflecte uma hipótese de negócio verificável: em mercados com elevada penetração renovável como o ibérico, a produção fotovoltaica e eólica é o principal determinante marginal do preço \textit{spot}. Um modelo que antecipe o preço a partir da previsão meteorológica (disponível 7 dias antes via Open-Meteo) permite estratégias de \textit{hedging} com muito maior antecedência do que os modelos baseados em dados de mercado atuais.
+
+\subsection{Valor da Qualidade como Diferenciador}
+
+Os 110 checks de qualidade e os dashboards de observabilidade não são apenas boas práticas técnicas --- têm impacto direto em decisões de negócio. Um sinal de défice gerado a partir de dados com duplicados ou valores fora de range pode levar a uma decisão de compra desnecessária no mercado intradiário, com custo financeiro real e imediato. A rastreabilidade dados $\leftrightarrow$ modelo (via MLflow tags e params) permite auditar \textit{a posteriori} qualquer decisão automatizada que tenha usado um modelo específico, respondendo à pergunta ``com que dados foi treinado o modelo que recomendou esta compra?''.
+
+\section{Conclusão}
+
+O projeto MIBEL implementou integralmente os seis critérios de avaliação, construindo uma plataforma de dados end-to-end funcional e operacional:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{A)} Três Data Products especificados com contratos formais, SLAs calibrados com base nas características reais das fontes, e estratégia de versionamento semântico com \texttt{feature\_set\_version} obrigatório no DP-03
+  \item \textbf{B)} Lakehouse local completo com arquitetura medallion Bronze/Silver/Gold, separação deliberada Hive (Bronze) vs. Iceberg (Silver/Gold), query engine Trino com federação multi-catálogo sobre MinIO
+  \item \textbf{C)} Pipelines idempotentes com quality gates bloqueantes, reprocessamento incremental via DELETE+INSERT atómico, orquestração Flyte para o DP-02 Static, e no DP-02 Streaming: auditoria completa em \texttt{iceberg.audit}, retry com backoff exponencial, compactação Iceberg automática e SLA monitorizado
+  \item \textbf{D)} Quatro dashboards Grafana provisionados como código JSON em git, com SQL direto sobre Trino e sem camadas de serving intermédias que possam introduzir \textit{skew}
+  \item \textbf{E)} 110 checks de qualidade distribuídos por Bronze, Silver e Gold de 4 pipelines; quality gate bloqueante em FAIL; tabelas \texttt{iceberg.audit} com lineage materializado por execução; distinção documentada entre WARNs esperados e FAILs críticos
+  \item \textbf{F)} 5 modelos ML com rastreabilidade completa de dados via MLflow, split temporal sem \textit{data leakage}, feature tables pré-computadas na Gold para eliminar \textit{training-serving skew}, e Model Registry com 5 modelos registados e comparáveis
+\end{itemize}
+
+As decisões de maior impacto foram: separação Hive/Iceberg por camada, quality gate bloqueante em FAIL, Grafana sobre Trino como única camada de serving, split temporal nos modelos ML, feature tables pré-computadas na Gold e auditoria \texttt{iceberg.audit} com lineage automático no DP-02 Streaming. Todas estas decisões garantem que dados, modelos e execuções em produção refletem fielmente a realidade do mercado energético português e são auditáveis \textit{a posteriori} --- um requisito fundamental em qualquer sistema de suporte à decisão com implicações financeiras.
+
+% =============================================================================
+\end{document}

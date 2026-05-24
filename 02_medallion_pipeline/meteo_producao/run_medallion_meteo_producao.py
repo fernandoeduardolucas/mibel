@@ -367,6 +367,28 @@ def main() -> None:
     print("\n" + "=" * 60)
     print("FASE 3 - Silver -> Gold (Trino SQL - DP-03)")
     print("=" * 60)
+
+    # Warn if upstream DP-01/DP-02 Gold tables are missing — the Gold INSERT
+    # references them directly; missing tables cause a silent failure (0 rows).
+    for upstream_table, upstream_dp in [
+        ("iceberg.gold.dp_energia_balance_hourly", "DP-01"),
+        ("iceberg.gold.dp_energy_market_hourly",   "DP-02 Static"),
+    ]:
+        check = subprocess.run(
+            [
+                "docker", "compose", "-f", str(compose_file),
+                "exec", "-T", "trino", "trino",
+                "--execute", f"SELECT COUNT(*) FROM {upstream_table};",
+            ],
+            capture_output=True, text=True,
+        )
+        if check.returncode != 0:
+            print(
+                f"\n    [AVISO] Tabela upstream '{upstream_table}' ({upstream_dp}) não existe.\n"
+                f"    As colunas de produção/preço ficarão NULL no Gold DP-03.\n"
+                f"    Corre o pipeline {upstream_dp} para obter dados completos."
+            )
+
     # DELETE first so re-runs don't accumulate duplicate rows
     subprocess.run(
         [
@@ -384,14 +406,19 @@ def main() -> None:
         first = stmt.split()[0].upper() if stmt.split() else ""
         if first not in ("INSERT", "WITH"):
             continue
-        subprocess.run(
+        result = subprocess.run(
             [
                 "docker", "compose", "-f", str(compose_file),
                 "exec", "-T", "trino", "trino",
             ],
             input=(stmt + ";").encode("utf-8"),
             capture_output=True,
+            text=True,
         )
+        if result.returncode != 0:
+            raise SystemExit(
+                f"Gold INSERT falhou:\nSTDERR: {result.stderr.strip()}\nSTDOUT: {result.stdout.strip()}"
+            )
     print("    Gold INSERT aplicado.")
 
     # --- Quality gate — Silver + Gold (bloqueante em FAIL) ---

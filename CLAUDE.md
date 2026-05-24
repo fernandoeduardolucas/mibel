@@ -31,7 +31,7 @@ docker compose up -d --build
 # Test Trino: docker compose exec trino trino --execute "SHOW CATALOGS;"
 ```
 
-Expected Trino catalogs: `iceberg`, `hive`, `system`, `tpcds`, `tpch`.
+Expected Trino catalogs: `iceberg`, `hive`, `kafka`, `system`, `tpcds`, `tpch`.
 
 Service URLs:
 
@@ -142,9 +142,10 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install pandas scikit-learn trino mlflow boto3
 
-python 03_ml_pipeline/producao_consumo_mlflow_flow.py   # DP-01: RF deficit classifier
-python 03_ml_pipeline/preco_consumo_mlflow_flow.py      # DP-02: GB load forecasting
-python 03_ml_pipeline/meteo_producao_mlflow_flow.py     # DP-03: RF production forecast + GB price impact
+python 03_ml_pipeline/producao_consumo_mlflow_flow.py        # DP-01: RF deficit classifier (target: flag_defice t+1h)
+python 03_ml_pipeline/preco_consumo_mlflow_flow.py           # DP-02 Static: GB load forecasting (target: consumo_next_hour)
+python 03_ml_pipeline/preco_consumo_streaming_mlflow_flow.py # DP-02 Streaming: GB load forecasting (API feature table)
+python 03_ml_pipeline/meteo_producao_mlflow_flow.py          # DP-03: RF production forecast + GB price impact (two models)
 ```
 
 Results visible at <http://localhost:15000>.
@@ -171,10 +172,10 @@ curl -X POST http://localhost:3300/api/admin/provisioning/dashboards/reload -u a
 ### Medallion Layers
 
 ```text
-Raw Sources (CSV upload / Open-Meteo API)
-  └─> BRONZE  — raw ingest; Hive external tables + Iceberg managed; Parquet on MinIO
-  └─> SILVER  — deduplication, range validation, quality flags (Portugal-specific rules)
-  └─> GOLD    — joins, aggregations, lag/rolling features; ML-ready and query-ready
+Raw Sources (CSV upload / Open-Meteo API / Redpanda streaming)
+  └─> BRONZE  — raw ingest; Hive external tables (preserves raw Parquet on MinIO, no ACID overhead)
+  └─> SILVER  — deduplication, range validation, quality flags; Iceberg managed (ACID + schema evolution)
+  └─> GOLD    — joins, aggregations, lag/rolling features; Iceberg managed; ML-ready and query-ready
   └─> Grafana dashboards + ML training (MLflow)
 ```
 
@@ -188,24 +189,28 @@ Python fetch scripts (for APIs/CSV uploads) live in `01_bronze/scripts/python/`.
 
 ### Quality Gate Architecture
 
-There are **no unit tests** — quality assurance is done entirely via SQL checks in `02_medallion_pipeline/<dp_name>/04_quality/sql/`. Each DP has a set of SQL files that query Bronze, Silver, and Gold tables and return `PASS / WARN / FAIL` statuses with percentage thresholds. The orchestrators run these after each layer transform and abort on failures.
+There are **no unit tests** — quality assurance is done entirely via SQL checks in `02_medallion_pipeline/<dp_name>/04_quality/sql/`. Each DP has a set of SQL files that query Bronze, Silver, and Gold tables and return `PASS / WARN / FAIL` statuses with percentage thresholds. The orchestrators run these after each layer transform and abort on failures. There are 110+ checks across all DPs.
 
 Quality checks cover: null rates, duplicate detection, out-of-range values (Portugal-specific rules), daily completeness, deduplication verification, join integrity, and lag/rolling feature validity.
+
+DP-02 Streaming also writes pipeline audit data to `iceberg.audit.pipeline_runs` and lineage to `iceberg.audit.dataset_lineage`. It retries failed tasks 3× with exponential backoff and runs Iceberg auto-compaction after Gold writes.
 
 ### Data Products
 
 | # | Name | Source | Grain | Gold Table | Models |
 | --- | --- | --- | --- | --- | --- |
 | DP-01 | `producao_consumo` | REN/ERSE CSV | Hourly | `iceberg.gold.dp_energia_balance_hourly` | RF deficit classifier |
-| DP-02 | `consumo_preco` | OMIE day-ahead prices | Hourly | `iceberg.gold.dp_energy_market_hourly` | GB load forecast |
-| DP-03 | `meteo_producao` | Open-Meteo API + production | Daily | `iceberg.gold.dp_meteo_producao_daily_features` | RF production + GB price impact |
+| DP-02 Static | `consumo_preco` | OMIE day-ahead CSV | Hourly | `iceberg.gold.dp_energy_market_hourly` + `feat_load_forecasting_hourly` | GB load forecast |
+| DP-02 Stream | `consumo_preco` | Energy-Charts API / Redpanda | Hourly | `iceberg.gold.dp_energy_market_api_hourly` + `feat_load_forecasting_api_hourly` | GB load forecast |
+| DP-03 | `meteo_producao` | Open-Meteo API + REN CSV | Daily | `iceberg.gold.dp_meteo_producao_daily_features` | RF production + GB price impact |
 
 ### Query Engine
 
-All SQL runs on **Trino** with two catalogs:
+All SQL runs on **Trino** with three catalogs:
 
-- `hive` — external tables (raw Parquet/CSV on MinIO)
-- `iceberg` — managed tables (Silver and Gold layers)
+- `hive` — external tables (Bronze layer raw Parquet/CSV on MinIO)
+- `iceberg` — managed tables (Silver and Gold layers, plus `iceberg.audit.*`)
+- `kafka` — live Redpanda topics (DP-02 Streaming ingestion)
 
 Trino catalog configs: `01_docker_stack/trino/etc/catalog/`.
 

@@ -75,6 +75,24 @@ COMMENT ON COLUMN iceberg.gold.dp_meteo_producao_daily_features.estacao IS '1=In
 
 
 -- -----------------------------------------------------------------------------
+-- Stub tables for upstream DPs — created only if they don't already exist.
+-- Ensures this pipeline can run standalone even if DP-01/DP-02 haven't run yet.
+-- The LEFT JOINs in the INSERT below will simply return NULLs for those columns.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS iceberg.gold.dp_energia_balance_hourly (
+    timestamp_utc       TIMESTAMP,
+    producao_total_kwh  DOUBLE,
+    consumo_total_kwh   DOUBLE,
+    saldo_kwh           DOUBLE
+) WITH (format = 'PARQUET', location = 's3a://warehouse/gold/dp_energia_balance_hourly/');
+
+CREATE TABLE IF NOT EXISTS iceberg.gold.dp_energy_market_hourly (
+    ts_utc              TIMESTAMP,
+    market_price_pt     DOUBLE
+) WITH (format = 'PARQUET', location = 's3a://warehouse/gold/dp_energy_market_hourly/');
+
+
+-- -----------------------------------------------------------------------------
 -- INSERT: Populate dp_meteo_producao_daily_features
 -- -----------------------------------------------------------------------------
 INSERT INTO iceberg.gold.dp_meteo_producao_daily_features

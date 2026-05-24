@@ -136,6 +136,33 @@ def create_local_venv(repo_root: Path, base_python: str) -> Path:
 # DDL helper
 # ---------------------------------------------------------------------------
 
+def trino_exec(compose_file: Path, sql: str) -> int:
+    result = subprocess.run(
+        ["docker", "compose", "-f", str(compose_file), "exec", "-T", "trino", "trino",
+         "--execute", sql],
+        text=True, capture_output=True,
+    )
+    return result.returncode
+
+
+def clean_streaming_tables(compose_file: Path) -> None:
+    tables = [
+        "iceberg.bronze.consumo_api_raw",
+        "iceberg.bronze.preco_api_raw",
+        "iceberg.silver.consumo_api_hourly",
+        "iceberg.silver.preco_api_hourly",
+        "iceberg.gold.dp_energy_market_api_hourly",
+        "iceberg.gold.feat_load_forecasting_api_hourly",
+    ]
+    print("\n" + "=" * 60)
+    print("CLEANUP — DROP tabelas _api (Iceberg remove dados do MinIO)")
+    print("=" * 60)
+    for table in tables:
+        print(f"  DROP TABLE IF EXISTS {table}")
+        trino_exec(compose_file, f"DROP TABLE IF EXISTS {table};")
+    print("  Cleanup concluído.")
+
+
 def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str) -> None:
     print(f"\n>>> DDL {stage_name}: {sql_file.name}")
     sql_text  = sql_file.read_text(encoding="utf-8")
@@ -197,17 +224,18 @@ def main() -> None:
     parser.add_argument(
         "--source",
         choices=["entsoe", "energycharts"],
-        default="entsoe",
+        default="energycharts",
         help=(
-            "Fonte de dados para o fetch Bronze (default: entsoe). "
-            "Use 'energycharts' como fallback se não tiveres ENTSOE_TOKEN: "
-            "sem autenticação, redistribui ENTSO-E via Fraunhofer ISE."
+            "Fonte de dados para o fetch Bronze (default: energycharts). "
+            "Sem autenticação, redistribui ENTSO-E via Fraunhofer ISE. "
+            "Use 'entsoe' com ENTSOE_TOKEN definido para acesso direto à plataforma."
         ),
     )
 
     parser.add_argument("--build",       action="store_true", help="faz --build no compose up")
     parser.add_argument("--skip-docker", action="store_true", help="salta o compose up")
     parser.add_argument("--skip-ddl",    action="store_true", help="salta a aplicação de DDL")
+    parser.add_argument("--clean",       action="store_true", help="DROP das 6 tabelas _api antes de recriar (limpa dados MinIO)")
     parser.add_argument("--no-quality",  action="store_true", help="salta os quality gates")
 
     args = parser.parse_args()
@@ -222,10 +250,16 @@ def main() -> None:
     elif args.full:
         start_date = date(2022, 1, 1)
         end_date   = today
-    else:
-        days = args.days or 7
+    elif args.days:
         end_date   = today
-        start_date = today - timedelta(days=days - 1)
+        start_date = today - timedelta(days=args.days - 1)
+    else:
+        # Default: últimos 12 meses
+        end_date = today
+        try:
+            start_date = today.replace(year=today.year - 1)
+        except ValueError:  # 29 Fev em ano não bissexto
+            start_date = today.replace(year=today.year - 1, day=28)
 
     streaming_root = Path(__file__).resolve().parent
     repo_root      = streaming_root.parent.parent.parent
@@ -268,6 +302,10 @@ def main() -> None:
         wait_for_trino(compose_file)
     else:
         print("\n>>> --skip-docker: compose up ignorado.")
+
+    # --- Cleanup (opcional) ---
+    if args.clean:
+        clean_streaming_tables(compose_file)
 
     # --- DDL ---
     if not args.skip_ddl:

@@ -235,32 +235,43 @@ silver_to_gold_api_full
 
 ## Como executar
 
-### Pré-requisito
+### Sem token (Energy-Charts / Fraunhofer ISE) — fonte por defeito
+
+Sem necessidade de registo. O comportamento padrão (sem flags) corre os **últimos 12 meses** via Energy-Charts.
 
 ```powershell
-$env:ENTSOE_TOKEN = "<o-teu-token>"
-```
+# Padrão: últimos 12 meses, fonte Energy-Charts (sem token)
+python run_streaming_pipeline.py --skip-docker
 
-### Comando completo (últimos 7 dias)
+# Limpar tabelas e recarregar tudo desde o início (~2022 até hoje)
+python run_streaming_pipeline.py --skip-docker --clean --full
 
-```powershell
-python run_streaming_pipeline.py --skip-docker --days 7
-```
-
-### Outros exemplos
-
-```powershell
 # Período específico
 python run_streaming_pipeline.py --skip-docker --start 2024-01-01 --end 2024-12-31
-
-# Histórico completo (~2022 até hoje)
-python run_streaming_pipeline.py --skip-docker --full
 
 # Apenas hoje, sem quality gates
 python run_streaming_pipeline.py --skip-docker --today --no-quality
 
-# Sem recriar tabelas (DDL já aplicado) e sem quality gates
-python run_streaming_pipeline.py --skip-docker --skip-ddl --no-quality --days 7
+# Sem recriar tabelas (DDL já aplicado)
+python run_streaming_pipeline.py --skip-docker --skip-ddl
+```
+
+### Com token ENTSO-E (acesso direto à plataforma)
+
+Obter token gratuito: email para `transparency@entsoe.eu`, assunto "RESTful API access" (~3 dias úteis).
+
+```powershell
+# Definir token
+$env:ENTSOE_TOKEN = "<o-teu-token>"
+
+# Padrão: últimos 12 meses, fonte ENTSO-E direta
+python run_streaming_pipeline.py --skip-docker --source entsoe
+
+# Limpar e recarregar histórico completo via ENTSO-E
+python run_streaming_pipeline.py --skip-docker --source entsoe --clean --full
+
+# Período específico via ENTSO-E
+python run_streaming_pipeline.py --skip-docker --source entsoe --start 2024-01-01 --end 2024-12-31
 ```
 
 ---

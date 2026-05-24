@@ -220,7 +220,7 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "SELECT\n  hora AS \"Hora\",\n  ROUND(AVG(market_price_pt), 2) AS \"Preço Médio PT (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND market_price_pt IS NOT NULL\nGROUP BY hora\nORDER BY hora",
+          "rawSql": "SELECT\n  LPAD(CAST(hora AS VARCHAR), 2, '0') || 'h' AS \"Hora\",\n  ROUND(AVG(market_price_pt), 2) AS \"Preço Médio PT (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND market_price_pt IS NOT NULL\nGROUP BY hora\nORDER BY hora",
           "refId": "A"
         }
       ],
@@ -260,7 +260,7 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "WITH hourly AS (\n  SELECT\n    hora,\n    AVG(market_price_pt) AS avg_price,\n    AVG(consumo_total) AS avg_consumo\n  FROM iceberg.gold.dp_energy_market_api_hourly\n  WHERE $__timeFilter(ts_utc)\n    AND market_price_pt IS NOT NULL\n    AND consumo_total IS NOT NULL\n  GROUP BY hora\n),\nmaxes AS (\n  SELECT MAX(avg_price) AS max_price, MAX(avg_consumo) AS max_consumo\n  FROM hourly\n)\nSELECT\n  h.hora AS \"Hora\",\n  ROUND(\n    (h.avg_price / m.max_price - h.avg_consumo / m.max_consumo) * 100,\n    1\n  ) AS \"Índice de Oportunidade (%)\"\nFROM hourly h, maxes m\nORDER BY h.hora",
+          "rawSql": "WITH hourly AS (\n  SELECT\n    hora,\n    AVG(market_price_pt) AS avg_price,\n    AVG(consumo_total) AS avg_consumo\n  FROM iceberg.gold.dp_energy_market_api_hourly\n  WHERE $__timeFilter(ts_utc)\n    AND market_price_pt IS NOT NULL\n    AND consumo_total IS NOT NULL\n  GROUP BY hora\n),\nmaxes AS (\n  SELECT MAX(avg_price) AS max_price, MAX(avg_consumo) AS max_consumo\n  FROM hourly\n)\nSELECT\n  LPAD(CAST(h.hora AS VARCHAR), 2, '0') || 'h' AS \"Hora\",\n  ROUND(\n    (h.avg_price / m.max_price - h.avg_consumo / m.max_consumo) * 100,\n    1\n  ) AS \"Índice de Oportunidade (%)\"\nFROM hourly h, maxes m\nORDER BY h.hora",
           "refId": "A"
         }
       ],
@@ -569,7 +569,7 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "SELECT\n  hora AS \"Hora\",\n  ROUND(MAX(market_price_pt) - MIN(market_price_pt), 2) AS \"Spread de Preço (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND market_price_pt IS NOT NULL\nGROUP BY hora\nORDER BY hora",
+          "rawSql": "SELECT\n  LPAD(CAST(hora AS VARCHAR), 2, '0') || 'h' AS \"Hora\",\n  ROUND(MAX(market_price_pt) - MIN(market_price_pt), 2) AS \"Spread de Preço (€/MWh)\"\nFROM iceberg.gold.dp_energy_market_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND market_price_pt IS NOT NULL\nGROUP BY hora\nORDER BY hora",
           "refId": "A"
         }
       ],
@@ -671,7 +671,7 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "SELECT\n  HOUR(ts_utc) AS \"Hora\",\n  ROUND(AVG(price_portugal_eur_mwh), 2) AS \"Preço Médio PT (€/MWh)\",\n  ROUND(AVG(price_spain_eur_mwh), 2) AS \"Preço Médio ES (€/MWh)\"\nFROM iceberg.silver.preco_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND price_portugal_eur_mwh IS NOT NULL\n  AND price_spain_eur_mwh IS NOT NULL\nGROUP BY HOUR(ts_utc)\nORDER BY 1",
+          "rawSql": "SELECT\n  LPAD(CAST(HOUR(ts_utc) AS VARCHAR), 2, '0') || 'h' AS \"Hora\",\n  ROUND(AVG(price_portugal_eur_mwh), 2) AS \"Preço Médio PT (€/MWh)\",\n  ROUND(AVG(price_spain_eur_mwh), 2) AS \"Preço Médio ES (€/MWh)\"\nFROM iceberg.silver.preco_api_hourly\nWHERE $__timeFilter(ts_utc)\n  AND price_portugal_eur_mwh IS NOT NULL\n  AND price_spain_eur_mwh IS NOT NULL\nGROUP BY HOUR(ts_utc)\nORDER BY 1",
           "refId": "A"
         }
       ],
@@ -725,12 +725,253 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 84 },
       "id": 107,
-      "title": "ML — Feature Table para Previsão de Consumo (GBR)",
+      "title": "ML — GradientBoosting: Previsão de Consumo (R²=0.99 | MAPE=1.30%)",
       "type": "row"
     },
 
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Erro absoluto médio em MWh na previsão de consumo da hora seguinte.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#73BF69", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 200 }
+            ]
+          },
+          "unit": "short",
+          "mappings": []
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 85 },
+      "id": 55,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 1,
+          "rawSql": "SELECT ROUND(mae, 2) AS \"MAE (MWh)\"\nFROM iceberg.gold.ml_metrics_streaming\nORDER BY run_ts DESC\nLIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "MAE — Erro Absoluto Medio",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Raiz do erro quadrático médio (penaliza mais os erros grandes).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#73BF69", "value": null },
+              { "color": "yellow", "value": 150 },
+              { "color": "red", "value": 300 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 85 },
+      "id": 56,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 1,
+          "rawSql": "SELECT ROUND(rmse, 2) AS \"RMSE (MWh)\"\nFROM iceberg.gold.ml_metrics_streaming\nORDER BY run_ts DESC\nLIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "RMSE — Erro Quadratico Medio",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Coeficiente de determinação R². Valores próximos de 1.0 indicam excelente ajuste.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.7 },
+              { "color": "#73BF69", "value": 0.9 }
+            ]
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 85 },
+      "id": 57,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 1,
+          "rawSql": "SELECT ROUND(r2, 4) AS \"R² Score\"\nFROM iceberg.gold.ml_metrics_streaming\nORDER BY run_ts DESC\nLIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "R² — Coeficiente de Determinacao",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Mean Absolute Percentage Error — erro percentual médio face ao valor real.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#73BF69", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 85 },
+      "id": 58,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 1,
+          "rawSql": "SELECT ROUND(mape, 2) AS \"MAPE (%)\"\nFROM iceberg.gold.ml_metrics_streaming\nORDER BY run_ts DESC\nLIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "MAPE — Erro Percentual Medio",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Importância relativa de cada feature no modelo GBR. A feature mais importante determina a maior parte da variância explicada.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#73BF69", "value": null },
+              { "color": "yellow", "value": 0.05 },
+              { "color": "orange", "value": 0.3 },
+              { "color": "red", "value": 0.7 }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 10, "w": 14, "x": 0, "y": 90 },
+      "id": 59,
+      "options": {
+        "barAlignment": 0,
+        "fillOpacity": 75,
+        "groupWidth": 0.7,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" },
+        "xField": "Feature"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 1,
+          "rawSql": "SELECT\n  feature AS \"Feature\",\n  ROUND(importance, 4) AS \"Importancia\"\nFROM iceberg.gold.ml_feature_importance_streaming\nORDER BY importance DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Feature Importance — GradientBoosting (consumo_next_hour)",
+      "type": "barchart"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Resumo do split treino/teste e cobertura temporal do modelo.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "displayMode": "color-background" },
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "blue", "value": null } ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Periodo Treino" },
+            "properties": [ { "id": "custom.width", "value": 260 }, { "id": "custom.displayMode", "value": "auto" }, { "id": "unit", "value": "string" } ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Periodo Teste" },
+            "properties": [ { "id": "custom.width", "value": 260 }, { "id": "custom.displayMode", "value": "auto" }, { "id": "unit", "value": "string" } ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 10, "x": 14, "y": 90 },
+      "id": 60,
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 1,
+          "rawSql": "SELECT\n  n_train AS \"Exemplos Treino\",\n  n_test  AS \"Exemplos Teste\",\n  CAST(DATE(train_start) AS VARCHAR) || ' a ' || CAST(DATE(train_end) AS VARCHAR) AS \"Periodo Treino\",\n  CAST(DATE(test_start) AS VARCHAR) || ' a ' || CAST(DATE(test_end) AS VARCHAR) AS \"Periodo Teste\"\nFROM iceberg.gold.ml_metrics_streaming\nORDER BY run_ts DESC\nLIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Split Treino / Teste",
+      "type": "table"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Totais e cobertura da feature table usada no treino ML.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -742,18 +983,18 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 85 },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 100 },
       "id": 50,
       "options": {
         "colorMode": "background",
-        "reduceOptions": { "calcs": ["sum"] },
+        "reduceOptions": { "calcs": ["lastNotNull"] },
         "textMode": "auto"
       },
       "targets": [
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "SELECT COUNT(*) AS \"Exemplos ML\"\nFROM iceberg.gold.feat_load_forecasting_api_hourly",
+          "rawSql": "SELECT COUNT(*) AS \"Exemplos na Feature Table\"\nFROM iceberg.gold.feat_load_forecasting_api_hourly",
           "refId": "A"
         }
       ],
@@ -771,10 +1012,10 @@
             "mode": "absolute",
             "steps": [ { "color": "blue", "value": null } ]
           },
-          "unit": "kwatth"
+          "unit": "short"
         }
       },
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 85 },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 100 },
       "id": 51,
       "options": {
         "colorMode": "background",
@@ -785,11 +1026,11 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 1,
-          "rawSql": "SELECT ROUND(AVG(consumo_next_hour), 0) AS \"Target Médio (MWh)\"\nFROM iceberg.gold.feat_load_forecasting_api_hourly",
+          "rawSql": "SELECT ROUND(AVG(consumo_next_hour), 0) AS \"Target Medio (MWh)\"\nFROM iceberg.gold.feat_load_forecasting_api_hourly",
           "refId": "A"
         }
       ],
-      "title": "Target Médio — consumo_next_hour (MWh)",
+      "title": "Target Medio — consumo_next_hour",
       "type": "stat"
     },
 
@@ -810,7 +1051,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 85 },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 100 },
       "id": 52,
       "options": {
         "colorMode": "background",
@@ -830,13 +1071,13 @@
     },
 
     {
-      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 89 },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 104 },
       "id": 54,
       "options": {
-        "content": "## Fonte de Dados — ENTSO-E Transparency Platform\n\n**Consumo:** ENTSO-E — Actual Total Load Portugal (`query_load('PT')`)\n**Preço PT:** ENTSO-E — Day-Ahead Prices Portugal (`query_day_ahead_prices('PT')`)\n**Preço ES:** ENTSO-E — Day-Ahead Prices Espanha (`query_day_ahead_prices('ES')`)\n\nDados horários ENTSO-E · Cobertura: 2022-01-01 até hoje · Autenticação: `ENTSOE_TOKEN`\n\n**Modelo ML:** GradientBoostingRegressor · Target: `consumo_next_hour` · [Ver no MLflow](http://localhost:15000/#/experiments/1)\n\n**Pergunta central deste DP:** *Em que intervalo horário diário é mais vantajoso vender energia renovável à rede?*\nResposta: consultar o painel **\"Preço Médio Day-Ahead por Hora do Dia\"** e o **\"Índice de Oportunidade\"** — as horas com maior preço e menor consumo relativo são as janelas ótimas de venda.",
+        "content": "## Modelo ML — GradientBoostingRegressor (ENTSO-E Streaming)\n\n**Target:** `consumo_next_hour` — consumo da hora seguinte (MWh) \n**Features:** consumo_total, market_price_pt, hora, dia_semana, is_weekend, consumo_lag_1h, consumo_lag_24h, price_lag_1h, rolling_avg_consumo_24h, rolling_avg_price_24h\n\n**Hiperparametros:** n_estimators=300 · max_depth=5 · learning_rate=0.05 · subsample=0.8 \n**Split:** 80% treino (temporal) / 20% teste — sem embaralhamento para respeitar a série temporal\n\n**Resultados:** MAE=76.94 MWh · RMSE=108.76 MWh · **R²=0.9891** · **MAPE=1.30%**\n\n[Ver run no MLflow](http://localhost:15000/#/experiments/1) · **Pergunta central:** *Em que hora vender energia renovável?* → ver secao Janela Otima de Venda acima.",
         "mode": "markdown"
       },
-      "title": "Fonte & Metodologia",
+      "title": "Fonte & Metodologia ML",
       "type": "text"
     }
 
@@ -844,9 +1085,9 @@
   "refresh": "5m",
   "schemaVersion": 38,
   "tags": ["DP02", "streaming", "preco", "MIBEL", "ENTSO-E"],
-  "time": { "from": "now-90d", "to": "now" },
+  "time": { "from": "2026-01-01T00:00:00.000Z", "to": "now" },
   "timepicker": {},
   "timezone": "Europe/Lisbon",
-  "title": "DP02 — Preço Day-Ahead Portugal: Quando Vender Energia Renovável?",
-  "version": 2
+  "title": "DP02 — Preco Day-Ahead Portugal: Quando Vender Energia Renovavel?",
+  "version": 3
 }

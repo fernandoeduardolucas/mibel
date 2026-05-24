@@ -8,7 +8,7 @@ Este fluxo cria dados fictícios de produção/consumo a cada **30 segundos**, p
 cd 02_medallion_pipeline/producao_consumo/streaming/scripts/python
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements_streaming.txt
+python -m pip install -r requirements_streaming.txt
 python fake_producao_consumo_producer.py
 ```
 

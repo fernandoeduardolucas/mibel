@@ -5,11 +5,22 @@ from __future__ import annotations
 
 import json
 import random
+import sys
 import time
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from kafka import KafkaProducer
+try:
+    from kafka import KafkaProducer
+except ModuleNotFoundError:
+    print(
+        "Dependência em falta: kafka-python.\n"
+        "Instala com:\n"
+        "  python -m pip install -r "
+        "02_medallion_pipeline/producao_consumo/streaming/scripts/python/requirements_streaming.txt",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 
 BROKER = "localhost:19092"
 TOPIC = "producao_consumo_events"

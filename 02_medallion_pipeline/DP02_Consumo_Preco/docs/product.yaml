@@ -75,12 +75,14 @@ production:
         - iceberg.bronze.consumo_api_raw
         - iceberg.bronze.preco_api_raw
       ddl: 01_bronze/bronze_streaming_ddl.sql
-      workflow: workflows/flyte_fetch_bronze_api.py
+      workflow_default: workflows/flyte_fetch_bronze_energycharts.py   # --source energycharts (sem auth)
+      workflow_alt: workflows/flyte_fetch_bronze_api.py                # --source entsoe (requer ENTSOE_TOKEN)
       tasks:
-        - fetch_consumo_api   # query_load('PT') via entsoe-py
-        - fetch_preco_api     # query_day_ahead_prices('PT'/'ES') via entsoe-py
+        - fetch_bronze_energycharts   # Energy-Charts API (default, sem autenticação)
+        - fetch_consumo_api           # ENTSO-E query_load('PT') via entsoe-py (alternativa)
+        - fetch_preco_api             # ENTSO-E query_day_ahead_prices('PT'/'ES') via entsoe-py (alternativa)
       parallelism: tasks correm em paralelo
-      auth: ENTSOE_TOKEN (variável de ambiente)
+      auth: nenhuma (Energy-Charts) | ENTSOE_TOKEN variável de ambiente (ENTSO-E)
 
     silver:
       tables:
@@ -117,30 +119,54 @@ production:
 # LINEAGE — rastreabilidade da origem ao produto
 # -----------------------------------------------------------------------------
 lineage:
-  upstream_source:
-    name: ENTSO-E Transparency Platform
-    url: https://transparency.entsoe.eu/
-    auth_type: API Token (gratuito — pedido por email a transparency@entsoe.eu)
-    endpoints:
-      - query: query_load('PT')
-        data: Actual Total Load Portugal
-        unit: MW
-        granularity: horária
-      - query: query_day_ahead_prices('PT')
-        data: Preço Day-Ahead Portugal
-        unit: EUR/MWh
-        granularity: horária
-      - query: query_day_ahead_prices('ES')
-        data: Preço Day-Ahead Espanha
-        unit: EUR/MWh
-        granularity: horária
-    library: entsoe-py
-    coverage_start: "2022-01-01"
+  upstream_sources:
+    - name: Energy-Charts API (Fraunhofer ISE)   # DEFAULT — sem autenticação
+      url: https://api.energy-charts.info
+      auth_type: nenhuma
+      endpoints:
+        - endpoint: GET /total_power?country=pt
+          data: Actual Total Load Portugal
+          unit: MW
+          granularity: horária
+        - endpoint: GET /price?bzn=PT
+          data: Preço Day-Ahead Portugal
+          unit: EUR/MWh
+          granularity: horária
+        - endpoint: GET /price?bzn=ES
+          data: Preço Day-Ahead Espanha
+          unit: EUR/MWh
+          granularity: horária
+      flag: --source energycharts
+      coverage_start: "2022-01-01"
+
+    - name: ENTSO-E Transparency Platform   # ALTERNATIVA — requer token gratuito
+      url: https://transparency.entsoe.eu/
+      auth_type: API Token (gratuito — pedido por email a transparency@entsoe.eu)
+      endpoints:
+        - query: query_load('PT')
+          data: Actual Total Load Portugal
+          unit: MW
+          granularity: horária
+        - query: query_day_ahead_prices('PT')
+          data: Preço Day-Ahead Portugal
+          unit: EUR/MWh
+          granularity: horária
+        - query: query_day_ahead_prices('ES')
+          data: Preço Day-Ahead Espanha
+          unit: EUR/MWh
+          granularity: horária
+      library: entsoe-py
+      flag: --source entsoe
+      coverage_start: "2022-01-01"
 
   data_flow:
-    - step: ENTSO-E API → bronze.consumo_api_raw
+    - step: Energy-Charts API → bronze.consumo_api_raw (default)
+      file: workflows/flyte_fetch_bronze_energycharts.py::fetch_bronze_energycharts
+    - step: Energy-Charts API → bronze.preco_api_raw (default)
+      file: workflows/flyte_fetch_bronze_energycharts.py::fetch_bronze_energycharts
+    - step: ENTSO-E API → bronze.consumo_api_raw (alternativa)
       file: workflows/flyte_fetch_bronze_api.py::fetch_consumo_api
-    - step: ENTSO-E API → bronze.preco_api_raw
+    - step: ENTSO-E API → bronze.preco_api_raw (alternativa)
       file: workflows/flyte_fetch_bronze_api.py::fetch_preco_api
     - step: bronze → silver.consumo_api_hourly
       file: workflows/flyte_bronze_to_silver.py

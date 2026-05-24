@@ -6,7 +6,7 @@ SQL: `04_quality/sql/` (dentro de `Streaming_Data/`)
 
 ---
 
-## 1. Bronze (10 checks)
+## 1. Bronze (12 checks)
 
 Ficheiro: `04_quality/sql/01_bronze_checks.sql`
 
@@ -14,14 +14,16 @@ Ficheiro: `04_quality/sql/01_bronze_checks.sql`
 |----|-------|---------|-------|
 | B01 | Nulos em `ts_utc` (consumo) | 0 nulos | FAIL |
 | B02 | Nulos em `total` (consumo) | 0 nulos | FAIL |
-| B03 | Nulos em `price_portugal_eur_mwh` (preço) | 0 nulos | FAIL |
-| B04 | `total > 0` (consumo positivo em MW) | MW positivo | WARN — valores negativos possíveis em ENTSO-E |
-| B05 | Unicidade `ts_utc` — consumo | Sem duplicados | FAIL |
-| B06 | Unicidade `ts_utc` — preço | Sem duplicados | FAIL |
-| B07 | Freshness consumo | Atraso máx. 3 dias | WARN |
-| B08 | Freshness preço | Atraso máx. 2 dias (day-ahead publica D-1) | WARN |
-| B09 | Preço PT não-negativo | Preços negativos MIBEL são válidos | WARN |
-| B10 | Completude diária | Dias com < 23 horas → WARN | WARN |
+| B03 | Nulos em `ts_utc` (preço) | 0 nulos | FAIL |
+| B04 | Nulos em `price_portugal_eur_mwh` (preço) | 0 nulos | FAIL |
+| B05 | `total > 0` (consumo positivo em MW) | MW positivo | WARN — valores negativos possíveis na API |
+| B06 | Preço PT não-negativo | Preços negativos MIBEL são válidos | WARN |
+| B07 | Unicidade `ts_utc` — consumo | Sem duplicados | WARN |
+| B08 | Unicidade `ts_utc` — preço | Sem duplicados | FAIL |
+| B09 | Freshness consumo | Atraso máx. 3 dias | WARN |
+| B10 | Freshness preço | Atraso máx. 2 dias (day-ahead publica D-1) | WARN |
+| B11 | Completude diária — consumo | Dias com < 23 horas → WARN | WARN |
+| B12 | Completude diária — preço | Dias com < 23 horas → WARN | WARN |
 
 ---
 

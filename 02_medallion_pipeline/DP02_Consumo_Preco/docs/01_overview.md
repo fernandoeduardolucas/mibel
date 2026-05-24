@@ -95,12 +95,11 @@ Propriedades Iceberg usadas: `schema_version`, `product_version`, `feature_schem
 | Ficheiro | Tema |
 |----------|------|
 | `01_overview.md` | Este ficheiro — visão geral e contexto |
-| `02_fontes_dados.md` | ENTSO-E API, endpoints, autenticação |
+| `02_fontes_dados.md` | Fontes de dados (Energy-Charts / ENTSO-E), endpoints, autenticação |
 | `03_lakehouse_design.md` | Arquitetura Iceberg, particionamento, naming |
 | `04_schemas.md` | Schemas Bronze, Silver, Gold (tabelas `_api`) |
 | `05_transformacoes.md` | Transformações por camada |
 | `06_qualidade.md` | Quality gates (Bronze, Silver, Gold) |
 | `07_ml_pipeline.md` | Pipeline ML, GBR, MLflow |
-| `08_como_executar.md` | Comandos, flags, exemplos |
 | `contract.yaml` | Contrato de dados formal |
 | `product.yaml` | Especificação do data product |

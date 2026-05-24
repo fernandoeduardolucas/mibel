@@ -81,8 +81,8 @@
 
 ## DP-02 — `dp_energy_market_api_hourly` + `feat_load_forecasting_api_hourly`
 
-> **Fonte de dados:** ENTSO-E Transparency Platform (`transparency.entsoe.eu`) — fonte primária oficial europeia.
-> Pipeline implementado em `02_medallion_pipeline/DP02_Consumo_Preco/Streaming_Data/`.
+> **Fontes de dados:** Energy-Charts API (Fraunhofer ISE) — fonte por defeito, sem autenticação; ENTSO-E Transparency Platform — alternativa, requer token gratuito.
+> Pipeline implementado em `02_medallion_pipeline/DP02_Consumo_Preco/Streaming_Data/`. A pasta `Static_Data/` mantém um pipeline legado sobre CSVs históricos (REN + OMIE).
 
 ### 1) Perguntas analíticas, métricas e consumidores
 
@@ -97,8 +97,9 @@
 - Em que horas e períodos ocorrem **preços negativos** (excesso de oferta renovável)?
 
 **Métricas (produto analítico — `dp_energy_market_api_hourly`)**
-- `market_price_pt` — preço day-ahead Portugal em €/MWh (ENTSO-E `query_day_ahead_prices('PT')`)
-- `consumo_total` — carga eléctrica nacional horária em MWh (ENTSO-E `query_load('PT')`)
+
+- `market_price_pt` — preço day-ahead Portugal em €/MWh
+- `consumo_total` — carga eléctrica nacional horária em MWh
 - `consumo_lag_1h`, `consumo_lag_24h` — lags de consumo (window functions)
 - `price_lag_1h` — lag de preço
 - `rolling_avg_consumo_24h`, `rolling_avg_price_24h` — médias móveis 24h
@@ -117,7 +118,7 @@
 
 - **Grão**: 1 registo por hora UTC (INNER JOIN `silver.consumo_api_hourly` × `silver.preco_api_hourly`).
 - **Chave primária de negócio**: `ts_utc`.
-- **Cobertura**: 2022-01-01 até hoje (ENTSO-E cobre desde 2015; pipeline arranca em 2022).
+- **Cobertura**: 2022-01-01 até hoje.
 - **Particionamento**: `year`, `month` (Iceberg partition spec v2).
 
 ### 3) Contrato de dados (schema + SLAs/SLOs)
@@ -149,31 +150,59 @@ Todas as colunas acima, mais:
 |--------|------|-----------|
 | `consumo_next_hour` | `DOUBLE` | **TARGET ML** — consumo da hora seguinte via `LEAD` |
 
-**Regras de qualidade**
+#### Regras de qualidade — Bronze (12 checks)
 
-| Regra | Critério |
-|-------|---------|
-| Unicidade `ts_utc` | 0 duplicados → PASS |
-| `consumo_total >= 0` | Valores negativos → FAIL |
-| `market_price_pt` não-nulo | 0% nulos → PASS |
-| Null rate `consumo_next_hour` (feat table) | **0%** → PASS |
-| Consistência lag | `consumo_lag_1h(t) = consumo_total(t-1)` com tolerância 0.001 MWh |
-| Taxa de junção consumo×preço | ≥ 98% das horas → PASS |
-| Preços negativos | Contabilizados e reportados (WARN — ocorrem no MIBEL) |
+| ID | Regra | Critério | Nível |
+| -- | ----- | -------- | ----- |
+| B01–B04 | Nulos em `ts_utc` e colunas core (consumo e preço) | 0 nulos | FAIL |
+| B05 | `total > 0` (MW positivo) | Valores negativos possíveis na API | WARN |
+| B06 | Preço PT não-negativo | Preços negativos MIBEL são válidos | WARN |
+| B07 | Unicidade `ts_utc` — consumo | Sem duplicados | WARN |
+| B08 | Unicidade `ts_utc` — preço | Sem duplicados | FAIL |
+| B09 | Freshness consumo | Atraso máx. 3 dias | WARN |
+| B10 | Freshness preço | Atraso máx. 2 dias (day-ahead publica D-1) | WARN |
+| B11–B12 | Completude diária consumo e preço | Dias com < 23 horas | WARN |
+
+#### Regras de qualidade — Silver (4 checks)
+
+| ID | Regra | Critério | Nível |
+| -- | ----- | -------- | ----- |
+| S01 | Nulos em `ts_utc` e `total_mwh` | null rate = 0% | FAIL |
+| S02 | Unicidade `ts_utc` após deduplicação (consumo) | Sem duplicados | FAIL |
+| S03 | Nulos em `ts_utc` e `price_portugal_eur_mwh` | null rate = 0% | FAIL |
+| S04 | Unicidade `ts_utc` após deduplicação (preço) | Sem duplicados | FAIL |
+
+#### Regras de qualidade — Gold (9 checks + 3 feature table)
+
+| ID | Regra | Critério | Nível |
+| -- | ----- | -------- | ----- |
+| G01 | Unicidade `ts_utc` | `COUNT(*) = COUNT(DISTINCT ts_utc)` | FAIL |
+| G02 | Nulos em `consumo_total` | null rate = 0% | FAIL |
+| G03 | Nulos em `market_price_pt` | null rate = 0% | FAIL |
+| G04 | `consumo_total >= 0` | Consumo não pode ser negativo | FAIL |
+| G05 | `hora` BETWEEN 0 AND 23 | Slot horário válido | FAIL |
+| G06 | `dia_semana` BETWEEN 0 AND 6 | Dia da semana válido | FAIL |
+| G07 | Consistência `consumo_lag_1h` | `ABS(lag - consumo(t-1)) <= 0.001 MWh` (máx. 0.1% inconsistências) | FAIL |
+| G08 | Taxa de junção consumo × preço | `>= 98%` das horas disponíveis | FAIL |
+| G09 | Preços negativos | Contabilizados e reportados — não bloqueiam | WARN |
+| F01 | Nulos em `consumo_next_hour` | null rate = 0% | FAIL |
+| F02 | Nulos em features lag e rolling | Todos NOT NULL | FAIL |
+| F03 | Paridade feat table vs dp | `COUNT(feat) >= COUNT(dp) - 48` | WARN |
 
 **SLAs/SLOs**
 - Atualização: até **T+45 min** após fecho da hora.
 - Freshness máxima aceitável: **4 horas**.
+- Disponibilidade da tabela via Trino: **≥ 99.0%**.
 - Taxa de junção consumo×preço: **≥ 98.0%** das horas do período.
-- Null rate em métricas core: **0%**.
+- Null rate em métricas core (`consumo_total`, `market_price_pt`): **0%**.
 
 ### 4) Estratégia de schema evolution/versionamento
 
 - Versão contratual nos metadados da tabela Iceberg (`schema_version`, `product_version`).
 - Sufixo `_api` distingue as tabelas do pipeline streaming das do pipeline estático (Static_Data).
-- Evolução de features compatível (minor): adicionar novas colunas de lag/rolling sem alterar as existentes.
-- Mudança de fórmula de preço ou target: nova versão major + janela de coexistência de 30 dias.
-- `feat_load_forecasting_api_hourly` versionada independentemente (`feature_schema_version`) para rastreabilidade de treino MLflow.
+- **Minor** (compatível): adicionar novas colunas nullable (ex.: novos lags/rolling) — incrementa `schema_version`, sem impacto nos consumidores existentes.
+- **Major** (breaking): remover coluna, alterar tipo, alterar grão ou semântica — cria `_v2`, marca v1 com `deprecated=true`, janela de coexistência mínima de **30 dias**.
+- `feat_load_forecasting_api_hourly` versionada independentemente (`feature_schema_version`) — qualquer alteração ao conjunto ou fórmula de features obriga a re-treino; cada run MLflow deve registar `feature_schema_version` nos tags.
 
 ---
 

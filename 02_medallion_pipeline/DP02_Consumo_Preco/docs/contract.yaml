@@ -17,9 +17,10 @@ contract:
   domain: energia/mercado-eletrico
   owner: equipa-engenharia-dados
   description: >
-    Contrato formal entre o pipeline de ingestão ENTSO-E (produtor) e os consumidores
-    (Grafana, analistas, ML pipeline). Garante disponibilidade, schema, qualidade e
-    comportamento da tabela iceberg.gold.dp_energy_market_api_hourly.
+    Contrato formal entre o pipeline de ingestão (produtor — Energy-Charts API por defeito,
+    ENTSO-E como alternativa) e os consumidores (Grafana, analistas, ML pipeline).
+    Garante disponibilidade, schema, qualidade e comportamento da tabela
+    iceberg.gold.dp_energy_market_api_hourly.
 
 # -----------------------------------------------------------------------------
 # INTERFACE — onde e como aceder ao produto

@@ -17,6 +17,12 @@ import socket
 import tempfile
 from datetime import datetime, timezone
 
+DEFAULT_FEATURE_TABLE_CANDIDATES = (
+    "iceberg.gold.feat_load_forecasting_api_hourly",
+    "iceberg.gold.feat_load_forecasting_hourly",
+)
+FEATURE_TABLE = os.getenv("FEATURE_TABLE", DEFAULT_FEATURE_TABLE_CANDIDATES[0])
+
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 TRINO_USER = os.getenv("TRINO_USER", "tead")
@@ -39,41 +45,68 @@ def _get_conn():
     )
 
 
+def _table_exists(cur, table_fqn: str) -> bool:
+    cur.execute(f"SHOW TABLES FROM {table_fqn.rsplit('.', 1)[0]} LIKE '{table_fqn.rsplit('.', 1)[1]}'")
+    return len(cur.fetchall()) > 0
+
+
+def _resolve_feature_table(cur) -> str:
+    if FEATURE_TABLE:
+        if "." in FEATURE_TABLE and FEATURE_TABLE.count(".") >= 2 and _table_exists(cur, FEATURE_TABLE):
+            return FEATURE_TABLE
+
+    for candidate in DEFAULT_FEATURE_TABLE_CANDIDATES:
+        if _table_exists(cur, candidate):
+            return candidate
+
+    raise ValueError(
+        "Nenhuma feature table encontrada. Esperado uma destas tabelas: "
+        + ", ".join(DEFAULT_FEATURE_TABLE_CANDIDATES)
+        + ". Execute o pipeline Gold (DP02) antes do treino."
+    )
+
+
 def _load_data():
     import pandas as pd
 
-    sql = """
-        SELECT
-            ts_utc,
-            consumo_total,
-            market_price_pt,
-            hora,
-            dia_semana,
-            is_weekend,
-            consumo_lag_1h,
-            consumo_lag_24h,
-            price_lag_1h,
-            rolling_avg_consumo_24h,
-            rolling_avg_price_24h,
-            consumo_next_hour
-        FROM iceberg.gold.feat_load_forecasting_api_hourly
-        WHERE ts_utc IS NOT NULL
-          AND consumo_next_hour IS NOT NULL
-        ORDER BY ts_utc
-    """
     conn = _get_conn()
+    cur = conn.cursor()
     try:
-        df = pd.read_sql(sql, conn)
+        table_fqn = _resolve_feature_table(cur)
+        sql = f"""
+            SELECT
+                ts_utc,
+                consumo_total,
+                market_price_pt,
+                hora,
+                dia_semana,
+                is_weekend,
+                consumo_lag_1h,
+                consumo_lag_24h,
+                price_lag_1h,
+                rolling_avg_consumo_24h,
+                rolling_avg_price_24h,
+                consumo_next_hour
+            FROM {table_fqn}
+            WHERE ts_utc IS NOT NULL
+              AND consumo_next_hour IS NOT NULL
+            ORDER BY ts_utc
+        """
+        cur.execute(sql)
+        rows = cur.fetchall()
+        cols = [c[0] for c in cur.description]
     finally:
         conn.close()
 
+    df = pd.DataFrame(rows, columns=cols)
+
     if df.empty:
-        raise ValueError("feat_load_forecasting_api_hourly está vazia.")
+        raise ValueError(f"{table_fqn} está vazia.")
 
     df.columns = [c.strip().lower() for c in df.columns]
     df["ts_utc"] = pd.to_datetime(df["ts_utc"], utc=True)
     df = df.sort_values("ts_utc").reset_index(drop=True)
-    return df
+    return df, table_fqn
 
 
 FEATURE_COLS = [
@@ -164,8 +197,9 @@ def train():
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
 
-    print("Carregando dados de iceberg.gold.feat_load_forecasting_api_hourly...")
-    df = _load_data()
+    print("Carregando dados da feature table de forecast (Gold)...")
+    df, source_table = _load_data()
+    print(f"  Fonte: {source_table}")
     print(f"  {len(df)} linhas | {df['ts_utc'].min()} ate {df['ts_utc'].max()}")
 
     numeric_cols = [c for c in FEATURE_COLS if c not in ("hora", "dia_semana", "is_weekend")]
@@ -223,7 +257,7 @@ def train():
     with mlflow.start_run(run_name="gbr-streaming-consumo-next-hour"):
         mlflow.set_tags({
             "domain": "energia", "fonte": "ENTSO-E streaming",
-            "dataset": "iceberg.gold.feat_load_forecasting_api_hourly",
+            "dataset": source_table,
             "target": TARGET, "model_type": "GradientBoostingRegressor",
         })
         mlflow.log_params({**gbr_params, "n_train": split, "n_test": len(X_test)})

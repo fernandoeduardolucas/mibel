@@ -1,0 +1,51 @@
+{
+  "title": "Producao Consumo Streaming (30s)",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Consumo vs Produção (kWh) - GOLD",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "trino-datasource", "uid": "trino-iceberg"},
+      "targets": [
+        {
+          "refId": "A",
+          "rawSQL": "SELECT event_ts AS time, consumo_total_kwh, producao_total_kwh FROM iceberg.gold.dp_producao_consumo_streaming WHERE event_ts BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) ORDER BY 1",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Saldo (kWh) - GOLD",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+      "datasource": {"type": "trino-datasource", "uid": "trino-iceberg"},
+      "targets": [
+        {
+          "refId": "A",
+          "rawSQL": "SELECT event_ts AS time, saldo_kwh FROM iceberg.gold.dp_producao_consumo_streaming WHERE event_ts BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) ORDER BY 1",
+          "format": 1
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Rácio Produção/Consumo - GOLD",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+      "datasource": {"type": "trino-datasource", "uid": "trino-iceberg"},
+      "targets": [
+        {
+          "refId": "A",
+          "rawSQL": "SELECT event_ts AS time, ratio_producao_consumo FROM iceberg.gold.dp_producao_consumo_streaming WHERE event_ts BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6)) ORDER BY 1",
+          "format": 1
+        }
+      ]
+    }
+  ]
+}

@@ -29,28 +29,73 @@ Exemplos:
 from __future__ import annotations
 
 import argparse
+import datetime
+import hashlib
+import logging
 import os
 import platform
-import re
 import shutil
 import subprocess
 import sys
 import time
+import uuid
 from datetime import date, timedelta
 from pathlib import Path
+
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-7s  %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Workflows registry — centraliza nomes de ficheiros e funções Flyte
+# ---------------------------------------------------------------------------
+
+WORKFLOWS: dict[str, tuple[str, str]] = {
+    "bronze_entsoe":  ("flyte_fetch_bronze_api.py",          "fetch_bronze_api"),
+    "bronze_ec":      ("flyte_fetch_bronze_energycharts.py",  "fetch_bronze_energycharts"),
+    "silver_full":    ("flyte_bronze_to_silver.py",           "bronze_to_silver_api_full"),
+    "gold_full":      ("flyte_silver_to_gold.py",             "silver_to_gold_api_full"),
+    "quality_bronze": ("flyte_quality_checks.py",             "quality_gate_bronze_api"),
+    "quality_silver": ("flyte_quality_checks.py",             "quality_gate_silver_api"),
+    "quality_gold":   ("flyte_quality_checks.py",             "quality_gate_gold_api"),
+}
+
+# ---------------------------------------------------------------------------
+# Constantes operacionais — versão, SLA, auditoria
+# ---------------------------------------------------------------------------
+
+PIPELINE_VERSION    = "1.1.0"
+MAX_RUNTIME_MINUTES = 45   # SLA: duração máxima esperada da pipeline completa
+MAX_FRESHNESS_DAYS  = 7    # SLA: atraso máximo tolerado no end_date pedido
 
 
 # ---------------------------------------------------------------------------
 # Helpers de subprocess
 # ---------------------------------------------------------------------------
 
-def run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None) -> None:
-    print(f"\n>>> {' '.join(str(c) for c in cmd)}")
+def run(
+    cmd: list[str],
+    *,
+    cwd: Path | None = None,
+    env: dict | None = None,
+    timeout: int = 600,
+) -> None:
+    log.info("$ %s", " ".join(str(c) for c in cmd))
     result = subprocess.run(
         cmd,
         cwd=str(cwd) if cwd else None,
         env=env,
         text=True,
+        timeout=timeout,
     )
     if result.returncode != 0:
         raise subprocess.CalledProcessError(result.returncode, cmd)
@@ -62,11 +107,40 @@ def must_exist(path: Path, description: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Concorrência — impede execuções paralelas da mesma pipeline
+# ---------------------------------------------------------------------------
+
+def acquire_pipeline_lock(repo_root: Path):
+    """Retorna o ficheiro de lock aberto. Aborta se outra instância estiver a correr."""
+    lock_path = repo_root / ".streaming_pipeline.lock"
+    lock_fh = open(lock_path, "w")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(lock_fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock_fh.close()
+        raise SystemExit(
+            "Erro: outra instância do pipeline já está a correr. "
+            f"Se não for o caso, apaga {lock_path} manualmente."
+        )
+    return lock_fh
+
+
+# ---------------------------------------------------------------------------
 # Docker helpers
 # ---------------------------------------------------------------------------
 
 def docker_engine_running() -> bool:
-    return subprocess.run(["docker", "info"], text=True, capture_output=True).returncode == 0
+    try:
+        return subprocess.run(
+            ["docker", "info"], text=True, capture_output=True, timeout=10
+        ).returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
 
 
 def try_start_docker_engine() -> bool:
@@ -101,18 +175,35 @@ def ensure_docker_engine_running() -> None:
 
 
 def wait_for_trino(compose_file: Path, attempts: int = 30, sleep_seconds: int = 2) -> None:
-    cmd = [
+    base_cmd = [
         "docker", "compose", "-f", str(compose_file),
-        "exec", "-T", "trino", "trino", "--execute", "SELECT 1;",
+        "exec", "-T", "trino", "trino",
     ]
+    trino_ready = False
     for attempt in range(1, attempts + 1):
-        print(f"\n>>> Trino disponível? ({attempt}/{attempts})")
-        result = subprocess.run(cmd, text=True, capture_output=True)
+        log.info("Trino disponível? (%d/%d)", attempt, attempts)
+        result = subprocess.run(
+            base_cmd + ["--execute", "SELECT 1;"],
+            text=True, capture_output=True, timeout=10,
+        )
         if result.returncode == 0:
-            print(">>> Trino OK.")
-            return
+            trino_ready = True
+            break
         time.sleep(sleep_seconds)
-    raise SystemExit("Erro: Trino não ficou disponível dentro do tempo esperado.")
+    if not trino_ready:
+        raise SystemExit("Erro: Trino não ficou disponível dentro do tempo esperado.")
+
+    # Verificar que o catálogo iceberg está funcional (depende de Hive Metastore + MinIO)
+    result = subprocess.run(
+        base_cmd + ["--execute", "SHOW SCHEMAS FROM iceberg;"],
+        text=True, capture_output=True, timeout=30,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            "Erro: Trino online mas catálogo 'iceberg' não disponível. "
+            "Verifica Hive Metastore e MinIO.\n" + result.stderr
+        )
+    log.info("Trino + catálogo iceberg OK.")
 
 
 # ---------------------------------------------------------------------------
@@ -127,20 +218,33 @@ def create_local_venv(repo_root: Path, base_python: str) -> Path:
         else venv_dir / "bin" / "python"
     )
     if not venv_python.exists():
-        print(f"\n>>> A criar virtualenv em: {venv_dir}")
-        run([base_python, "-m", "venv", str(venv_dir)])
+        if venv_dir.exists():
+            log.warning("Venv corrompido detectado — a recriar: %s", venv_dir)
+            shutil.rmtree(venv_dir)
+        log.info("A criar virtualenv em: %s", venv_dir)
+        run([base_python, "-m", "venv", str(venv_dir)], timeout=120)
     return venv_python
+
+
+def requirements_changed(venv_dir: Path, requirements: Path) -> bool:
+    """Retorna True se requirements.txt mudou desde a última instalação."""
+    hash_file = venv_dir / ".requirements_hash"
+    current_hash = hashlib.md5(requirements.read_bytes()).hexdigest()
+    if hash_file.exists() and hash_file.read_text(encoding="utf-8").strip() == current_hash:
+        return False
+    hash_file.write_text(current_hash, encoding="utf-8")
+    return True
 
 
 # ---------------------------------------------------------------------------
 # DDL helper
 # ---------------------------------------------------------------------------
 
-def trino_exec(compose_file: Path, sql: str) -> int:
+def trino_exec(compose_file: Path, sql: str, timeout: int = 60) -> int:
     result = subprocess.run(
         ["docker", "compose", "-f", str(compose_file), "exec", "-T", "trino", "trino",
          "--execute", sql],
-        text=True, capture_output=True,
+        text=True, capture_output=True, timeout=timeout,
     )
     return result.returncode
 
@@ -154,27 +258,37 @@ def clean_streaming_tables(compose_file: Path) -> None:
         "iceberg.gold.dp_energy_market_api_hourly",
         "iceberg.gold.feat_load_forecasting_api_hourly",
     ]
-    print("\n" + "=" * 60)
-    print("CLEANUP — DROP tabelas _api (Iceberg remove dados do MinIO)")
-    print("=" * 60)
+    log.info("=" * 60)
+    log.info("CLEANUP — DROP tabelas _api (Iceberg remove dados do MinIO)")
+    log.info("=" * 60)
     for table in tables:
-        print(f"  DROP TABLE IF EXISTS {table}")
+        log.info("  DROP TABLE IF EXISTS %s", table)
         trino_exec(compose_file, f"DROP TABLE IF EXISTS {table};")
-    print("  Cleanup concluído.")
+    log.info("Cleanup concluído.")
 
 
 def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str) -> None:
-    print(f"\n>>> DDL {stage_name}: {sql_file.name}")
-    sql_text  = sql_file.read_text(encoding="utf-8")
-    sql_clean = re.sub(r"--[^\n]*", "", sql_text)
-    statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
-    for stmt in statements:
-        subprocess.run(
-            ["docker", "compose", "-f", str(compose_file), "exec", "-T", "trino", "trino"],
-            input=(stmt + ";").encode("utf-8"),
-            capture_output=True,
+    """Executa o ficheiro SQL inteiro via stdin do Trino CLI.
+
+    Usa --file /dev/stdin para evitar parsing frágil por split(';').
+    Falhas de DDL são propagadas imediatamente — não há execução silenciosa.
+    """
+    log.info("DDL %s: %s", stage_name, sql_file.name)
+    result = subprocess.run(
+        [
+            "docker", "compose", "-f", str(compose_file),
+            "exec", "-T", "trino", "trino", "--file", "/dev/stdin",
+        ],
+        input=sql_file.read_bytes(),
+        capture_output=True,
+        timeout=120,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Erro DDL '{stage_name}' ({sql_file.name}):\n"
+            + result.stderr.decode(errors="replace")
         )
-    print(f"    DDL {stage_name} aplicado.")
+    log.info("DDL %s aplicado.", stage_name)
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +310,126 @@ def pyflyte_run(
     ]
     for key, value in params.items():
         cmd += [f"--{key}", value]
-    run(cmd, cwd=workflows_dir)
+    run(cmd, cwd=workflows_dir, timeout=600)
+
+
+def pyflyte_run_with_retry(
+    venv_python: Path,
+    workflows_dir: Path,
+    workflow_file: str,
+    workflow_name: str,
+    params: dict[str, str],
+    *,
+    max_attempts: int = 3,
+) -> None:
+    """Executa pyflyte_run com retry e backoff exponencial (2s, 4s, …)."""
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            pyflyte_run(venv_python, workflows_dir, workflow_file, workflow_name, params)
+            return
+        except subprocess.CalledProcessError as exc:
+            last_exc = exc
+            if attempt == max_attempts:
+                break
+            wait = 2 ** attempt
+            log.warning(
+                "pyflyte '%s' tentativa %d/%d falhou — retry em %ds...",
+                workflow_name, attempt, max_attempts, wait,
+            )
+            time.sleep(wait)
+    raise last_exc  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Audit helpers — lineage, observabilidade, compaction
+# ---------------------------------------------------------------------------
+
+class _RunLog(logging.LoggerAdapter):
+    """Logger que prefixa todas as mensagens com o run_id curto."""
+    def process(self, msg: str, kwargs: dict) -> tuple[str, dict]:
+        return f"[{self.extra['run_id']}] {msg}", kwargs
+
+
+def get_row_count(compose_file: Path, table: str) -> int:
+    """Retorna COUNT(*) de uma tabela Iceberg via Trino CLI. -1 em caso de erro."""
+    result = subprocess.run(
+        [
+            "docker", "compose", "-f", str(compose_file),
+            "exec", "-T", "trino", "trino",
+            "--execute", f"SELECT COUNT(*) FROM {table};",
+        ],
+        text=True, capture_output=True, timeout=30,
+    )
+    if result.returncode != 0:
+        return -1
+    for line in result.stdout.strip().splitlines():
+        cleaned = line.strip().strip('"')
+        if cleaned.isdigit():
+            return int(cleaned)
+    return -1
+
+
+def _ts_str(dt: datetime.datetime) -> str:
+    return dt.strftime("%Y-%m-%d %H:%M:%S") + " UTC"
+
+
+def write_audit_record(compose_file: Path, record: dict) -> None:
+    """INSERT de um registo completo na tabela iceberg.audit.pipeline_runs."""
+    err = record.get("error_message", "").replace("'", "''")[:500]
+    sql = (
+        "INSERT INTO iceberg.audit.pipeline_runs VALUES ("
+        f"'{record['run_id']}', "
+        f"'{record['pipeline_name']}', "
+        f"'{record['pipeline_version']}', "
+        f"TIMESTAMP '{record['start_ts']}', "
+        f"TIMESTAMP '{record['end_ts']}', "
+        f"{record['duration_seconds']:.1f}, "
+        f"'{record['status']}', "
+        f"{record['rows_bronze']}, "
+        f"{record['rows_silver']}, "
+        f"{record['rows_gold']}, "
+        f"'{record['source']}', "
+        f"'{record['param_start_date']}', "
+        f"'{record['param_end_date']}', "
+        f"'{err}'"
+        ");"
+    )
+    rc = trino_exec(compose_file, sql, timeout=30)
+    if rc != 0:
+        log.warning("Falha ao persistir registo de auditoria (run_id=%s)", record["run_id"])
+
+
+def write_lineage_records(compose_file: Path, run_id: str) -> None:
+    """INSERT de lineage upstream→downstream para esta execução."""
+    lineage = [
+        ("bronze.consumo_api_raw",    "silver.consumo_api_hourly"),
+        ("bronze.preco_api_raw",      "silver.preco_api_hourly"),
+        ("silver.consumo_api_hourly", "gold.dp_energy_market_api_hourly"),
+        ("silver.preco_api_hourly",   "gold.dp_energy_market_api_hourly"),
+        ("silver.consumo_api_hourly", "gold.feat_load_forecasting_api_hourly"),
+        ("silver.preco_api_hourly",   "gold.feat_load_forecasting_api_hourly"),
+    ]
+    now_ts = _ts_str(datetime.datetime.now(datetime.timezone.utc))
+    for upstream, downstream in lineage:
+        sql = (
+            f"INSERT INTO iceberg.audit.dataset_lineage VALUES "
+            f"('{run_id}', '{upstream}', '{downstream}', TIMESTAMP '{now_ts}');"
+        )
+        trino_exec(compose_file, sql, timeout=15)
+
+
+def run_iceberg_optimize(compose_file: Path) -> None:
+    """Compaction Iceberg nas tabelas Gold — resolve o small-files problem de ingestões incrementais."""
+    tables = [
+        "iceberg.gold.dp_energy_market_api_hourly",
+        "iceberg.gold.feat_load_forecasting_api_hourly",
+    ]
+    for table in tables:
+        log.info("Iceberg optimize: %s", table)
+        rc = trino_exec(compose_file, f"ALTER TABLE {table} EXECUTE optimize;", timeout=120)
+        if rc != 0:
+            log.warning("optimize falhou para %s (não fatal)", table)
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +494,27 @@ def main() -> None:
         except ValueError:  # 29 Fev em ano não bissexto
             start_date = today.replace(year=today.year - 1, day=28)
 
+    start_str = start_date.isoformat()
+    end_str   = end_date.isoformat()
+
+    # --- Identidade e observabilidade desta execução ---
+    run_id         = str(uuid.uuid4())
+    run_start_mono = time.monotonic()
+    pipeline_start = datetime.datetime.now(datetime.timezone.utc)
+    run_log        = _RunLog(log, {"run_id": run_id[:8]})
+    run_log.info(
+        "Pipeline iniciada — run_id=%s  período=%s→%s  fonte=%s  versão=%s",
+        run_id, start_str, end_str, args.source, PIPELINE_VERSION,
+    )
+
+    # SLA: freshness check — avisar se o período pedido está muito no passado
+    days_stale = (today - end_date).days
+    if days_stale > MAX_FRESHNESS_DAYS:
+        run_log.warning(
+            "FRESHNESS WARN: end_date=%s está %d dias no passado (limite recomendado: %d dias)",
+            end_str, days_stale, MAX_FRESHNESS_DAYS,
+        )
+
     streaming_root = Path(__file__).resolve().parent
     repo_root      = streaming_root.parent.parent.parent
 
@@ -285,180 +539,245 @@ def main() -> None:
     if not python_cmd or "WindowsApps" in python_cmd or not Path(python_cmd).exists():
         raise SystemExit("Python inválido. Usa o executável real do Python.")
 
-    # --- venv ---
-    venv_python = create_local_venv(repo_root, python_cmd)
-    run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip", "-q"])
-    requirements = workflows_dir / "requirements.txt"
-    if requirements.exists():
-        run([str(venv_python), "-m", "pip", "install", "-r", str(requirements), "-q"])
+    # --- Lock de concorrência ---
+    pipeline_lock = acquire_pipeline_lock(repo_root)
+    run_log.debug("Lock adquirido: %s", pipeline_lock.name)
 
-    # --- Docker ---
-    if not args.skip_docker:
-        ensure_docker_engine_running()
-        compose_up = ["docker", "compose", "-f", str(compose_file), "up", "-d"]
-        if args.build:
-            compose_up.append("--build")
-        run(compose_up)
-        wait_for_trino(compose_file)
-    else:
-        print("\n>>> --skip-docker: compose up ignorado.")
+    rows_bronze = rows_silver = rows_gold = -1
+    error_message = ""
+    status = "FAILED"
 
-    # --- Cleanup (opcional) ---
-    if args.clean:
-        clean_streaming_tables(compose_file)
+    try:
+        # --- venv ---
+        venv_dir    = repo_root / ".venv_streaming_dp02"
+        venv_python = create_local_venv(repo_root, python_cmd)
+        requirements = workflows_dir / "requirements.txt"
+        if requirements.exists() and requirements_changed(venv_dir, requirements):
+            run_log.info("requirements.txt alterado — a instalar dependências...")
+            run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], timeout=120)
+            try:
+                run([str(venv_python), "-m", "pip", "install", "--no-cache-dir", "-r", str(requirements)], timeout=300)
+            except (subprocess.CalledProcessError, KeyboardInterrupt):
+                run_log.warning("pip install falhou — a recriar venv e a tentar novamente...")
+                shutil.rmtree(venv_dir, ignore_errors=True)
+                run([python_cmd, "-m", "venv", str(venv_dir)], timeout=120)
+                run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], timeout=120)
+                run([str(venv_python), "-m", "pip", "install", "--no-cache-dir", "-r", str(requirements)], timeout=300)
+            requirements_changed(venv_dir, requirements)
+        else:
+            run_log.info("Dependências já instaladas e sem alterações — a saltar pip install.")
 
-    # --- DDL ---
-    if not args.skip_ddl:
-        print("\n" + "=" * 60)
-        print("FASE 0 - DDL (tabelas Iceberg _api)")
-        print("=" * 60)
-        apply_ddl(compose_file, bronze_sql, "Bronze API")
-        apply_ddl(compose_file, silver_sql, "Silver API")
-        apply_ddl(compose_file, gold_sql,   "Gold API")
-    else:
-        print("\n>>> --skip-ddl: DDL ignorado.")
+        # --- Docker ---
+        if not args.skip_docker:
+            ensure_docker_engine_running()
+            compose_up = ["docker", "compose", "-f", str(compose_file), "up", "-d"]
+            if args.build:
+                compose_up.append("--build")
+            run(compose_up, timeout=300)
+            wait_for_trino(compose_file)
+        else:
+            run_log.info("--skip-docker: compose up ignorado.")
 
-    start_str = start_date.isoformat()
-    end_str   = end_date.isoformat()
+        # --- Cleanup (opcional) ---
+        if args.clean:
+            clean_streaming_tables(compose_file)
 
-    print(f"\n{'=' * 60}")
-    print(f"Pipeline Streaming_Data (DP-02 API) - {start_str} -> {end_str}")
-    print(f"{'=' * 60}")
+        # --- DDL: auditoria (sempre) + medallion (controlado por --skip-ddl) ---
+        run_log.info("=" * 60)
+        run_log.info("FASE 0 - DDL")
+        run_log.info("=" * 60)
+        audit_sql = streaming_root / "05_audit" / "sql" / "audit_ddl.sql"
+        apply_ddl(compose_file, audit_sql, "Audit")
+        if not args.skip_ddl:
+            apply_ddl(compose_file, bronze_sql, "Bronze API")
+            apply_ddl(compose_file, silver_sql, "Silver API")
+            apply_ddl(compose_file, gold_sql,   "Gold API")
+        else:
+            run_log.info("--skip-ddl: DDL medallion ignorado.")
 
-    # --- FASE 1: Bronze fetch (consumo + preço em paralelo) ---
-    print("\n" + "=" * 60)
-    print(f"FASE 1 - Bronze fetch ({args.source.upper()}) ({start_str} -> {end_str})")
-    print("=" * 60)
+        run_log.info("=" * 60)
+        run_log.info("Pipeline Streaming_Data (DP-02 API) - %s -> %s", start_str, end_str)
+        run_log.info("=" * 60)
 
-    if args.source == "entsoe":
-        if not os.environ.get("ENTSOE_TOKEN"):
-            raise SystemExit(
-                "\n[ERRO] ENTSOE_TOKEN nao definido.\n"
-                "Token gratuito ENTSO-E Transparency Platform:\n"
-                "  1. Email: transparency@entsoe.eu -- assunto 'RESTful API access'\n"
-                "  2. Aguarda ~3 dias uteis\n"
-                "  3. PowerShell: $env:ENTSOE_TOKEN = '<o-teu-token>'\n"
-                "     Linux/Mac : export ENTSOE_TOKEN=<o-teu-token>\n"
-                "\nAlternativa sem token:\n"
-                "  python run_streaming_pipeline.py --source energycharts --skip-docker --days 7\n"
+        # --- FASE 1: Bronze fetch ---
+        run_log.info("=" * 60)
+        run_log.info("FASE 1 - Bronze fetch (%s) (%s -> %s)", args.source.upper(), start_str, end_str)
+        run_log.info("=" * 60)
+
+        if args.source == "entsoe":
+            if not os.environ.get("ENTSOE_TOKEN"):
+                raise SystemExit(
+                    "\n[ERRO] ENTSOE_TOKEN nao definido.\n"
+                    "Token gratuito ENTSO-E Transparency Platform:\n"
+                    "  1. Email: transparency@entsoe.eu -- assunto 'RESTful API access'\n"
+                    "  2. Aguarda ~3 dias uteis\n"
+                    "  3. PowerShell: $env:ENTSOE_TOKEN = '<o-teu-token>'\n"
+                    "     Linux/Mac : export ENTSOE_TOKEN=<o-teu-token>\n"
+                    "\nAlternativa sem token:\n"
+                    "  python run_streaming_pipeline.py --source energycharts --skip-docker --days 7\n"
+                )
+            bronze_wf = WORKFLOWS["bronze_entsoe"]
+        else:
+            run_log.info("[INFO] Energy-Charts: sem autenticacao necessaria (Fraunhofer ISE).")
+            bronze_wf = WORKFLOWS["bronze_ec"]
+
+        CHUNK_THRESHOLD_DAYS = 180
+        total_days = (end_date - start_date).days
+        if total_days > CHUNK_THRESHOLD_DAYS:
+            chunk_start = start_date
+            while chunk_start <= end_date:
+                chunk_end = min(date(chunk_start.year, 12, 31), end_date)
+                run_log.info("Chunk: %s -> %s", chunk_start, chunk_end)
+                pyflyte_run_with_retry(
+                    venv_python, workflows_dir, *bronze_wf,
+                    {"start_date": chunk_start.isoformat(), "end_date": chunk_end.isoformat()},
+                )
+                chunk_start = date(chunk_start.year + 1, 1, 1)
+        else:
+            pyflyte_run_with_retry(
+                venv_python, workflows_dir, *bronze_wf,
+                {"start_date": start_str, "end_date": end_str},
             )
-        bronze_workflow_file = "flyte_fetch_bronze_api.py"
-        bronze_workflow_name = "fetch_bronze_api"
-    else:
-        print("  [INFO] Energy-Charts: sem autenticacao necessaria (Fraunhofer ISE).")
-        bronze_workflow_file = "flyte_fetch_bronze_energycharts.py"
-        bronze_workflow_name = "fetch_bronze_energycharts"
 
-    # Chunk por ano para ranges grandes (evita timeouts da API)
-    CHUNK_THRESHOLD_DAYS = 180
-    total_days = (end_date - start_date).days
-    if total_days > CHUNK_THRESHOLD_DAYS:
-        chunk_start = start_date
-        while chunk_start <= end_date:
-            chunk_end = min(date(chunk_start.year, 12, 31), end_date)
-            print(f"\n  Chunk: {chunk_start} -> {chunk_end}")
-            pyflyte_run(
-                venv_python, workflows_dir,
-                bronze_workflow_file, bronze_workflow_name,
-                {"start_date": chunk_start.isoformat(), "end_date": chunk_end.isoformat()},
+        rows_bronze = (
+            get_row_count(compose_file, "iceberg.bronze.consumo_api_raw")
+            + get_row_count(compose_file, "iceberg.bronze.preco_api_raw")
+        )
+        run_log.info("Bronze ingerido: %d linhas totais (consumo + preço)", rows_bronze)
+
+        # --- Quality gate Bronze ---
+        if not args.no_quality:
+            run_log.info("=" * 60)
+            run_log.info("QUALITY GATE - Bronze API")
+            run_log.info("=" * 60)
+            pyflyte_run_with_retry(venv_python, workflows_dir, *WORKFLOWS["quality_bronze"], {})
+
+        # --- FASE 2: Silver transform ---
+        run_log.info("=" * 60)
+        run_log.info("FASE 2 - Silver transform COMPLETO")
+        run_log.info("=" * 60)
+        pyflyte_run_with_retry(venv_python, workflows_dir, *WORKFLOWS["silver_full"], {})
+
+        rows_silver = (
+            get_row_count(compose_file, "iceberg.silver.consumo_api_hourly")
+            + get_row_count(compose_file, "iceberg.silver.preco_api_hourly")
+        )
+        run_log.info("Silver transformado: %d linhas totais", rows_silver)
+
+        # --- Quality gate Silver ---
+        if not args.no_quality:
+            run_log.info("=" * 60)
+            run_log.info("QUALITY GATE - Silver API")
+            run_log.info("=" * 60)
+            pyflyte_run_with_retry(venv_python, workflows_dir, *WORKFLOWS["quality_silver"], {})
+
+        # --- FASE 3: Gold transform ---
+        run_log.info("=" * 60)
+        run_log.info("FASE 3 - Gold transform COMPLETO")
+        run_log.info("=" * 60)
+        pyflyte_run_with_retry(venv_python, workflows_dir, *WORKFLOWS["gold_full"], {})
+
+        rows_gold = get_row_count(compose_file, "iceberg.gold.dp_energy_market_api_hourly")
+        run_log.info("Gold produzido: %d linhas em dp_energy_market_api_hourly", rows_gold)
+
+        # --- Quality gate Gold ---
+        if not args.no_quality:
+            run_log.info("=" * 60)
+            run_log.info("QUALITY GATE - Gold API")
+            run_log.info("=" * 60)
+            pyflyte_run_with_retry(venv_python, workflows_dir, *WORKFLOWS["quality_gold"], {})
+
+        # --- Compaction Iceberg (resolve small-files acumulados por ingestões incrementais) ---
+        run_log.info("=" * 60)
+        run_log.info("MANUTENCAO - Iceberg optimize (compaction)")
+        run_log.info("=" * 60)
+        run_iceberg_optimize(compose_file)
+
+        # --- Validação final ---
+        run_log.info("=" * 60)
+        run_log.info("VALIDACAO FINAL - tabelas Gold API")
+        run_log.info("=" * 60)
+        validation_sql = (
+            "SELECT 'dp_energy_market_api_hourly' AS tabela, COUNT(*) AS total_linhas, "
+            "CAST(MIN(ts_utc) AS VARCHAR) AS inicio, CAST(MAX(ts_utc) AS VARCHAR) AS fim "
+            "FROM iceberg.gold.dp_energy_market_api_hourly "
+            "UNION ALL "
+            "SELECT 'feat_load_forecasting_api_hourly', COUNT(*), "
+            "CAST(MIN(ts_utc) AS VARCHAR), CAST(MAX(ts_utc) AS VARCHAR) "
+            "FROM iceberg.gold.feat_load_forecasting_api_hourly;"
+        )
+        subprocess.run(
+            [
+                "docker", "compose", "-f", str(compose_file),
+                "exec", "-T", "trino", "trino",
+                "--execute", validation_sql,
+            ],
+            text=True,
+            timeout=60,
+        )
+
+        status = "SUCCESS"
+        fonte_label = (
+            "Energy-Charts API (Fraunhofer ISE) — sem autenticação"
+            if args.source == "energycharts"
+            else "ENTSO-E Transparency Platform (token)"
+        )
+        run_log.info("=" * 60)
+        run_log.info("Streaming_Data pipeline (DP-02 API) concluída com sucesso!")
+        run_log.info("  Período  : %s -> %s", start_str, end_str)
+        run_log.info("  Bronze   : bronze.consumo_api_raw + bronze.preco_api_raw  (%d linhas)", rows_bronze)
+        run_log.info("  Silver   : silver.consumo_api_hourly + silver.preco_api_hourly  (%d linhas)", rows_silver)
+        run_log.info("  Gold     : gold.dp_energy_market_api_hourly  (%d linhas)", rows_gold)
+        run_log.info("  Fonte    : %s", fonte_label)
+        run_log.info("  run_id   : %s", run_id)
+        run_log.info("=" * 60)
+
+    except Exception as exc:
+        error_message = str(exc)[:500]
+        raise
+
+    finally:
+        duration_s = time.monotonic() - run_start_mono
+        end_ts     = datetime.datetime.now(datetime.timezone.utc)
+
+        if duration_s > MAX_RUNTIME_MINUTES * 60:
+            run_log.warning(
+                "SLA BREACH: pipeline demorou %.0fs (limite: %d min)",
+                duration_s, MAX_RUNTIME_MINUTES,
             )
-            chunk_start = date(chunk_start.year + 1, 1, 1)
-    else:
-        pyflyte_run(
-            venv_python, workflows_dir,
-            bronze_workflow_file, bronze_workflow_name,
-            {"start_date": start_str, "end_date": end_str},
+
+        try:
+            write_audit_record(compose_file, {
+                "run_id":           run_id,
+                "pipeline_name":    "dp02_streaming",
+                "pipeline_version": PIPELINE_VERSION,
+                "start_ts":         _ts_str(pipeline_start),
+                "end_ts":           _ts_str(end_ts),
+                "duration_seconds": duration_s,
+                "status":           status,
+                "rows_bronze":      max(rows_bronze, 0),
+                "rows_silver":      max(rows_silver, 0),
+                "rows_gold":        max(rows_gold, 0),
+                "source":           args.source,
+                "param_start_date": start_str,
+                "param_end_date":   end_str,
+                "error_message":    error_message,
+            })
+            if status == "SUCCESS":
+                write_lineage_records(compose_file, run_id)
+        except Exception as audit_exc:
+            run_log.warning("Falha ao escrever auditoria (não fatal): %s", audit_exc)
+
+        run_log.info(
+            "Pipeline %s em %.0fs  (bronze=%d  silver=%d  gold=%d)",
+            status, duration_s,
+            max(rows_bronze, 0), max(rows_silver, 0), max(rows_gold, 0),
         )
-
-    # --- Quality gate Bronze ---
-    if not args.no_quality:
-        print("\n" + "=" * 60)
-        print("QUALITY GATE - Bronze API")
-        print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_quality_checks.py", "quality_gate_bronze_api",
-            {},
-        )
-
-    # --- FASE 2: Silver transform (completo - garante consistência com histórico) ---
-    print("\n" + "=" * 60)
-    print("FASE 2 - Silver transform COMPLETO")
-    print("=" * 60)
-    pyflyte_run(
-        venv_python, workflows_dir,
-        "flyte_bronze_to_silver.py", "bronze_to_silver_api_full",
-        {},
-    )
-
-    # --- Quality gate Silver ---
-    if not args.no_quality:
-        print("\n" + "=" * 60)
-        print("QUALITY GATE - Silver API")
-        print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_quality_checks.py", "quality_gate_silver_api",
-            {},
-        )
-
-    # --- FASE 3: Gold transform (window functions requerem histórico completo) ---
-    print("\n" + "=" * 60)
-    print("FASE 3 - Gold transform COMPLETO")
-    print("=" * 60)
-    pyflyte_run(
-        venv_python, workflows_dir,
-        "flyte_silver_to_gold.py", "silver_to_gold_api_full",
-        {},
-    )
-
-    # --- Quality gate Gold ---
-    if not args.no_quality:
-        print("\n" + "=" * 60)
-        print("QUALITY GATE - Gold API")
-        print("=" * 60)
-        pyflyte_run(
-            venv_python, workflows_dir,
-            "flyte_quality_checks.py", "quality_gate_gold_api",
-            {},
-        )
-
-    # --- Validação final ---
-    print("\n" + "=" * 60)
-    print("VALIDACAO FINAL - tabelas Gold API")
-    print("=" * 60)
-    validation_sql = (
-        "SELECT 'dp_energy_market_api_hourly' AS tabela, COUNT(*) AS total_linhas, "
-        "CAST(MIN(ts_utc) AS VARCHAR) AS inicio, CAST(MAX(ts_utc) AS VARCHAR) AS fim "
-        "FROM iceberg.gold.dp_energy_market_api_hourly "
-        "UNION ALL "
-        "SELECT 'feat_load_forecasting_api_hourly', COUNT(*), "
-        "CAST(MIN(ts_utc) AS VARCHAR), CAST(MAX(ts_utc) AS VARCHAR) "
-        "FROM iceberg.gold.feat_load_forecasting_api_hourly;"
-    )
-    subprocess.run(
-        [
-            "docker", "compose", "-f", str(compose_file),
-            "exec", "-T", "trino", "trino",
-            "--execute", validation_sql,
-        ],
-        text=True,
-    )
-
-    print(f"\n{'=' * 60}")
-    print("Streaming_Data pipeline (DP-02 API) concluída com sucesso!")
-    print(f"  Período  : {start_str} -> {end_str}")
-    print(f"  Bronze   : bronze.consumo_api_raw + bronze.preco_api_raw")
-    print(f"  Silver   : silver.consumo_api_hourly + silver.preco_api_hourly")
-    print(f"  Gold     : gold.dp_energy_market_api_hourly + gold.feat_load_forecasting_api_hourly")
-    fonte_label = "Energy-Charts API (Fraunhofer ISE) — sem autenticação" if args.source == "energycharts" else "ENTSO-E Transparency Platform (token)"
-    print(f"  Fonte    : {fonte_label}")
-    print(f"{'=' * 60}\n")
 
 
 if __name__ == "__main__":
     try:
         main()
     except subprocess.CalledProcessError as exc:
-        print(f"\nErro: comando falhou (exit code {exc.returncode})", file=sys.stderr)
+        log.error("Comando falhou (exit code %d)", exc.returncode)
         sys.exit(exc.returncode)

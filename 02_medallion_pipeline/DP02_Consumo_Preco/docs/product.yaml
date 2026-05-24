@@ -244,10 +244,10 @@ governance:
 # REFERENCES — documentação relacionada
 # -----------------------------------------------------------------------------
 references:
-  pipeline_summary: PIPELINE_RESUMO.md
+  pipeline_summary: Streaming_Data/DP02_Pipeline.md
   data_contract: docs/contract.yaml
   report_section: "05_relatorio/Data Products.md — DP-02"
   grafana_dashboard: 04_application/grafana/dashboards/consumo_preco_streaming_overview.json
-  ml_script: 03_ml_pipeline/preco_consumo_mlflow_flow.py
+  ml_script: 03_ml_pipeline/preco_consumo_streaming_mlflow_flow.py
   entsoe_api_docs: https://transparency.entsoe.eu/content/static_content/Static%20content/web%20api/Guide.html
   entsoe_py_docs: https://github.com/EnergieID/entsoe-py

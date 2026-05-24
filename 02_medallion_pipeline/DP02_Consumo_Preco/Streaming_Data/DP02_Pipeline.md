@@ -233,6 +233,143 @@ silver_to_gold_api_full
 
 ---
 
+## Auditoria e Observabilidade (v1.1.0)
+
+### Tabelas de auditoria
+
+Cada execução do pipeline persiste automaticamente dois registos em `iceberg.audit`:
+
+#### `iceberg.audit.pipeline_runs`
+
+Registo de cada execução — uma linha por run.
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `run_id` | VARCHAR | UUID único desta execução |
+| `pipeline_name` | VARCHAR | `dp02_streaming` |
+| `pipeline_version` | VARCHAR | Versão do orquestrador (ex.: `1.1.0`) |
+| `start_ts` | TIMESTAMP WITH TIME ZONE | Início UTC da execução |
+| `end_ts` | TIMESTAMP WITH TIME ZONE | Fim UTC da execução |
+| `duration_seconds` | DOUBLE | Duração total em segundos |
+| `status` | VARCHAR | `SUCCESS` ou `FAILED` |
+| `rows_bronze` | BIGINT | Linhas totais nas tabelas Bronze (consumo + preço) |
+| `rows_silver` | BIGINT | Linhas totais nas tabelas Silver |
+| `rows_gold` | BIGINT | Linhas em `dp_energy_market_api_hourly` |
+| `source` | VARCHAR | Fonte de dados usada (`energycharts` ou `entsoe`) |
+| `param_start_date` | VARCHAR | Parâmetro `--start` passado ao orquestrador |
+| `param_end_date` | VARCHAR | Parâmetro `--end` passado ao orquestrador |
+| `error_message` | VARCHAR | Mensagem de erro (vazio em `SUCCESS`) |
+
+Particionada por `day(start_ts)` para consultas temporais eficientes.
+
+#### `iceberg.audit.dataset_lineage`
+
+Mapa upstream → downstream persistido a cada execução bem-sucedida.
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `run_id` | VARCHAR | Referência ao `pipeline_runs.run_id` |
+| `upstream` | VARCHAR | Tabela de origem (ex.: `bronze.consumo_api_raw`) |
+| `downstream` | VARCHAR | Tabela de destino (ex.: `silver.consumo_api_hourly`) |
+| `recorded_at` | TIMESTAMP WITH TIME ZONE | Timestamp de registo |
+
+**Grafo de lineage materializado por execução:**
+
+```
+bronze.consumo_api_raw  ──►  silver.consumo_api_hourly  ──►  gold.dp_energy_market_api_hourly
+bronze.preco_api_raw    ──►  silver.preco_api_hourly    ──►  gold.dp_energy_market_api_hourly
+                                                         ──►  gold.feat_load_forecasting_api_hourly
+```
+
+**DDL:** `05_audit/sql/audit_ddl.sql` — aplicado automaticamente no arranque (CREATE IF NOT EXISTS, idempotente).
+
+### Logging estruturado com run_id
+
+Cada linha de log é prefixada com os primeiros 8 caracteres do UUID da execução:
+
+```
+10:42:01  INFO    [3f2a1b9c] Pipeline iniciada — run_id=3f2a1b9c-...  período=2024-01-01→2024-12-31  fonte=energycharts
+10:42:05  INFO    [3f2a1b9c] FASE 1 - Bronze fetch (ENERGYCHARTS) (2024-01-01 -> 2024-12-31)
+10:52:11  INFO    [3f2a1b9c] Bronze ingerido: 17544 linhas totais (consumo + preço)
+10:52:11  INFO    [3f2a1b9c] Pipeline SUCCESS em 541s  (bronze=17544  silver=8772  gold=8748)
+```
+
+**Consulta de auditoria — últimas execuções:**
+
+```sql
+SELECT run_id, status, duration_seconds, rows_gold, param_start_date, param_end_date, start_ts
+FROM iceberg.audit.pipeline_runs
+ORDER BY start_ts DESC
+LIMIT 10;
+```
+
+**Consulta de lineage de uma execução específica:**
+
+```sql
+SELECT upstream, downstream
+FROM iceberg.audit.dataset_lineage
+WHERE run_id = '<uuid-completo>'
+ORDER BY upstream;
+```
+
+---
+
+## Resiliência e SLA
+
+### Retry com backoff exponencial
+
+Todas as chamadas a workflows Flyte (`pyflyte run`) executam com **3 tentativas automáticas** e backoff exponencial entre tentativas (2s → 4s). Erros transitórios de rede ou timeout da API não abortam o pipeline.
+
+```
+Tentativa 1  ──✗──►  aguarda 2s
+Tentativa 2  ──✗──►  aguarda 4s
+Tentativa 3  ──✗──►  FALHA propagada
+```
+
+### SLA operacional definido
+
+| SLA             | Valor                               | Comportamento                        |
+|-----------------|-------------------------------------|--------------------------------------|
+| **Freshness**   | Máx. 7 dias de atraso no `end_date` | WARNING em log se ultrapassado       |
+| **Runtime**     | Máx. 45 minutos por execução        | WARNING em log se ultrapassado       |
+
+Ambos os SLA geram aviso no log e são persistidos na tabela `pipeline_runs` para análise histórica em Grafana.
+
+### Quality gate — modelo de severidade
+
+| Status | Comportamento                                                        |
+|--------|----------------------------------------------------------------------|
+| `PASS` | Log informativo; pipeline continua                                   |
+| `WARN` | Log de aviso; pipeline continua (ex.: gaps DST, precos negativos)    |
+| `FAIL` | Pipeline abortada; `error_message` persistido na tabela de auditoria |
+
+---
+
+## Manutenção Iceberg
+
+### Compaction automática (small-files problem)
+
+Cada execução incremental gera ficheiros Parquet pequenos. O orquestrador executa automaticamente `ALTER TABLE ... EXECUTE optimize` nas tabelas Gold após cada run bem-sucedido.
+
+```sql
+-- Executado automaticamente pelo orquestrador (pós-Gold, pré-validação)
+ALTER TABLE iceberg.gold.dp_energy_market_api_hourly EXECUTE optimize;
+ALTER TABLE iceberg.gold.feat_load_forecasting_api_hourly EXECUTE optimize;
+```
+
+**Resultado:** redução de ficheiros fragmentados, melhoria de performance em queries analíticas e ML, sem necessidade de manutenção manual.
+
+### Política de retenção de dados
+
+| Camada | Retenção recomendada | Justificação |
+|--------|---------------------|--------------|
+| Bronze (`_api_raw`) | 90 dias | Dados raw reprocessáveis a partir da API |
+| Silver (`_api_hourly`) | 2 anos | Dados limpos; custo de reprocessamento moderado |
+| Gold (`dp_*`, `feat_*`) | Histórico completo | Window functions requerem série contínua |
+| Audit (`pipeline_runs`) | Histórico completo | Rastreabilidade regulatória e SLA |
+
+---
+
 ## Como executar
 
 ### Sem token (Energy-Charts / Fraunhofer ISE) — fonte por defeito
@@ -304,5 +441,5 @@ Dependências: `entsoe-py`, `pandas` (instalar via `pip install entsoe-py pandas
 | Ficheiro | Conteúdo |
 | --- | --- |
 | [`.env.example`](.env.example) | **Template de variáveis de ambiente** — copia para `.env` e preenche o `ENTSOE_TOKEN` |
-| [`docs/product.yaml`](docs/product.yaml) | **Data Product** — entrega, produção, lineage, observabilidade, governança |
-| [`docs/contract.yaml`](docs/contract.yaml) | **Data Contract** — schema formal, semântica, qualidade, SLAs/SLOs, exemplos SQL |
+| [`../docs/product.yaml`](../docs/product.yaml) | **Data Product** — entrega, produção, lineage, observabilidade, governança |
+| [`../docs/contract.yaml`](../docs/contract.yaml) | **Data Contract** — schema formal, semântica, qualidade, SLAs/SLOs, exemplos SQL |

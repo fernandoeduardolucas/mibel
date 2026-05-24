@@ -2,6 +2,53 @@
 
 Este fluxo cria dados fictícios de produção/consumo a cada **30 segundos**, publica no Kafka/Redpanda e materializa os dados em **Bronze e Gold**. O Grafana deve ler da camada **Gold**.
 
+> Este módulo é **autónomo**: tudo o que é necessário para o tópico Kafka deste fluxo está nesta pasta (`streaming/kafka_config/producao_consumo_events.json`).
+
+
+
+## 0) Pré-check obrigatório (erro: Table kafka.default.producao_consumo_events does not exist)
+
+Antes de executar as queries, confirma no Trino se a tabela Kafka está registada:
+
+```sql
+SHOW CATALOGS;
+SHOW SCHEMAS FROM kafka;
+SHOW TABLES FROM kafka.default;
+```
+
+Deves ver `producao_consumo_events` na lista.
+
+Se **não** aparecer:
+1. Confirmar que o ficheiro local existe: `02_medallion_pipeline/producao_consumo/streaming/kafka_config/producao_consumo_events.json`.
+2. Garantir que este ficheiro está montado no Trino em `/etc/trino/kafka/producao_consumo_events.json` (copiar/sincronizar para `01_docker_stack/kafka_config/`).
+3. Reiniciar o Trino para recarregar `/etc/trino/kafka`:
+
+```bash
+cd 01_docker_stack
+docker compose restart trino
+```
+
+4. Voltar a validar:
+
+```sql
+SHOW TABLES FROM kafka.default;
+DESCRIBE kafka.default.producao_consumo_events;
+```
+
+
+### Sincronizar configuração Kafka deste módulo
+
+Para manter o streaming de `producao_consumo` isolado de outras partes, a definição do tópico fica versionada aqui:
+
+- `02_medallion_pipeline/producao_consumo/streaming/kafka_config/producao_consumo_events.json`
+
+Quando necessário, sincroniza para a stack Docker:
+
+```bash
+cp 02_medallion_pipeline/producao_consumo/streaming/kafka_config/producao_consumo_events.json \
+   01_docker_stack/kafka_config/producao_consumo_events.json
+```
+
 ## 1) Publicar eventos fictícios
 
 ```bash

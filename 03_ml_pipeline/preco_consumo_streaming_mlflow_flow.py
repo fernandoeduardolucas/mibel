@@ -17,23 +17,6 @@ import socket
 import tempfile
 from datetime import datetime, timezone
 
-DEFAULT_FEATURE_TABLE_NAMES = (
-    "feat_load_forecasting_api_hourly",
-    "feat_load_forecasting_hourly",
-)
-DEFAULT_FEATURE_TABLE_CANDIDATES = tuple(f"iceberg.gold.{name}" for name in DEFAULT_FEATURE_TABLE_NAMES)
-FEATURE_TABLE = os.getenv("FEATURE_TABLE", DEFAULT_FEATURE_TABLE_CANDIDATES[0])
-
-DEFAULT_DP_TABLE_NAMES = (
-    "dp_energy_market_api_hourly",
-    "dp_energy_market_hourly",
-)
-DEFAULT_DP_TABLE_CANDIDATES = tuple(f"iceberg.gold.{name}" for name in DEFAULT_DP_TABLE_NAMES)
-TABLE_SEARCH_SCHEMAS = tuple(
-    schema.strip() for schema in os.getenv("TABLE_SEARCH_SCHEMAS", "gold").split(",") if schema.strip()
-)
-DEFAULT_DP_TABLE_CANDIDATES = tuple(f"iceberg.gold.{name}" for name in DEFAULT_DP_TABLE_NAMES)
-
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 TRINO_USER = os.getenv("TRINO_USER", "tead")
@@ -56,250 +39,41 @@ def _get_conn():
     )
 
 
-def _table_exists(cur, table_fqn: str) -> bool:
-    cur.execute(f"SHOW TABLES FROM {table_fqn.rsplit('.', 1)[0]} LIKE '{table_fqn.rsplit('.', 1)[1]}'")
-    return len(cur.fetchall()) > 0
-
-
-def _find_existing_table_in_any_catalog(cur, table_names: tuple[str, ...], schema_candidates: tuple[str, ...] = TABLE_SEARCH_SCHEMAS) -> str | None:
-    """Procura tabelas em múltiplos catálogos e schemas visíveis ao utilizador Trino."""
-    cur.execute("SHOW CATALOGS")
-    catalogs = [row[0] for row in cur.fetchall()]
-
-    for catalog in catalogs:
-        if catalog == "system":
-            continue
-        try:
-            cur.execute(f"SHOW SCHEMAS FROM {catalog}")
-            schemas = [row[0] for row in cur.fetchall()]
-        except Exception:
-            continue
-
-        # prioriza schemas configurados; depois tenta os restantes
-        prioritized = [s for s in schema_candidates if s in schemas]
-        remaining = [s for s in schemas if s not in prioritized]
-        for schema_name in prioritized + remaining:
-            for table_name in table_names:
-                candidate = f"{catalog}.{schema_name}.{table_name}"
-                try:
-                    if _table_exists(cur, candidate):
-                        return candidate
-                except Exception:
-                    continue
-    return None
-
-
-def _resolve_feature_table(cur) -> str:
-    if FEATURE_TABLE:
-        if "." in FEATURE_TABLE and FEATURE_TABLE.count(".") >= 2 and _table_exists(cur, FEATURE_TABLE):
-            return FEATURE_TABLE
-
-    for candidate in DEFAULT_FEATURE_TABLE_CANDIDATES:
-        if _table_exists(cur, candidate):
-            return candidate
-
-    any_catalog_match = _find_existing_table_in_any_catalog(cur, DEFAULT_FEATURE_TABLE_NAMES)
-    if any_catalog_match:
-        return any_catalog_match
-
-    raise ValueError(
-        "Nenhuma feature table encontrada. Esperado uma destas tabelas: "
-        + ", ".join(DEFAULT_FEATURE_TABLE_CANDIDATES)
-        + ". Execute o pipeline Gold (DP02) antes do treino."
-    )
-
-
-def _resolve_dp_table(cur) -> str:
-    for candidate in DEFAULT_DP_TABLE_CANDIDATES:
-        if _table_exists(cur, candidate):
-            return candidate
-
-    any_catalog_match = _find_existing_table_in_any_catalog(cur, DEFAULT_DP_TABLE_NAMES)
-    if any_catalog_match:
-        return any_catalog_match
-
-    raise ValueError(
-        "Nenhuma tabela base DP encontrada para construir features on-the-fly. Esperado uma destas tabelas: "
-        + ", ".join(DEFAULT_DP_TABLE_CANDIDATES)
-        + "."
-    )
-
-
-
-
-def _create_feature_table_if_missing(cur, feature_table_fqn: str) -> bool:
-    """Cria e popula a feature table quando não existe. Retorna True se criou."""
-    if _table_exists(cur, feature_table_fqn):
-        return False
-
-    if feature_table_fqn == "iceberg.gold.feat_load_forecasting_api_hourly":
-        dp_table = "iceberg.gold.dp_energy_market_api_hourly"
-    elif feature_table_fqn == "iceberg.gold.feat_load_forecasting_hourly":
-        dp_table = "iceberg.gold.dp_energy_market_hourly"
-    else:
-        return False
-
-    if not _table_exists(cur, dp_table):
-        return False
-
-    cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS {feature_table_fqn} (
-            ts_utc                  TIMESTAMP(6) WITH TIME ZONE,
-            consumo_total           DOUBLE,
-            market_price_pt         DOUBLE,
-            hora                    INTEGER,
-            dia_semana              INTEGER,
-            is_weekend              BOOLEAN,
-            consumo_lag_1h          DOUBLE,
-            consumo_lag_24h         DOUBLE,
-            price_lag_1h            DOUBLE,
-            rolling_avg_consumo_24h DOUBLE,
-            rolling_avg_price_24h   DOUBLE,
-            consumo_next_hour       DOUBLE,
-            process_date            DATE,
-            year                    INTEGER,
-            month                   INTEGER
-        )
-        WITH (
-            format = 'PARQUET',
-            partitioning = ARRAY['year', 'month']
-        )
-    """)
-    cur.fetchall()
-
-    cur.execute(f"DELETE FROM {feature_table_fqn} WHERE 1=1")
-    cur.fetchall()
-
-    cur.execute(f"""
-        INSERT INTO {feature_table_fqn}
-        WITH with_lead AS (
-            SELECT
-                ts_utc, consumo_total, market_price_pt,
-                hora, dia_semana, is_weekend,
-                consumo_lag_1h, consumo_lag_24h, price_lag_1h,
-                rolling_avg_consumo_24h, rolling_avg_price_24h,
-                LEAD(consumo_total, 1) OVER (ORDER BY ts_utc) AS consumo_next_hour,
-                process_date, year, month
-            FROM {dp_table}
-        )
-        SELECT
-            ts_utc, consumo_total, market_price_pt,
-            hora, dia_semana, is_weekend,
-            consumo_lag_1h, consumo_lag_24h, price_lag_1h,
-            rolling_avg_consumo_24h, rolling_avg_price_24h,
-            consumo_next_hour, process_date, year, month
-        FROM with_lead
-        WHERE consumo_next_hour IS NOT NULL
-          AND consumo_lag_1h IS NOT NULL
-          AND consumo_lag_24h IS NOT NULL
-          AND price_lag_1h IS NOT NULL
-    """)
-    cur.fetchall()
-    return True
-
-
-def _create_dp_table_if_missing(cur, dp_table_fqn: str) -> bool:
-    """Cria a tabela DP base se não existir. Retorna True se criou."""
-    if _table_exists(cur, dp_table_fqn):
-        return False
-
-    cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS {dp_table_fqn} (
-            ts_utc                  TIMESTAMP(6) WITH TIME ZONE,
-            consumo_total           DOUBLE,
-            market_price_pt         DOUBLE,
-            hora                    INTEGER,
-            dia_semana              INTEGER,
-            is_weekend              BOOLEAN,
-            consumo_lag_1h          DOUBLE,
-            consumo_lag_24h         DOUBLE,
-            price_lag_1h            DOUBLE,
-            rolling_avg_consumo_24h DOUBLE,
-            rolling_avg_price_24h   DOUBLE,
-            process_date            DATE,
-            year                    INTEGER,
-            month                   INTEGER
-        )
-        WITH (
-            format = 'PARQUET',
-            partitioning = ARRAY['year', 'month']
-        )
-    """)
-    cur.fetchall()
-    return True
-
-
-def _ensure_base_tables(cur) -> None:
-    """Garante que as tabelas base padrão existem no catálogo iceberg.gold."""
-    _create_dp_table_if_missing(cur, "iceberg.gold.dp_energy_market_api_hourly")
-    _create_dp_table_if_missing(cur, "iceberg.gold.dp_energy_market_hourly")
-    _create_feature_table_if_missing(cur, "iceberg.gold.feat_load_forecasting_api_hourly")
-    _create_feature_table_if_missing(cur, "iceberg.gold.feat_load_forecasting_hourly")
-
 def _load_data():
     import pandas as pd
 
+    sql = """
+        SELECT
+            ts_utc,
+            consumo_total,
+            market_price_pt,
+            hora,
+            dia_semana,
+            is_weekend,
+            consumo_lag_1h,
+            consumo_lag_24h,
+            price_lag_1h,
+            rolling_avg_consumo_24h,
+            rolling_avg_price_24h,
+            consumo_next_hour
+        FROM iceberg.gold.feat_load_forecasting_api_hourly
+        WHERE ts_utc IS NOT NULL
+          AND consumo_next_hour IS NOT NULL
+        ORDER BY ts_utc
+    """
     conn = _get_conn()
-    cur = conn.cursor()
     try:
-        _ensure_base_tables(cur)
-        try:
-            table_fqn = _resolve_feature_table(cur)
-            sql = f"""
-                SELECT
-                    ts_utc,
-                    consumo_total,
-                    market_price_pt,
-                    hora,
-                    dia_semana,
-                    is_weekend,
-                    consumo_lag_1h,
-                    consumo_lag_24h,
-                    price_lag_1h,
-                    rolling_avg_consumo_24h,
-                    rolling_avg_price_24h,
-                    consumo_next_hour
-                FROM {table_fqn}
-                WHERE ts_utc IS NOT NULL
-                  AND consumo_next_hour IS NOT NULL
-                ORDER BY ts_utc
-            """
-        except ValueError:
-            dp_table = _resolve_dp_table(cur)
-            table_fqn = f"{dp_table} (features derivadas on-the-fly)"
-            sql = f"""
-                SELECT
-                    ts_utc,
-                    consumo_total,
-                    market_price_pt,
-                    HOUR(ts_utc) AS hora,
-                    day_of_week(ts_utc) AS dia_semana,
-                    CASE WHEN day_of_week(ts_utc) IN (6, 7) THEN TRUE ELSE FALSE END AS is_weekend,
-                    LAG(consumo_total, 1) OVER (ORDER BY ts_utc) AS consumo_lag_1h,
-                    LAG(consumo_total, 24) OVER (ORDER BY ts_utc) AS consumo_lag_24h,
-                    LAG(market_price_pt, 1) OVER (ORDER BY ts_utc) AS price_lag_1h,
-                    AVG(consumo_total) OVER (ORDER BY ts_utc ROWS BETWEEN 23 PRECEDING AND CURRENT ROW) AS rolling_avg_consumo_24h,
-                    AVG(market_price_pt) OVER (ORDER BY ts_utc ROWS BETWEEN 23 PRECEDING AND CURRENT ROW) AS rolling_avg_price_24h,
-                    LEAD(consumo_total, 1) OVER (ORDER BY ts_utc) AS consumo_next_hour
-                FROM {dp_table}
-                WHERE ts_utc IS NOT NULL
-                ORDER BY ts_utc
-            """
-        cur.execute(sql)
-        rows = cur.fetchall()
-        cols = [c[0] for c in cur.description]
+        df = pd.read_sql(sql, conn)
     finally:
         conn.close()
 
-    df = pd.DataFrame(rows, columns=cols)
-
     if df.empty:
-        raise ValueError(f"{table_fqn} está vazia.")
+        raise ValueError("feat_load_forecasting_api_hourly está vazia.")
 
     df.columns = [c.strip().lower() for c in df.columns]
     df["ts_utc"] = pd.to_datetime(df["ts_utc"], utc=True)
     df = df.sort_values("ts_utc").reset_index(drop=True)
-    return df, table_fqn
+    return df
 
 
 FEATURE_COLS = [
@@ -390,9 +164,8 @@ def train():
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
 
-    print("Carregando dados da feature table de forecast (Gold)...")
-    df, source_table = _load_data()
-    print(f"  Fonte: {source_table}")
+    print("Carregando dados de iceberg.gold.feat_load_forecasting_api_hourly...")
+    df = _load_data()
     print(f"  {len(df)} linhas | {df['ts_utc'].min()} ate {df['ts_utc'].max()}")
 
     numeric_cols = [c for c in FEATURE_COLS if c not in ("hora", "dia_semana", "is_weekend")]
@@ -450,7 +223,7 @@ def train():
     with mlflow.start_run(run_name="gbr-streaming-consumo-next-hour"):
         mlflow.set_tags({
             "domain": "energia", "fonte": "ENTSO-E streaming",
-            "dataset": source_table,
+            "dataset": "iceberg.gold.feat_load_forecasting_api_hourly",
             "target": TARGET, "model_type": "GradientBoostingRegressor",
         })
         mlflow.log_params({**gbr_params, "n_train": split, "n_test": len(X_test)})

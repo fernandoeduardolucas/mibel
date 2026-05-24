@@ -32,6 +32,7 @@ DEFAULT_DP_TABLE_CANDIDATES = tuple(f"iceberg.gold.{name}" for name in DEFAULT_D
 TABLE_SEARCH_SCHEMAS = tuple(
     schema.strip() for schema in os.getenv("TABLE_SEARCH_SCHEMAS", "gold").split(",") if schema.strip()
 )
+DEFAULT_DP_TABLE_CANDIDATES = tuple(f"iceberg.gold.{name}" for name in DEFAULT_DP_TABLE_NAMES)
 
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))

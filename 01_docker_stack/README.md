@@ -69,7 +69,8 @@ Fontes externas (CSVs / Open-Meteo API)
 │           ├── tpcds.properties    # Benchmark TPC-DS
 │           └── tpch.properties     # Benchmark TPC-H
 ├── kafka_config/
-│   └── web_events.json             # Schema Trino para tópico web_events
+│   ├── web_events.json             # Schema Trino para tópico web_events
+│   └── producao_consumo_events.json # Schema Trino para tópico producao_consumo_events
 ├── mlflow/
 │   └── Dockerfile                  # Imagem MLflow + psycopg2 (Postgres)
 └── flyte/
@@ -134,6 +135,24 @@ docker compose ps
 Todos os serviços (excepto `mc`, que termina após criar os buckets) devem mostrar `running`.
 
 ### Validar Trino
+
+
+### Validar tópicos expostos no catálogo Kafka (Trino)
+
+```bash
+docker compose exec trino trino --execute "SHOW TABLES FROM kafka.default;"
+```
+
+Esperado incluir:
+- `web_events`
+- `producao_consumo_events`
+
+Se `producao_consumo_events` não aparecer, valide o ficheiro `kafka_config/producao_consumo_events.json` e reinicie o serviço Trino:
+
+```bash
+docker compose restart trino
+```
+
 
 ```powershell
 docker compose exec trino trino --execute "SHOW CATALOGS;"

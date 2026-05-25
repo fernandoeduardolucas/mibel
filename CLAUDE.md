@@ -92,7 +92,7 @@ Each data product has its own Python orchestrator. Always pass `--skip-docker` i
 
 ```powershell
 # DP-01: Production vs Consumption (no --skip-docker flag; manages Docker internally)
-python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py
+python 02_medallion_pipeline/DP01_Producao_Consumo/run_medallion_pipeline.py
 
 # DP-02: Consumption vs Price (static CSV pipeline)
 python 02_medallion_pipeline/DP02_Consumo_Preco/Static_Data/run_medallion_consumo_precos.py --skip-docker
@@ -101,7 +101,7 @@ python 02_medallion_pipeline/DP02_Consumo_Preco/Static_Data/run_medallion_consum
 python 02_medallion_pipeline/DP02_Consumo_Preco/Streaming_Data/run_streaming_pipeline.py --skip-docker --days 7
 
 # DP-03: Meteo + Production (fetches live data from Open-Meteo API)
-python 02_medallion_pipeline/meteo_producao/run_medallion_meteo_producao.py --skip-docker
+python 02_medallion_pipeline/DP03_Meteo_Producao/run_medallion_meteo_producao.py --skip-docker
 ```
 
 The orchestrators handle: Docker readiness checks, Python venv creation, DDL execution via Trino, Silver/Gold transformations, and quality gates. They are idempotent — safe to re-run.

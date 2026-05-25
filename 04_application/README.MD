@@ -15,7 +15,6 @@ Todos provisionados automaticamente pelo Docker Compose a partir de `grafana/das
 | --- | --- | --- | --- |
 | `producao_consumo_overview.json` | DP-01 | Balanço da Rede Nacional — Produção · Consumo · Saldo | `iceberg.gold.dp_energia_balance_hourly` |
 | `consumo_preco_overview.json` | DP-02 Static | Mercado Ibérico MIBEL — Consumo & Preços Day-Ahead | `iceberg.gold.dp_energy_market_hourly` |
-| `consumo_preco_static_ml.json` | DP-02 Static ML | Feature Table & Modelo ML (Static) | `iceberg.gold.feat_load_forecasting_hourly` |
 | `consumo_preco_streaming_overview.json` | DP-02 Streaming | Decisão de Mercado — Consumo × Preço MIBEL | `iceberg.gold.dp_energy_market_api_hourly` |
 | `meteo_producao_overview.json` | DP-03 | Clima & Produção Renovável — Observatório Meteorológico | `iceberg.gold.dp_meteo_producao_daily_features` |
 
@@ -42,16 +41,6 @@ Fonte: `iceberg.gold.dp_energy_market_hourly` · Grain: horário
 - **Sazonalidade:** preço médio por dia da semana e por mês
 - **Correlação:** scatter consumo vs preço, heatmap hora × dia da semana
 - **Qualidade:** null rates, unicidade `ts_utc`, taxa de join, freshness
-
----
-
-### DP-02 Static ML — Feature Table & Modelo (`consumo_preco_static_ml.json`)
-
-Fonte: `iceberg.gold.feat_load_forecasting_hourly` · Grain: horário
-
-- **KPIs ML:** total de exemplos de treino, null rate do target `consumo_next_hour`, cobertura feat/gold
-- **Feature table:** distribuição de features (hora, dia_semana, lags, rolling avgs)
-- **Target:** série temporal `consumo_total` vs `consumo_next_hour` (variável alvo)
 
 ---
 
@@ -125,10 +114,10 @@ Fonte: `iceberg.gold.dp_meteo_producao_daily_features` · Grain: diário
 ```text
 04_application/
 └── grafana/
+    ├── README_ML_METRICS.md                         Guia: integração de métricas ML no Grafana via Iceberg
     ├── dashboards/
     │   ├── producao_consumo_overview.json           DP-01
     │   ├── consumo_preco_overview.json              DP-02 Static
-    │   ├── consumo_preco_static_ml.json             DP-02 Static — Feature Table & ML
     │   ├── consumo_preco_streaming_overview.json    DP-02 Streaming — Decisão de Mercado
     │   └── meteo_producao_overview.json             DP-03
     └── provisioning/

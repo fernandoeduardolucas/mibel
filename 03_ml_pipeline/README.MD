@@ -58,9 +58,10 @@ Dados ordenados por timestamp
 
 ```
 03_ml_pipeline/
-├── producao_consumo_mlflow_flow.py    DP-01: classificador de défice energético
-├── preco_consumo_mlflow_flow.py       DP-02: load forecasting (consumo próxima hora)
-└── meteo_producao_mlflow_flow.py      DP-03: previsão de produção + impacto no preço
+├── producao_consumo_mlflow_flow.py           DP-01: classificador de défice energético
+├── preco_consumo_mlflow_flow.py              DP-02 Static: load forecasting (dados CSV)
+├── preco_consumo_streaming_mlflow_flow.py    DP-02 Streaming: load forecasting (dados API ENTSO-E)
+└── meteo_producao_mlflow_flow.py             DP-03: previsão de produção + impacto no preço
 ```
 
 ---
@@ -98,6 +99,25 @@ Dados ordenados por timestamp
 | Experimento MLflow | `preco-consumo-forecasting` |
 | Modelo registado | `preco_consumo_load_forecaster` |
 | Workflow Flyte | `preco_consumo_training_wf` |
+
+### DP-02 Streaming — `preco_consumo_streaming_mlflow_flow.py`
+
+**Problema:** prever o consumo elétrico da próxima hora com base em dados históricos da API ENTSO-E (streaming).
+
+| Elemento | Detalhe |
+|---|---|
+| Feature table | `iceberg.gold.feat_load_forecasting_api_hourly` |
+| Target | `consumo_next_hour` (regressão) |
+| Estimador | `GradientBoostingRegressor` (300 iters, max_depth=5, lr=0.05, subsample=0.8, min_samples_leaf=5) |
+| Features | `consumo_total`, `market_price_pt`, `hora`, `dia_semana`, `is_weekend`, lags 1h/24h de consumo e preço, rolling 24h |
+| Métricas | `mae`, `rmse`, `r2`, `mape` |
+| Artefactos | `feature_importances.json`, `model/` |
+| Experimento MLflow | `preco-consumo-streaming-forecasting` |
+| Modelo registado | `preco_consumo_streaming_forecaster` |
+| Escrita em Trino | `iceberg.gold.ml_metrics_streaming` + `iceberg.gold.ml_feature_importance_streaming` (para Grafana) |
+| Workflow Flyte | — (execução local apenas) |
+
+> **Diferença face ao DP-02 Static:** além de registar o run no MLflow, este script escreve as métricas e feature importances directamente em tabelas Iceberg no Gold, permitindo que o dashboard Grafana de streaming as consuma sem depender do MLflow.
 
 ### DP-03 — `meteo_producao_mlflow_flow.py`
 
@@ -177,8 +197,11 @@ Stack Docker a correr com dados nas tabelas Gold (ver `02_medallion_pipeline/REA
 # DP-01: classificador de défice
 python 03_ml_pipeline/producao_consumo_mlflow_flow.py
 
-# DP-02: load forecasting
+# DP-02 Static: load forecasting (dados CSV)
 python 03_ml_pipeline/preco_consumo_mlflow_flow.py
+
+# DP-02 Streaming: load forecasting (dados API ENTSO-E)
+python 03_ml_pipeline/preco_consumo_streaming_mlflow_flow.py
 
 # DP-03: produção + preço (2 modelos em sequência)
 python 03_ml_pipeline/meteo_producao_mlflow_flow.py
@@ -207,8 +230,8 @@ pyflyte run --remote -p flytesnacks -d development \
 
 Abrir MLflow UI em <http://localhost:15000>:
 
-- Experimentos registados: `producao-consumo-defice`, `preco-consumo-forecasting`, `meteo-producao-producao-forecast`, `meteo-producao-preco-impact`
-- Model Registry: 4 modelos registados com versões
+- Experimentos registados: `producao-consumo-defice`, `preco-consumo-forecasting`, `preco-consumo-streaming-forecasting`, `meteo-producao-producao-forecast`, `meteo-producao-preco-impact`
+- Model Registry: 5 modelos registados com versões
 
 ### Variáveis de Ambiente (se necessário)
 

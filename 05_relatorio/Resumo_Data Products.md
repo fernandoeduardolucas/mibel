@@ -295,7 +295,7 @@ Em todos os casos, a Bronze preserva os dados tal como chegam. **A Silver é a c
 
 ### Ferramenta
 
-**`02_medallion_pipeline/meteo_producao/01_bronze/data_quality_demo/corrupt_bronze.py`**
+**`02_medallion_pipeline/DP03_Meteo_Producao/01_bronze/data_quality_demo/corrupt_bronze.py`**
 
 Script independente que injeta padrões de sujidade directamente nas tabelas Iceberg Bronze via Trino, sem modificar os scripts de ingestão de produção. Após corrupção, a re-execução do Silver demonstra o mecanismo de detecção e sinalização.
 
@@ -333,7 +333,7 @@ O quality check S13 (`pct_ok >= 95%`) passa a WARN (limiar exactamente na fronte
 ### Fluxo da Demo
 
 ```powershell
-cd 02_medallion_pipeline/meteo_producao/01_bronze/data_quality_demo
+cd 02_medallion_pipeline/DP03_Meteo_Producao/01_bronze/data_quality_demo
 
 # Corromper Bronze
 python corrupt_bronze.py --dp meteo --type all --pct 5

@@ -9,10 +9,10 @@ Implementação das pipelines de dados para os três Data Products do projeto MI
 ```
 Fontes Externas
        │
-       ├── REN/ERSE CSV (producao_consumo)
+       ├── REN/ERSE CSV (DP01_Producao_Consumo)
        ├── OMIE CSV (DP02 Static)
        ├── ENTSO-E API / Energy-Charts (DP02 Streaming)
-       └── Open-Meteo API (meteo_producao)
+       └── Open-Meteo API (DP03_Meteo_Producao)
        │
        ▼
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -63,7 +63,7 @@ run_medallion_*.py
 ```
 02_medallion_pipeline/
 │
-├── producao_consumo/                              DP-01: produção vs consumo
+├── DP01_Producao_Consumo/                         DP-01: produção vs consumo
 │   ├── run_medallion_pipeline.py                 Orquestrador principal
 │   ├── flyte_workflow.py                         Decoradores Flyte (execução local)
 │   ├── relatorio.md                              Notas técnicas do DP-01
@@ -136,7 +136,7 @@ run_medallion_*.py
 │       ├── 04_quality/sql/                       ~26 checks (Bronze + Silver + Gold)
 │       └── 05_audit/sql/                         DDL audit.pipeline_runs + dataset_lineage
 │
-└── meteo_producao/                               DP-03: meteorologia + produção
+└── DP03_Meteo_Producao/                           DP-03: meteorologia + produção
     ├── run_medallion_meteo_producao.py           Orquestrador principal
     ├── README.md                                 Documentação detalhada do DP-03
     ├── diagrama_meteo_producao.html              Diagrama interactivo da arquitectura
@@ -158,7 +158,7 @@ run_medallion_*.py
 
 ## O Que Foi Implementado
 
-### DP-01 — `producao_consumo`
+### DP-01 — `DP01_Producao_Consumo`
 
 | Camada | Tabela | Descrição |
 |---|---|---|
@@ -170,7 +170,7 @@ run_medallion_*.py
 
 **Quality Gate DP-01:** 21 checks SQL — null rates, range, unicidade, alinhamento temporal 15 min, completude ≥ 90 registos/dia, saldo_kwh = producao − consumo.
 
-**DP-01 Streaming (experimental)** — módulo Kafka autónomo em `producao_consumo/streaming/`. Gera eventos sintéticos de produção/consumo a cada 30 s via `fake_producao_consumo_producer.py`, publica no Redpanda e materializa incrementalmente em:
+**DP-01 Streaming (experimental)** — módulo Kafka autónomo em `DP01_Producao_Consumo/streaming/`. Gera eventos sintéticos de produção/consumo a cada 30 s via `fake_producao_consumo_producer.py`, publica no Redpanda e materializa incrementalmente em:
 
 | Tabela | Descrição |
 |---|---|
@@ -227,7 +227,7 @@ A pasta `DP02_Consumo_Preco/docs/` contém documentação detalhada partilhada e
 - SLA operacional: freshness ≤ 7 dias e runtime ≤ 45 min (aviso se ultrapassado)
 - Logging estruturado com `run_id` prefixado em cada linha
 
-### DP-03 — `meteo_producao` (contexto)
+### DP-03 — `DP03_Meteo_Producao` (contexto)
 
 | Camada | Tabela | Descrição |
 |---|---|---|
@@ -237,16 +237,16 @@ A pasta `DP02_Consumo_Preco/docs/` contém documentação detalhada partilhada e
 
 **Quality Gate DP-03:** 25 checks; destaque para lag_consistency (tolerância 0.01 °C) e cobertura cross-DP ≥ 90%.
 
-> Ver [meteo_producao/README.md](meteo_producao/README.md) para documentação detalhada do DP-03 (schemas, quality gates, flags, resultado da última execução).
+> Ver [DP03_Meteo_Producao/README.md](DP03_Meteo_Producao/README.md) para documentação detalhada do DP-03 (schemas, quality gates, flags, resultado da última execução).
 
 **Demo de Qualidade de Dados** — `01_bronze/data_quality_demo/corrupt_bronze.py` injeta propositadamente dados inválidos na Bronze (nulos, fora de range, duplicados, timestamps desalinhados) e demonstra como a Silver os detecta e sinaliza via `_quality_flag`. Útil para demonstrações académicas do valor da camada Silver.
 
 ```powershell
 # Corromper 5% das linhas e reconstruir Silver
-python 02_medallion_pipeline/meteo_producao/01_bronze/data_quality_demo/corrupt_bronze.py --dp meteo --type all --pct 5
-python 02_medallion_pipeline/meteo_producao/01_bronze/data_quality_demo/corrupt_bronze.py --rerun-silver --dp meteo
+python 02_medallion_pipeline/DP03_Meteo_Producao/01_bronze/data_quality_demo/corrupt_bronze.py --dp meteo --type all --pct 5
+python 02_medallion_pipeline/DP03_Meteo_Producao/01_bronze/data_quality_demo/corrupt_bronze.py --rerun-silver --dp meteo
 # Restaurar estado original
-python 02_medallion_pipeline/meteo_producao/01_bronze/data_quality_demo/corrupt_bronze.py --restore --dp meteo
+python 02_medallion_pipeline/DP03_Meteo_Producao/01_bronze/data_quality_demo/corrupt_bronze.py --restore --dp meteo
 ```
 
 ### Justificação das Decisões
@@ -273,23 +273,23 @@ Stack Docker a correr (ver `01_docker_stack/README.md`).
 
 ```powershell
 # Execução completa (inclui Docker check)
-python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py
+python 02_medallion_pipeline/DP01_Producao_Consumo/run_medallion_pipeline.py
 
 # Stack já a correr
-python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py --skip-docker
+python 02_medallion_pipeline/DP01_Producao_Consumo/run_medallion_pipeline.py --skip-docker
 
 # Reprocessamento incremental de intervalo
-python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py --skip-docker --date-from 2024-01-01 --date-to 2024-06-30
+python 02_medallion_pipeline/DP01_Producao_Consumo/run_medallion_pipeline.py --skip-docker --date-from 2024-01-01 --date-to 2024-06-30
 
 # Saltar DDL (tabelas já criadas) e quality gate
-python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py --skip-docker --skip-ddl --no-quality
+python 02_medallion_pipeline/DP01_Producao_Consumo/run_medallion_pipeline.py --skip-docker --skip-ddl --no-quality
 ```
 
 ### DP-01 Streaming — Produção/Consumo Fictício (Kafka/Redpanda)
 
 ```powershell
 # Criar venv e iniciar produtor (publica + materializa automaticamente a cada 30 s)
-cd 02_medallion_pipeline/producao_consumo/streaming/scripts/python
+cd 02_medallion_pipeline/DP01_Producao_Consumo/streaming/scripts/python
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements_streaming.txt
@@ -330,10 +330,10 @@ python 02_medallion_pipeline/DP02_Consumo_Preco/Streaming_Data/run_streaming_pip
 
 ```powershell
 # Fetch Open-Meteo desde 2023-01-01 até hoje (padrão)
-python 02_medallion_pipeline/meteo_producao/run_medallion_meteo_producao.py --skip-docker
+python 02_medallion_pipeline/DP03_Meteo_Producao/run_medallion_meteo_producao.py --skip-docker
 
 # Intervalo específico
-python 02_medallion_pipeline/meteo_producao/run_medallion_meteo_producao.py --skip-docker --date-from 2024-01-01 --date-to 2024-12-31
+python 02_medallion_pipeline/DP03_Meteo_Producao/run_medallion_meteo_producao.py --skip-docker --date-from 2024-01-01 --date-to 2024-12-31
 ```
 
 ### Flags Comuns

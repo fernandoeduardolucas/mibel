@@ -27,7 +27,8 @@ from flytekit import task, workflow, ImageSpec
 from flytekit.exceptions.user import FlyteRecoverableException
 
 # ---------------------------------------------------------------------------
-# ImageSpec — container para execução remota em Flyte (K3s)
+# ImageSpec — usado apenas em execução REMOTA (Flyte K3s sandbox).
+# Ignorado em modo local (--local-flyte); o processo Python do host é usado.
 # ---------------------------------------------------------------------------
 quality_image = ImageSpec(
     name="dp02_quality",

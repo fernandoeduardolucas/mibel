@@ -20,7 +20,8 @@ import trino
 from flytekit import task, workflow, ImageSpec
 
 # ---------------------------------------------------------------------------
-# ImageSpec — container para execução remota em Flyte (K3s)
+# ImageSpec — usado apenas em execução REMOTA (Flyte K3s sandbox).
+# Ignorado em modo local (--local-flyte); o processo Python do host é usado.
 # ---------------------------------------------------------------------------
 gold_image = ImageSpec(
     name="dp02_silver_gold",

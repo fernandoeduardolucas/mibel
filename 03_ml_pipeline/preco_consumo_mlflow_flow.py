@@ -74,18 +74,28 @@ TRINO_TABLE = os.getenv("TRINO_TABLE", "feat_load_forecasting_hourly")
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://host.docker.internal:15000")
 MLFLOW_EXPERIMENT = os.getenv("MLFLOW_EXPERIMENT", "preco-consumo-forecasting")
 
-os.environ.setdefault("MLFLOW_S3_ENDPOINT_URL", "http://host.docker.internal:9000")
+_S3_ENDPOINT_DEFAULT = os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://host.docker.internal:9000")
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "minioadmin")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "minioadmin")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 
 
-def _resolved_host(host: str) -> str:
+def _resolved_host(host: str, port: int = 80) -> str:
     try:
         socket.getaddrinfo(host, None)
-        return host
     except socket.gaierror:
+        if host == "host.docker.internal":
+            return "localhost"
+        raise
+    # DNS resolved but verify TCP reachability; on Windows, host.docker.internal
+    # resolves via hosts file but its IP is Docker Desktop's VM gateway — not
+    # reachable from a native Python process (only from inside containers).
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            pass
+        return host
+    except OSError:
         if host == "host.docker.internal":
             return "localhost"
         raise
@@ -94,7 +104,7 @@ def _resolved_host(host: str) -> str:
 def _get_trino_connection():
     import trino
 
-    resolved_trino_host = _resolved_host(TRINO_HOST)
+    resolved_trino_host = _resolved_host(TRINO_HOST, TRINO_PORT)
     return trino.dbapi.connect(
         host=resolved_trino_host,
         port=TRINO_PORT,
@@ -291,7 +301,15 @@ def train_preco_consumo_model(test_ratio: float = 0.2, random_state: int = 42) -
         zip(feature_cols, model.named_steps["regressor"].feature_importances_.tolist())
     )
 
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    from urllib.parse import urlparse, urlunparse
+
+    def _resolve_url(url: str) -> str:
+        p = urlparse(url)
+        host = _resolved_host(p.hostname, p.port or 80)
+        return urlunparse(p._replace(netloc=f"{host}:{p.port or 80}"))
+
+    mlflow.set_tracking_uri(_resolve_url(MLFLOW_TRACKING_URI))
+    os.environ["MLFLOW_S3_ENDPOINT_URL"] = _resolve_url(_S3_ENDPOINT_DEFAULT)
     mlflow.set_experiment(MLFLOW_EXPERIMENT)
 
     with mlflow.start_run(run_name="gbr-consumo-next-hour"):

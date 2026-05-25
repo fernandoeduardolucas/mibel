@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from datetime import datetime, timezone
 
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
@@ -60,11 +61,20 @@ def _load_data():
           AND consumo_next_hour IS NOT NULL
         ORDER BY ts_utc
     """
-    conn = _get_conn()
-    try:
-        df = pd.read_sql(sql, conn)
-    finally:
-        conn.close()
+    max_retries, delay = 10, 15
+    for attempt in range(1, max_retries + 1):
+        conn = _get_conn()
+        try:
+            df = pd.read_sql(sql, conn)
+            conn.close()
+            break
+        except Exception as exc:
+            conn.close()
+            if "SERVER_STARTING_UP" in str(exc) and attempt < max_retries:
+                print(f"Trino ainda a inicializar, aguardando {delay}s... (tentativa {attempt}/{max_retries})")
+                time.sleep(delay)
+            else:
+                raise
 
     if df.empty:
         raise ValueError("feat_load_forecasting_api_hourly está vazia.")

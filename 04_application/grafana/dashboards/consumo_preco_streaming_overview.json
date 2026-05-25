@@ -1581,7 +1581,7 @@
         "justifyMode": "center",
         "orientation": "auto",
         "percentChangeColorMode": "standard",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*/", "values": false },
         "showPercentChange": false,
         "textMode": "auto",
         "wideLayout": true
@@ -1591,7 +1591,7 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 0,
-          "rawSQL": "SELECT CONCAT(CAST(CAST(ts_train_start AS DATE) AS VARCHAR), ' → ', CAST(CAST(ts_test_end AS DATE) AS VARCHAR)) AS value FROM iceberg.gold.ml_metrics_streaming ORDER BY run_ts DESC LIMIT 1",
+          "rawSQL": "SELECT CONCAT(CAST(CAST(train_start AS DATE) AS VARCHAR), ' → ', CAST(CAST(test_end AS DATE) AS VARCHAR)) AS value FROM iceberg.gold.ml_metrics_streaming ORDER BY run_ts DESC LIMIT 1",
           "refId": "A"
         }
       ],
@@ -1645,7 +1645,7 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 0,
-          "rawSQL": "SELECT rank, feature_name, importance FROM iceberg.gold.ml_feature_importance_streaming WHERE run_ts = (SELECT MAX(run_ts) FROM iceberg.gold.ml_feature_importance_streaming) ORDER BY rank ASC",
+          "rawSQL": "SELECT rank, feature AS feature_name, importance FROM iceberg.gold.ml_feature_importance_streaming WHERE run_ts = (SELECT MAX(run_ts) FROM iceberg.gold.ml_feature_importance_streaming) ORDER BY rank ASC",
           "refId": "A"
         }
       ],

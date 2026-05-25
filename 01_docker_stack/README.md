@@ -1,8 +1,6 @@
 # 01 — Docker Stack (Infraestrutura Local)
 
-Infraestrutura completa do projecto MIBEL em Docker Compose. Fornece o lakehouse local (MinIO + Hive + Trino + Iceberg), o tracking de modelos ML (MLflow) e o streaming (Redpanda), com o Flyte Sandbox como orquestrador externo de workflows.
-
-Os dashboards de visualização (Grafana) estão em `04_application/grafana/` e são montados automaticamente pelo Compose.
+Infraestrutura completa do projecto MIBEL em Docker Compose. Fornece o lakehouse local (MinIO + Hive + Trino + Iceberg), o tracking de modelos ML (MLflow), o streaming (Redpanda) e a visualização (Grafana), com o Flyte Sandbox como orquestrador externo de workflows.
 
 ---
 
@@ -16,13 +14,19 @@ Os dashboards de visualização (Grafana) estão em `04_application/grafana/` e 
 │  │  MinIO   │───►│  Hive Metastore  │───►│        Trino          │  │
 │  │  (S3)    │    │  (MariaDB)       │    │  catalogs: iceberg,   │  │
 │  │:9000/9001│    │  :9083           │    │  hive, kafka, tpcds   │  │
-│  └────┬─────┘    └──────────────────┘    └───────────────────────┘  │
+│  └────┬─────┘    └──────────────────┘    └───────────┬───────────┘  │
+│       │                                              │               │
+│       │          ┌──────────────────┐    ┌───────────▼───────────┐  │
+│       └─────────►│     MLflow       │    │      Grafana          │  │
+│       │          │  (Postgres)      │    │  dashboards + Trino   │  │
+│       │          │  :15000          │    │  :3300                │  │
+│       │          └──────────────────┘    └───────────────────────┘  │
 │       │                                                              │
-│       │          ┌──────────────────┐    ┌───────────────────────┐  │
-│       └─────────►│     MLflow       │    │      Redpanda         │  │
-│                  │  (Postgres)      │    │  (Kafka-compat.)      │  │
-│                  │  :15000          │    │  :9092                │  │
-│                  └──────────────────┘    └───────────────────────┘  │
+│       │          ┌──────────────────┐                               │
+│       └─────────►│    Redpanda      │                               │
+│                  │  (Kafka-compat.) │                               │
+│                  │  :19092          │                               │
+│                  └──────────────────┘                               │
 └──────────────────────────────────────────────────────────────────────┘
               ▲
               │  Flyte Sandbox (container externo — K3s interno)
@@ -32,7 +36,7 @@ Os dashboards de visualização (Grafana) estão em `04_application/grafana/` e 
 **Fluxo de dados:**
 
 ```
-Fontes externas (CSVs / Open-Meteo API)
+Fontes externas (CSVs / Open-Meteo API / Redpanda)
         │
         ▼
    MinIO (s3://warehouse/)
@@ -41,7 +45,7 @@ Fontes externas (CSVs / Open-Meteo API)
    Trino ──► Iceberg managed tables (Silver → Gold)
         │
         ├──► MLflow (artefactos de modelos ML)
-        └──► Grafana (dashboards — ver 04_application/grafana/)
+        └──► Grafana (dashboards de visualização)
 ```
 
 ---
@@ -50,7 +54,7 @@ Fontes externas (CSVs / Open-Meteo API)
 
 ```
 01_docker_stack/
-├── docker-compose.yml              # Orquestrador principal (8 serviços)
+├── docker-compose.yml              # Orquestrador principal (9 serviços)
 ├── hive/
 │   └── conf/
 │       ├── metastore-site.xml      # Hive Metastore → MinIO S3
@@ -72,11 +76,13 @@ Fontes externas (CSVs / Open-Meteo API)
 │   ├── web_events.json             # Schema Trino para tópico web_events
 │   └── producao_consumo_events.json # Schema Trino para tópico producao_consumo_events
 ├── mlflow/
-│   └── Dockerfile                  # Imagem MLflow + psycopg2 (Postgres)
+│   └── Dockerfile                  # Imagem tead-mlflow:v3.10.1 (MLflow + psycopg2)
 └── flyte/
     ├── Dockerfile                  # Patch sandbox Flyte (timeout Helm 30 min)
     └── flyte-core-overrides.yaml   # Helm overrides para flyte-core
 ```
+
+> Os dashboards e datasources do Grafana estão em `04_application/grafana/` e são montados automaticamente pelo Compose via bind mounts.
 
 ---
 
@@ -84,16 +90,17 @@ Fontes externas (CSVs / Open-Meteo API)
 
 | Serviço | Imagem | Função | Porta(s) |
 |---|---|---|---|
-| `minio` | `minio/minio` | Object storage S3-compatível (Bronze + artefactos ML) | `9000`, `9001` |
-| `mc` | `minio/mc` | Bootstrap one-shot: cria buckets `warehouse`, `mlflow`, `flyte` | — |
+| `minio` | `minio/minio:latest` | Object storage S3-compatível (Bronze + artefactos ML) | `9000`, `9001` |
+| `mc` | `minio/mc:latest` | Bootstrap one-shot: cria buckets `warehouse`, `mlflow`, `flyte` | — |
 | `metastore-db` | `mariadb:10.11` | Backend persistente do Hive Metastore | interno |
 | `hive-metastore` | `bitsondatadev/hive-metastore` | Serviço Thrift de metadados para Trino | `9083` |
+| `redpanda` | `redpandadata/redpanda:v23.2.1` | Broker Kafka-compatível | `19092` |
 | `trino` | `trinodb/trino:468` | Motor de query SQL distribuído | `8080` |
 | `mlflow-db` | `postgres:16` | Backend persistente do MLflow | interno |
-| `mlflow` | build local | Tracking server + artifact store (MinIO) | `15000` |
-| `redpanda` | `redpandadata/redpanda:v23.2.1` | Broker Kafka-compatível | `19092` |
+| `mlflow` | `tead-mlflow:v3.10.1` (build local) | Tracking server + artifact store (MinIO) | `15000` |
+| `grafana` | `grafana/grafana:11.1.0` | Dashboards de visualização (datasource Trino) | `3300` |
 
-> **Grafana** corre via Docker Compose mas a sua configuração (dashboards e datasource) está em `04_application/grafana/`.
+> **`mc`** termina após criar os buckets — comportamento esperado (bootstrapper one-shot).
 
 ---
 
@@ -136,10 +143,14 @@ Todos os serviços (excepto `mc`, que termina após criar os buckets) devem most
 
 ### Validar Trino
 
+```powershell
+docker compose exec trino trino --execute "SHOW CATALOGS;"
+# Esperado: iceberg, hive, kafka, system, tpcds, tpch
+```
 
-### Validar tópicos expostos no catálogo Kafka (Trino)
+### Validar tópicos expostos no catálogo Kafka
 
-```bash
+```powershell
 docker compose exec trino trino --execute "SHOW TABLES FROM kafka.default;"
 ```
 
@@ -147,16 +158,10 @@ Esperado incluir:
 - `web_events`
 - `producao_consumo_events`
 
-Se `producao_consumo_events` não aparecer, valide o ficheiro `kafka_config/producao_consumo_events.json` e reinicie o serviço Trino:
-
-```bash
-docker compose restart trino
-```
-
+Se `producao_consumo_events` não aparecer, valide o ficheiro `kafka_config/producao_consumo_events.json` e reinicie o Trino:
 
 ```powershell
-docker compose exec trino trino --execute "SHOW CATALOGS;"
-# Esperado: iceberg, hive, kafka, system, tpcds, tpch
+docker compose restart trino
 ```
 
 ### Parar o stack
@@ -191,14 +196,27 @@ flytectl demo start   # aguarda vários minutos (Helm + K3s)
 # UI: http://localhost:30080
 ```
 
-Os tasks Flyte acedem aos serviços via `host.docker.internal:<porta>` (Docker Desktop Windows/macOS funciona nativamente; Linux requer `--add-host host.docker.internal:host-gateway`).
+Os tasks Flyte acedem aos serviços Compose via `host.docker.internal:<porta>` (Docker Desktop Windows/macOS funciona nativamente; Linux requer `--add-host host.docker.internal:host-gateway`).
+
+| Serviço | URL a partir dos tasks Flyte |
+| --- | --- |
+| MinIO S3 API | `http://host.docker.internal:9000` |
+| MLflow | `http://host.docker.internal:15000` |
+| Trino | `http://host.docker.internal:8080` |
+| Hive Metastore | `thrift://host.docker.internal:9083` |
 
 ---
 
 ## Troubleshooting
 
-**`mc` termina imediatamente** — comportamento esperado. É um bootstrapper one-shot. Ver logs: `docker compose logs mc`.
+**`mc` termina imediatamente** — comportamento esperado. Ver logs: `docker compose logs mc`.
 
 **Trino sem catálogos** — Hive Metastore pode não ter terminado de arrancar. Reiniciar: `docker compose restart trino`.
 
 **Trino mostra "unhealthy" no `docker compose ps`** — o healthcheck tem um URL malformado na imagem actual; o serviço funciona normalmente. Validar com `docker compose exec trino trino --execute "SHOW CATALOGS;"`.
+
+**Grafana sem dados** — verificar se o Trino está `running` e se o datasource está configurado em `04_application/grafana/provisioning/datasources/`. Recarregar dashboards sem reiniciar o stack:
+
+```powershell
+curl -X POST http://localhost:3300/api/admin/provisioning/dashboards/reload -u admin:admin
+```

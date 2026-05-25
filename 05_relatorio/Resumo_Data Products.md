@@ -281,6 +281,79 @@ Todas as colunas acima, mais:
 
 ---
 
+## Demonstração de Qualidade de Dados — DP-03
+
+> Esta secção documenta a actividade académica de **injeção controlada de dados sujos** na camada Bronze do DP-03 para evidenciar o papel de limpeza e validação da camada Silver.
+
+### Motivação
+
+Os dados que entram na Bronze **não chegam necessariamente válidos**:
+- Pipelines CSV (DP-01, DP-02 Static) já aplicam quality flags no Python antes de escrever na Bronze — os dados chegam "marcados mas não limpos".
+- Pipelines API (DP-02 Streaming, DP-03) têm validação mínima na ingestão — nulos são filtrados, mas intervalos físicos e duplicados não são verificados.
+
+Em todos os casos, a Bronze preserva os dados tal como chegam. **A Silver é a camada de limpeza** — filtra, deduplica e valida antes de expor dados para Gold e ML.
+
+### Ferramenta
+
+**`02_medallion_pipeline/meteo_producao/01_bronze/data_quality_demo/corrupt_bronze.py`**
+
+Script independente que injeta padrões de sujidade directamente nas tabelas Iceberg Bronze via Trino, sem modificar os scripts de ingestão de produção. Após corrupção, a re-execução do Silver demonstra o mecanismo de detecção e sinalização.
+
+### Padrões de Sujidade Implementados
+
+| Tipo | O que injeta | Como Silver responde |
+|---|---|---|
+| `nulls` | `temperature_2m = NULL` nas primeiras N linhas | `_quality_flag = 'null_values'` |
+| `outofrange` | `temp=-50°C`, `radiation=-200 W/m²`, `cloud=150%` | `_quality_flag = 'out_of_range'` |
+| `duplicates` | Cópias de timestamps com `_ingested_at=1970` | Silver deduplica via `ROW_NUMBER OVER (PARTITION BY ts_utc ORDER BY _ingested_at DESC)` — mantém o mais recente |
+| `timestamps` | Timestamps com `minute=30` (não-horários) | Quality check S12 reporta FAIL em "alinhamento temporal" |
+
+### Resultados Esperados (5% de corrupção, ~26 000 linhas Silver)
+
+**Antes da corrupção:**
+```
+_quality_flag   | linhas  | %
+----------------|---------|------
+ok              | ~26 000 | 100%
+null_values     | 0       | 0%
+out_of_range    | 0       | 0%
+```
+
+**Após corrupção com `--type all --pct 5`:**
+```
+_quality_flag   | linhas  | %
+----------------|---------|------
+ok              | ~24 700 | ~95%
+null_values     | ~650    | ~2.5%
+out_of_range    | ~650    | ~2.5%
+```
+
+O quality check S13 (`pct_ok >= 95%`) passa a WARN (limiar exactamente na fronteira), e S06–S10 (intervalos físicos) passam a FAIL, bloqueando a promoção para Gold até restauro.
+
+### Fluxo da Demo
+
+```powershell
+cd 02_medallion_pipeline/meteo_producao/01_bronze/data_quality_demo
+
+# Corromper Bronze
+python corrupt_bronze.py --dp meteo --type all --pct 5
+
+# Reconstruir Silver a partir do Bronze corrompido
+python corrupt_bronze.py --rerun-silver --dp meteo
+
+# Verificar impacto no Trino
+# SELECT _quality_flag, COUNT(*) FROM iceberg.silver.meteo_open_meteo_hourly GROUP BY 1;
+
+# Restaurar Bronze ao estado original
+python corrupt_bronze.py --restore --dp meteo
+```
+
+### Conclusão
+
+A demo confirma que a arquitectura Medallion cumpre o seu propósito: Bronze actua como "landing zone" fiel à fonte (sem rejeições), e Silver garante que apenas dados validados (`_quality_flag = 'ok'`) chegam à Gold e ao pipeline ML. A Gold filtra explicitamente `WHERE _quality_flag = 'ok'`, pelo que dados corrompidos nunca contaminam os targets de treino.
+
+---
+
 ## Critérios de aceitação transversais (grupo)
 
 - Cada Data Product é rastreável até tabelas silver/bronze de origem.

@@ -440,6 +440,44 @@ Na execução de validação do DP-02 (\textit{consumo\_preco}), todos os 38 che
 \label{tab:warns_dp02}
 \end{table}
 
+\subsection{Demonstração de Qualidade de Dados --- DP-03}
+
+A camada Silver do DP-03 (\textit{meteo\_producao}) implementa um mecanismo de classificação de qualidade linha a linha: cada registo recebe um \texttt{\_quality\_flag} (\texttt{ok} / \texttt{null\_values} / \texttt{out\_of\_range}) com base em regras físicas calibradas para Portugal continental. A Gold filtra explicitamente \texttt{WHERE \_quality\_flag = 'ok'}, garantindo que dados inválidos nunca chegam ao pipeline ML nem a dashboards.
+
+Para evidenciar este mecanismo de forma controlada, foi desenvolvido o script \texttt{corrupt\_bronze.py} (em \texttt{01\_bronze/data\_quality\_demo/}), que injeta padrões de sujidade diretamente nas tabelas Iceberg Bronze via Trino, sem modificar os scripts de ingestão de produção. A motivação é explícita: os pipelines de API (DP-02 Streaming, DP-03) têm validação mínima na ingestão --- nulos são filtrados, mas intervalos físicos e duplicados não são verificados na Bronze. A Silver é, deliberadamente, a única camada de limpeza.
+
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{p{2.5cm}p{4cm}p{5.8cm}}
+\toprule
+\textbf{Tipo} & \textbf{O que injeta} & \textbf{Como Silver responde} \\
+\midrule
+\texttt{nulls} & \texttt{temperature\_2m = NULL} nas primeiras N linhas & \texttt{\_quality\_flag = 'null\_values'} \\
+\addlinespace
+\texttt{outofrange} & \texttt{temp=-50°C}, \texttt{radiation=-200\,W/m²}, \texttt{cloud=150\%} & \texttt{\_quality\_flag = 'out\_of\_range'} \\
+\addlinespace
+\texttt{duplicates} & Cópias de \textit{timestamps} com \texttt{\_ingested\_at=1970} & Silver deduplica via \texttt{ROW\_NUMBER OVER (PARTITION BY ts\_utc ORDER BY \_ingested\_at DESC)} --- mantém o registo mais recente \\
+\addlinespace
+\texttt{timestamps} & \textit{Timestamps} com \texttt{minute=30} (não-horários) & Check S12 reporta \textcolor{fail-red}{FAIL} em alinhamento temporal \\
+\bottomrule
+\end{tabular}
+\caption{Padrões de sujidade implementados na demo DP-03 e resposta da camada Silver.}
+\label{tab:dp03_quality_demo}
+\end{table}
+
+Com injeção de 5\% de corrupção (\texttt{--type all --pct 5}, $\sim$26\,000 linhas Silver), o impacto observado é o seguinte:
+
+\begin{itemize}[leftmargin=*,noitemsep]
+  \item Linhas \texttt{ok}: $\sim$95\% ($\sim$24\,700); linhas \texttt{null\_values}: $\sim$2,5\%; linhas \texttt{out\_of\_range}: $\sim$2,5\%
+  \item Check S13 (\texttt{pct\_ok >= 95\%}) transita para \textcolor{warn-orange}{WARN} (limiar exatamente na fronteira)
+  \item Checks S06--S10 (intervalos físicos de meteorologia: temperatura, precipitação, vento, radiação, nebulosidade) transitam para \textcolor{fail-red}{FAIL}, bloqueando a promoção para Gold até ao restauro dos dados originais
+\end{itemize}
+
+O restauro é imediato via \texttt{--restore}, que elimina as linhas corrompidas da Bronze. A re-execução da Silver confirma que todos os checks regressam a \textcolor{pass-green}{PASS} e que a Gold não foi contaminada durante o período de corrupção --- a Gold filtra explicitamente por \texttt{\_quality\_flag = 'ok'} antes de qualquer join ou cálculo de features.
+
+A demo valida empiricamente o papel de cada camada na arquitetura medallion: a Bronze actua como \textit{landing zone} fiel à fonte (sem rejeições nem transformações), e a Silver é a única fronteira de limpeza que impede dados inválidos de contaminar targets de treino ML e visualizações operacionais.
+
 \subsection{Observabilidade via Grafana}
 
 O ciclo de observabilidade é fechado através de painéis Grafana que consultam as tabelas de auditoria diretamente. O DP-02 Streaming expõe as seguintes métricas de pipeline no mesmo dashboard dos dados de negócio:
@@ -538,7 +576,7 @@ O projeto MIBEL implementou integralmente os seis critérios de avaliação, con
   \item \textbf{B)} Lakehouse local completo com arquitetura medallion Bronze/Silver/Gold, separação deliberada Hive (Bronze) vs. Iceberg (Silver/Gold), query engine Trino com federação multi-catálogo sobre MinIO
   \item \textbf{C)} Pipelines idempotentes com quality gates bloqueantes, reprocessamento incremental via DELETE+INSERT atómico, orquestração Flyte para o DP-02 Static, e no DP-02 Streaming: auditoria completa em \texttt{iceberg.audit}, retry com backoff exponencial, compactação Iceberg automática e SLA monitorizado
   \item \textbf{D)} Quatro dashboards Grafana provisionados como código JSON em git, com SQL direto sobre Trino e sem camadas de serving intermédias que possam introduzir \textit{skew}
-  \item \textbf{E)} 110 checks de qualidade distribuídos por Bronze, Silver e Gold de 4 pipelines; quality gate bloqueante em FAIL; tabelas \texttt{iceberg.audit} com lineage materializado por execução; distinção documentada entre WARNs esperados e FAILs críticos
+  \item \textbf{E)} 110 checks de qualidade distribuídos por Bronze, Silver e Gold de 4 pipelines; quality gate bloqueante em FAIL; tabelas \texttt{iceberg.audit} com lineage materializado por execução; distinção documentada entre WARNs esperados e FAILs críticos; demonstração controlada de injeção de dados sujos no DP-03 (nulos, fora de intervalo, duplicados, timestamps mal alinhados) com validação do mecanismo de limpeza Silver e da proteção da Gold via \texttt{\_quality\_flag = 'ok'}
   \item \textbf{F)} 5 modelos ML com rastreabilidade completa de dados via MLflow, split temporal sem \textit{data leakage}, feature tables pré-computadas na Gold para eliminar \textit{training-serving skew}, e Model Registry com 5 modelos registados e comparáveis
 \end{itemize}
 

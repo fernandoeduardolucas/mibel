@@ -66,6 +66,7 @@ run_medallion_*.py
 ├── producao_consumo/                              DP-01: produção vs consumo
 │   ├── run_medallion_pipeline.py                 Orquestrador principal
 │   ├── flyte_workflow.py                         Decoradores Flyte (execução local)
+│   ├── relatorio.md                              Notas técnicas do DP-01
 │   ├── 01_bronze/
 │   │   ├── sql/bronze_trino.sql                 DDL Hive stage + Iceberg Bronze
 │   │   ├── scripts/python/                      Upload de CSVs para MinIO
@@ -76,15 +77,37 @@ run_medallion_*.py
 │   │   └── sql/
 │   │       ├── 01_gold_trino.sql                Gold DDL + INSERT principal
 │   │       └── 03_gold_backfill_missing_hours.sql
-│   └── 04_quality/
+│   ├── 04_quality/
+│   │   └── sql/
+│   │       ├── 01_silver_checks.sql             11 checks Silver (PASS/FAIL/WARN)
+│   │       └── 02_gold_checks.sql               10 checks Gold (PASS/FAIL/WARN)
+│   └── streaming/                               DP-01 Streaming: dados fictícios Kafka/Redpanda
+│       ├── README.md                            Instruções de execução e troubleshooting
+│       ├── RELATORIO_KAFKA_GOLD_EXPERIMENTAL.md Relatório do módulo experimental
+│       ├── kafka_config/
+│       │   └── producao_consumo_events.json     Definição do tópico Kafka para Trino
+│       ├── scripts/python/
+│       │   ├── fake_producao_consumo_producer.py Produtor sintético (30 s) + materialização
+│       │   └── requirements_streaming.txt
 │       └── sql/
-│           ├── 01_silver_checks.sql             11 checks Silver (PASS/FAIL/WARN)
-│           └── 02_gold_checks.sql               10 checks Gold (PASS/FAIL/WARN)
+│           └── 01_streaming_to_iceberg.sql      INSERT incremental Kafka → Bronze → Gold
 │
 ├── DP02_Consumo_Preco/
 │   │
+│   ├── docs/                                     Documentação técnica do DP-02
+│   │   ├── 01_overview.md                        Visão geral do produto
+│   │   ├── 02_fontes_dados.md                    Fontes de dados (OMIE, ENTSO-E)
+│   │   ├── 03_lakehouse_design.md                Decisões de design lakehouse
+│   │   ├── 04_schemas.md                         Schemas das tabelas
+│   │   ├── 05_transformacoes.md                  Transformações Silver/Gold
+│   │   ├── 06_qualidade.md                       Quality gates e checks
+│   │   ├── 07_ml_pipeline.md                     ML pipeline (GB load forecasting)
+│   │   ├── contract.yaml                         Contrato do data product
+│   │   └── product.yaml                          Manifesto do produto
+│   │
 │   ├── Static_Data/                              DP-02 Static: histórico OMIE CSV
 │   │   ├── run_medallion_consumo_precos.py       Orquestrador principal (Flyte remoto K3s)
+│   │   ├── Mibel_Consumo_Preco.md               Documentação técnica do pipeline estático
 │   │   ├── .flyteignore                          Exclui CSVs do upload ao Flyte
 │   │   ├── workflows/                            Tasks Flyte (um ficheiro por camada)
 │   │   ├── 01_bronze/
@@ -102,6 +125,7 @@ run_medallion_*.py
 │   └── Streaming_Data/                           DP-02 Streaming: ENTSO-E API
 │       ├── run_streaming_pipeline.py             Orquestrador principal (Flyte local)
 │       ├── DP02_Pipeline.md                      Documentação técnica do pipeline
+│       ├── .env.example                          Variáveis de ambiente (ENTSOE_TOKEN, etc.)
 │       ├── workflows/                            Tasks Flyte (Bronze, Silver, Gold)
 │       ├── 01_bronze/
 │       │   └── scripts/python/
@@ -114,9 +138,17 @@ run_medallion_*.py
 │
 └── meteo_producao/                               DP-03: meteorologia + produção
     ├── run_medallion_meteo_producao.py           Orquestrador principal
-    ├── 01_bronze/scripts/python/fetch_open_meteo.py  Fetch API + Parquet + MinIO
+    ├── README.md                                 Documentação detalhada do DP-03
+    ├── diagrama_meteo_producao.html              Diagrama interactivo da arquitectura
+    ├── 01_bronze/
+    │   ├── sql/01_bronze_ddl.sql                DDL Bronze (Hive raw + stage + Iceberg)
+    │   ├── scripts/python/fetch_open_meteo.py   Fetch API + Parquet + MinIO
+    │   └── data_quality_demo/
+    │       └── corrupt_bronze.py                Demo académica: injeta dados inválidos na Bronze
     ├── 02_silver/
+    │   └── sql/01_silver_trino.sql
     ├── 03_gold/
+    │   └── sql/01_gold_trino.sql
     └── 04_quality/sql/
         ├── 01_silver_checks.sql                 13 checks Silver
         └── 02_gold_checks.sql                   12 checks Gold
@@ -137,6 +169,31 @@ run_medallion_*.py
 | Gold | `iceberg.gold.dp_energia_balance_hourly` | Saldo, ratio, flag_defice, flag_excedente |
 
 **Quality Gate DP-01:** 21 checks SQL — null rates, range, unicidade, alinhamento temporal 15 min, completude ≥ 90 registos/dia, saldo_kwh = producao − consumo.
+
+**DP-01 Streaming (experimental)** — módulo Kafka autónomo em `producao_consumo/streaming/`. Gera eventos sintéticos de produção/consumo a cada 30 s via `fake_producao_consumo_producer.py`, publica no Redpanda e materializa incrementalmente em:
+
+| Tabela | Descrição |
+|---|---|
+| `iceberg.bronze.producao_consumo_streaming` | Bronze Iceberg particionado por evento |
+| `iceberg.gold.dp_producao_consumo_streaming` | Gold com saldo e métricas calculadas |
+
+O Grafana tem um dashboard dedicado `Producao Consumo Streaming (30s)` que lê da tabela Gold. Ver `streaming/README.md` para instruções de execução e troubleshooting completos.
+
+### DP-02 — Documentação Técnica
+
+A pasta `DP02_Consumo_Preco/docs/` contém documentação detalhada partilhada entre os dois sub-pipelines:
+
+| Ficheiro | Conteúdo |
+|---|---|
+| `01_overview.md` | Visão geral e objectivos do DP-02 |
+| `02_fontes_dados.md` | Descrição das fontes OMIE e ENTSO-E |
+| `03_lakehouse_design.md` | Decisões de design Hive/Iceberg |
+| `04_schemas.md` | Schemas completos de todas as tabelas |
+| `05_transformacoes.md` | Lógica de transformação Silver e Gold |
+| `06_qualidade.md` | Regras e thresholds dos quality gates |
+| `07_ml_pipeline.md` | Feature engineering e treino GB load forecasting |
+| `contract.yaml` | Contrato do data product (SLA, SLO, versioning) |
+| `product.yaml` | Manifesto do produto (owner, consumers, tags) |
 
 ### DP-02 Static — `consumo_preco` (OMIE CSV)
 
@@ -180,6 +237,18 @@ run_medallion_*.py
 
 **Quality Gate DP-03:** 25 checks; destaque para lag_consistency (tolerância 0.01 °C) e cobertura cross-DP ≥ 90%.
 
+> Ver [meteo_producao/README.md](meteo_producao/README.md) para documentação detalhada do DP-03 (schemas, quality gates, flags, resultado da última execução).
+
+**Demo de Qualidade de Dados** — `01_bronze/data_quality_demo/corrupt_bronze.py` injeta propositadamente dados inválidos na Bronze (nulos, fora de range, duplicados, timestamps desalinhados) e demonstra como a Silver os detecta e sinaliza via `_quality_flag`. Útil para demonstrações académicas do valor da camada Silver.
+
+```powershell
+# Corromper 5% das linhas e reconstruir Silver
+python 02_medallion_pipeline/meteo_producao/01_bronze/data_quality_demo/corrupt_bronze.py --dp meteo --type all --pct 5
+python 02_medallion_pipeline/meteo_producao/01_bronze/data_quality_demo/corrupt_bronze.py --rerun-silver --dp meteo
+# Restaurar estado original
+python 02_medallion_pipeline/meteo_producao/01_bronze/data_quality_demo/corrupt_bronze.py --restore --dp meteo
+```
+
 ### Justificação das Decisões
 
 | Decisão | Justificação |
@@ -215,6 +284,19 @@ python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py --skip-d
 # Saltar DDL (tabelas já criadas) e quality gate
 python 02_medallion_pipeline/producao_consumo/run_medallion_pipeline.py --skip-docker --skip-ddl --no-quality
 ```
+
+### DP-01 Streaming — Produção/Consumo Fictício (Kafka/Redpanda)
+
+```powershell
+# Criar venv e iniciar produtor (publica + materializa automaticamente a cada 30 s)
+cd 02_medallion_pipeline/producao_consumo/streaming/scripts/python
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements_streaming.txt
+python fake_producao_consumo_producer.py --trino-host localhost --trino-port 8080 --interval-seconds 30
+```
+
+> Antes de executar, confirmar que o tópico `kafka.default.producao_consumo_events` existe no Trino (ver `streaming/README.md` → secção 0).
 
 ### DP-02 Static — Consumo vs Preço (OMIE CSV)
 

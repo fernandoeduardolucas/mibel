@@ -1,13 +1,18 @@
 """
-Workflow Flyte: gate de qualidade — Streaming_Data (DP-02 API).
+Workflow Flyte: gate de qualidade por camada — DP-02 Streaming (API Energy-Charts).
 
-Mesmo padrão do pipeline estático: executa SQL de qualidade por camada
-e lança excepção se existirem verificações com status FAIL.
+Executa o primeiro bloco SQL de cada ficheiro em 04_quality/sql/ contra o Trino
+e classifica os resultados como PASS / WARN / FAIL. Qualquer check FAIL levanta
+FlyteRecoverableException, bloqueando as camadas a jusante.
 
-Execução standalone:
+Workflows expostos (um por camada, para permitir re-runs granulares):
     pyflyte run workflows/flyte_quality_checks.py quality_gate_bronze_api
     pyflyte run workflows/flyte_quality_checks.py quality_gate_silver_api
     pyflyte run workflows/flyte_quality_checks.py quality_gate_gold_api
+
+Variáveis de ambiente:
+    TRINO_HOST  — hostname do Trino (padrão: localhost)
+    TRINO_PORT  — porta do Trino (padrão: 8080)
 """
 
 from __future__ import annotations
@@ -33,6 +38,8 @@ _LAYER_SQL = {
 
 
 def _trino_conn() -> trino.dbapi.Connection:
+    # catalog=iceberg porque os checks de Bronze lêem tabelas hive via views iceberg;
+    # Silver e Gold são tabelas iceberg nativas — um único catalog cobre as três camadas.
     return trino.dbapi.connect(
         host=TRINO_HOST,
         port=TRINO_PORT,
@@ -50,10 +57,14 @@ def _run_checks(layer: str) -> list[dict]:
             f"Verifique se 04_quality/sql/{sql_path.name} existe."
         )
 
-    raw_sql      = sql_path.read_text(encoding="utf-8")
+    raw_sql = sql_path.read_text(encoding="utf-8")
+    # Remove comentários SQL (--) antes de localizar o primeiro ponto-e-vírgula,
+    # evitando falsos positivos em linhas comentadas que contenham ";".
     sql_no_comments = re.sub(r"--[^\n]*", "", raw_sql)
-    first_semi   = sql_no_comments.find(";")
-    summary_sql  = (sql_no_comments[:first_semi] if first_semi != -1 else sql_no_comments).strip()
+    first_semi = sql_no_comments.find(";")
+    # Executa apenas o primeiro statement (SELECT de resumo); o resto do ficheiro
+    # pode conter queries auxiliares/debug que não devem correr no gate.
+    summary_sql = (sql_no_comments[:first_semi] if first_semi != -1 else sql_no_comments).strip()
 
     conn = _trino_conn()
     cur  = conn.cursor()
@@ -67,8 +78,17 @@ def _run_checks(layer: str) -> list[dict]:
 @task(retries=2)
 def quality_gate_api(layer: str) -> int:
     """
-    Gate de qualidade para a camada indicada ('bronze', 'silver' ou 'gold').
-    Comportamento: PASS → log; WARN → log com aviso; FAIL → bloqueia pipeline.
+    Executa os checks de qualidade para a camada indicada e devolve o nº de PASS.
+
+    Args:
+        layer: 'bronze', 'silver' ou 'gold'.
+
+    Returns:
+        Número de checks com status PASS.
+
+    Raises:
+        FlyteRecoverableException: se existir pelo menos um check FAIL (permite retry).
+        ValueError: se a camada não for reconhecida.
     """
     if layer not in _LAYER_SQL:
         raise ValueError(f"Camada inválida: '{layer}'. Aceites: 'bronze', 'silver', 'gold'.")

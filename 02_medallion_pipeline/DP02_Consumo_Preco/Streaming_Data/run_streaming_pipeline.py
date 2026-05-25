@@ -92,6 +92,7 @@ def run(
     env: dict | None = None,
     timeout: int = 600,
 ) -> None:
+    """Executa um comando externo e lança exceção se o exit code não for zero."""
     log.info("$ %s", " ".join(str(c) for c in cmd))
     result = subprocess.run(
         cmd,
@@ -105,6 +106,7 @@ def run(
 
 
 def must_exist(path: Path, description: str) -> None:
+    """Aborta com mensagem legível se um ficheiro ou pasta obrigatório não existir."""
     if not path.exists():
         raise SystemExit(f"Erro: {description} não encontrado em: {path}")
 
@@ -260,7 +262,11 @@ def create_local_venv(repo_root: Path, base_python: str) -> Path:
 
 
 def requirements_changed(venv_dir: Path, requirements: Path) -> bool:
-    """Retorna True se requirements.txt mudou desde a última instalação."""
+    """Retorna True se requirements.txt mudou desde a última instalação.
+
+    Persiste o hash em disco como efeito secundário — chamar duas vezes seguidas
+    devolve False na segunda, mesmo que a primeira tenha devolvido True.
+    """
     hash_file = venv_dir / ".requirements_hash"
     current_hash = hashlib.md5(requirements.read_bytes()).hexdigest()
     if hash_file.exists() and hash_file.read_text(encoding="utf-8").strip() == current_hash:
@@ -274,6 +280,7 @@ def requirements_changed(venv_dir: Path, requirements: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 def trino_exec(compose_file: Path, sql: str, timeout: int = 60) -> int:
+    """Executa SQL no Trino CLI via docker exec. Devolve o exit code (não lança exceção)."""
     result = subprocess.run(
         ["docker", "compose", "-f", str(compose_file), "exec", "-T", "trino", "trino",
          "--execute", sql],
@@ -532,7 +539,10 @@ def main() -> None:
 
     today = date.today()
 
-    watermark_mode = False  # resolvido após Docker+DDL
+    # watermark_mode: a data de início só pode ser calculada após DDL estar aplicado,
+    # porque a tabela bronze pode ainda não existir neste ponto. O start_date
+    # é um placeholder e é substituído mais abaixo, após a query ao Bronze.
+    watermark_mode = False
     if args.start and args.end:
         start_date = date.fromisoformat(args.start)
         end_date   = date.fromisoformat(args.end)
@@ -545,8 +555,6 @@ def main() -> None:
         end_date   = today
         start_date = today - timedelta(days=args.days - 1)
     else:
-        # Modo incremental: watermark resolvido depois de Docker+DDL estarem prontos.
-        # Placeholder — start_date é substituído após a query ao Bronze.
         watermark_mode = True
         start_date = date(2022, 1, 1)
         end_date   = today
@@ -701,6 +709,8 @@ def main() -> None:
             run_log.info("[INFO] Energy-Charts: sem autenticacao necessaria (Fraunhofer ISE).")
             bronze_wf = WORKFLOWS["bronze_ec"]
 
+        # Períodos longos são divididos em chunks anuais para evitar timeouts da API
+        # e limitar o tamanho das respostas JSON (~180 dias é o ponto de rutura observado).
         CHUNK_THRESHOLD_DAYS = 180
         total_days = (end_date - start_date).days
         if total_days > CHUNK_THRESHOLD_DAYS:
@@ -806,6 +816,7 @@ def main() -> None:
             "CAST(MIN(ts_utc) AS VARCHAR), CAST(MAX(ts_utc) AS VARCHAR) "
             "FROM iceberg.gold.feat_load_forecasting_api_hourly;"
         )
+        # Validação só para display — não falha a pipeline se a query tiver problemas.
         subprocess.run(
             [
                 "docker", "compose", "-f", str(compose_file),

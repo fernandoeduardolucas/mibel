@@ -5,18 +5,27 @@ Fontes de dados:
   - Consumo: consumo-total-nacional.csv (REN, granularidade 15 min)
   - Preços:  Day-ahead Market Prices_*.csv (OMIE, granularidade horária)
 
-Fluxo:
-1) Sobe stack Docker Compose (saltar com --skip-docker)
-2) Aguarda Trino disponível
-3) Aplica DDL Bronze, Silver e Gold via Trino (saltar com --skip-ddl)
-4) Faz upload dos CSVs raw para MinIO (saltar com --skip-upload)
-5) Executa ingestão Bronze via pyflyte run --local
-6) Quality gate Bronze
-7) Executa transformação Bronze → Silver via pyflyte run --local
-8) Quality gate Silver
-9) Executa transformação Silver → Gold via pyflyte run --local
-10) Quality gate Gold
-11) Validação final: COUNT e intervalo das tabelas Gold
+Fluxo de execução:
+  FASE 0   — Aplica DDL Bronze, Silver e Gold via Trino       (saltar com --skip-ddl)
+  FASE 0.5 — Upload dos CSVs raw para MinIO (warehouse/raw/)  (saltar com --skip-upload)
+  FASE 1   — Ingestão Bronze: pyflyte run (execução local)
+             Quality gate Bronze                               (saltar com --no-quality)
+  FASE 2   — Transformação Bronze → Silver: pyflyte run local
+             Quality gate Silver                               (saltar com --no-quality)
+  FASE 3   — Transformação Silver → Gold: pyflyte run local   (sempre full — window functions)
+             Quality gate Gold                                 (saltar com --no-quality)
+  FINAL    — Validação COUNT e intervalo das tabelas Gold
+
+  Pré-fase: sobe stack Docker Compose e aguarda Trino          (saltar com --skip-docker)
+
+Flags disponíveis:
+  --build         faz --build no compose up
+  --skip-docker   salta o compose up (stack já a correr)
+  --skip-ddl      salta a aplicação de DDL (tabelas já existem)
+  --skip-upload   salta upload dos CSVs para MinIO (já lá estão)
+  --no-quality    salta todos os quality gates
+  --year YYYY     processa apenas o mês indicado (requer --month)
+  --month M       processa apenas o mês indicado (requer --year)
 
 Exemplos:
     # Carga completa (cria e povoa todas as camadas)
@@ -87,6 +96,7 @@ def run_with_retry(
     delay: int = 5,
     **kwargs,
 ) -> None:
+    """Executa `run` com retry automático; lança CalledProcessError na última tentativa."""
     for attempt in range(1, max_attempts + 1):
         try:
             run(cmd, **kwargs)
@@ -187,7 +197,7 @@ def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
 # ---------------------------------------------------------------------------
 
 def _split_sql(sql: str) -> list[str]:
-    """Split SQL em ';' sem partir literais entre aspas simples."""
+    """Divide SQL em statements pelo ';', preservando aspas simples escapadas ('')."""
     statements: list[str] = []
     buf: list[str] = []
     in_string = False
@@ -369,7 +379,8 @@ def upload_raw_csvs_to_minio(raw_dir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# pyflyte local runner — executa workflow no processo Python local (sem K3s)
+# pyflyte local runner — executa workflow via `pyflyte run` no processo local
+#   (sem cluster remoto; equivalente a pyflyte run sem --remote)
 # ---------------------------------------------------------------------------
 
 def pyflyte_local(
@@ -548,7 +559,7 @@ def main() -> None:
             print(f"    [AVISO] {silver_checks} não encontrado — a saltar Silver checks.")
 
     # -------------------------------------------------------------------------
-    # FASE 3 — Silver → Gold (sempre full — window functions precisam do histórico)
+    # FASE 3 — Silver → Gold (sempre full — lag/rolling window functions exigem histórico completo)
     # -------------------------------------------------------------------------
     print("\n" + "=" * 60)
     print("FASE 3 — Silver → Gold COMPLETO")

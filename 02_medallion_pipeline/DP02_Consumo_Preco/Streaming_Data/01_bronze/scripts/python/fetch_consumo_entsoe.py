@@ -1,9 +1,9 @@
 """
-Fetch de carga eléctrica nacional horária via ENTSO-E Transparency Platform.
+Fetch de carga elétrica nacional horária via ENTSO-E Transparency Platform.
 
 Fonte: https://transparency.entsoe.eu/
 Dados: Actual Total Load Portugal, granularidade horária, em MW.
-Autenticacao: token gratuito (ver abaixo).
+Autenticação: token gratuito (ver instruções abaixo).
 
 Como obter o token ENTSO-E:
     1. Envia email para transparency@entsoe.eu
@@ -14,10 +14,10 @@ Como obter o token ENTSO-E:
          PowerShell: $env:ENTSOE_TOKEN = "<o-teu-token>"
          Linux/Mac:  export ENTSOE_TOKEN=<o-teu-token>
 
-Vantagens vs Energy-Charts (fonte anterior):
-    - Dados primários directo da ENTSO-E (Energy-Charts era um redistribuidor)
-    - Sem endpoint "deprecated"
-    - Dados horários exactos (Energy-Charts retornava 15-min para preços)
+Porquê ENTSO-E em vez de Energy-Charts (fonte anterior):
+    - Dados primários direto da ENTSO-E (Energy-Charts era um redistribuidor)
+    - Sem endpoints "deprecated"
+    - Granularidade horária exata (Energy-Charts devolvia 15 min para preços)
 
 Uso standalone:
     python fetch_consumo_entsoe.py --start 2024-01-01 --end 2024-01-07
@@ -57,7 +57,11 @@ def _get_client() -> EntsoePandasClient:
 
 def fetch_load_data(start: date, end: date) -> list[dict]:
     """
-    Chama a ENTSO-E API e devolve lista de dicts com ts_utc e total (MW).
+    Consulta a ENTSO-E API e devolve lista de registos com ts_utc e total (MW).
+
+    O intervalo pedido à API é [start, end+1 dia) em UTC para garantir que o
+    último dia fica completo, independentemente do fuso horário local.
+    Registos com valor NaN são descartados silenciosamente.
     """
     client   = _get_client()
     start_ts = pd.Timestamp(start.isoformat(), tz="UTC")
@@ -109,7 +113,10 @@ def _trino_conn():
 def insert_to_bronze(records: list[dict], process_dates: list[date]) -> int:
     """
     Insere registos em iceberg.bronze.consumo_api_raw.
-    Idempotente: apaga as particoes process_date antes de inserir.
+
+    Idempotente: elimina as partições process_date afetadas antes de inserir,
+    pelo que é seguro re-executar para o mesmo intervalo de datas.
+    Os registos são enviados em lotes de BATCH_SIZE para evitar payloads gigantes.
     """
     if not records:
         print("[fetch_consumo ENTSOE] Nenhum registo para inserir.")
@@ -161,9 +168,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Fetch consumo horario via ENTSO-E (Actual Total Load PT)"
     )
-    parser.add_argument("--start", type=str, help="Data inicio YYYY-MM-DD")
-    parser.add_argument("--end",   type=str, help="Data fim YYYY-MM-DD")
-    parser.add_argument("--days",  type=int, default=7, help="Ultimos N dias (default: 7)")
+    parser.add_argument("--start", type=str, help="Data de início YYYY-MM-DD")
+    parser.add_argument("--end",   type=str, help="Data de fim YYYY-MM-DD")
+    parser.add_argument("--days",  type=int, default=7, help="Últimos N dias (default: 7)")
     args = parser.parse_args()
 
     if args.start and args.end:

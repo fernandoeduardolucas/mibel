@@ -1,21 +1,15 @@
 """
-Workflow Flyte: fetch das APIs para a camada Bronze -- Streaming_Data (DP-02).
+Workflow Flyte: ingestão Bronze via ENTSO-E Transparency Platform (DP-02 Streaming).
 
-Fonte: ENTSO-E Transparency Platform (transparency.entsoe.eu)
-  - Consumo horario PT : Actual Total Load via query_load('PT')
-  - Precos day-ahead PT: query_day_ahead_prices('PT') -- EUR/MWh
-  - Precos day-ahead ES: query_day_ahead_prices('ES') -- EUR/MWh (agora preenchido)
+Endpoints utilizados:
+  - query_load('PT')              → carga horária PT em MW (Actual Total Load)
+  - query_day_ahead_prices('PT') → preço day-ahead PT em EUR/MWh
+  - query_day_ahead_prices('ES') → preço day-ahead ES em EUR/MWh
 
-Vantagens vs Energy-Charts (fonte anterior):
-  - Dados primarios directo da ENTSO-E (sem intermediario)
-  - price_spain_eur_mwh preenchido (ES separado disponivel)
-  - Dados horarios exatos (sem 15-min a agregar)
-  - Sem "deprecated" em nenhum endpoint
+Autenticação: token gratuito ENTSO-E -- ver fetch_consumo_entsoe.py ou README.
+Variável de ambiente obrigatória: ENTSOE_TOKEN
 
-Autenticacao: token gratuito -- ver instrucoes em README ou fetch_consumo_entsoe.py.
-Variavel de ambiente: ENTSOE_TOKEN
-
-Execucao:
+Execução:
     ENTSOE_TOKEN=<token> pyflyte run workflows/flyte_fetch_bronze_api.py fetch_bronze_api \\
         --start_date 2024-01-01 --end_date 2024-01-07
 """
@@ -79,14 +73,14 @@ def _flush_batch(cur, table: str, cols: str, batch: list[str]) -> int:
 
 
 def _to_series(result) -> pd.Series:
-    """Normaliza o retorno de entsoe-py para Series (pode vir DataFrame)."""
+    """entsoe-py pode devolver DataFrame (multi-coluna) ou Series; normaliza para Series."""
     if isinstance(result, pd.DataFrame):
         return result.iloc[:, 0]
     return result
 
 
 def _ts_to_utc(ts_idx) -> datetime:
-    """Converte indice pandas (Timestamp) para datetime UTC."""
+    """Converte índice pandas (Timestamp) para datetime UTC consciente de fuso."""
     dt = ts_idx.to_pydatetime()
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -94,17 +88,15 @@ def _ts_to_utc(ts_idx) -> datetime:
 
 
 # ---------------------------------------------------------------------------
-# Task 1: consumo horario PT -- ENTSO-E Actual Total Load
+# Task 1: carga horária PT -- ENTSO-E Actual Total Load
 # ---------------------------------------------------------------------------
 @task(retries=3)
 def fetch_consumo_api(start_date: date, end_date: date) -> int:
     """
-    Obtém carga eléctrica nacional horária via ENTSO-E (Actual Total Load PT).
+    Ingere carga eléctrica horária PT (MW) na tabela bronze.consumo_api_raw.
 
-    A ENTSO-E é a fonte primária dos dados que a Energy-Charts redistribuía.
-    Dados em MW horários -- Silver converte para MWh (1 MW x 1h = 1 MWh).
-
-    Idempotente: apaga process_dates do intervalo antes de inserir.
+    Valores em MW; a camada Silver converte para MWh (1 MW × 1 h = 1 MWh).
+    Idempotente: elimina as process_dates do intervalo antes de inserir.
     """
     client   = _get_client()
     start_ts = pd.Timestamp(start_date.isoformat(), tz="UTC")
@@ -175,19 +167,16 @@ def fetch_consumo_api(start_date: date, end_date: date) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Task 2: precos day-ahead PT + ES -- ENTSO-E
+# Task 2: preços day-ahead PT + ES -- ENTSO-E
 # ---------------------------------------------------------------------------
 @task(retries=3)
 def fetch_preco_api(start_date: date, end_date: date) -> int:
     """
-    Obtém preços day-ahead MIBEL PT e ES via ENTSO-E Transparency Platform.
+    Ingere preços day-ahead MIBEL (PT e ES) na tabela bronze.preco_api_raw.
 
-    Melhoria vs Energy-Charts anterior:
-      - price_spain_eur_mwh agora preenchido (ES disponivel separadamente)
-      - Dados horarios exactos (24 valores/dia, sem 15-min a agregar)
-      - Endpoint sem flag "deprecated"
-
-    Idempotente: apaga process_dates do intervalo antes de inserir.
+    PT e ES são consultados separadamente e depois unidos por timestamp (outer join)
+    para preservar horas com dados apenas num dos mercados.
+    Idempotente: elimina as process_dates do intervalo antes de inserir.
     """
     client   = _get_client()
     start_ts = pd.Timestamp(start_date.isoformat(), tz="UTC")
@@ -271,7 +260,7 @@ def fetch_preco_api(start_date: date, end_date: date) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Workflow: fetch consumo + preco em paralelo
+# Workflow: ingestão consumo + preço em paralelo
 # ---------------------------------------------------------------------------
 @workflow
 def fetch_bronze_api(
@@ -279,12 +268,12 @@ def fetch_bronze_api(
     end_date:   date = date.today(),
 ) -> None:
     """
-    Obtém dados ENTSO-E (consumo + preco PT+ES) e insere na camada Bronze.
+    Orquestra a ingestão ENTSO-E na camada Bronze (consumo e preço em paralelo).
 
-    As duas tarefas correm em paralelo (independentes).
-    Requer: variavel de ambiente ENTSOE_TOKEN.
+    As duas tasks são independentes entre si -- Flyte executa-as em paralelo.
+    Requer a variável de ambiente ENTSOE_TOKEN definida no ambiente de execução.
 
-    Execucao:
+    Execução:
         ENTSOE_TOKEN=<token> pyflyte run workflows/flyte_fetch_bronze_api.py fetch_bronze_api \\
             --start_date 2024-01-01 --end_date 2024-01-07
     """

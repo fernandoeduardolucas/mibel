@@ -4,14 +4,26 @@
 
 ### Objetivo
 
-Preservar a resposta da API ENTSO-E sem transformações semânticas. Adicionar apenas metadados de rastreabilidade (`source_url`, `fetch_date`, `process_date`).
+Preservar a resposta da API sem transformações semânticas. Adicionar apenas metadados de rastreabilidade (`source_url`, `fetch_date`, `process_date`).
 
-### Workflow Flyte
+O pipeline suporta duas fontes intercambiáveis — as tabelas Bronze são idênticas em ambos os casos:
 
-**Ficheiro:** `workflows/flyte_fetch_bronze_api.py`  
-**Workflow:** `fetch_bronze_api`
+| Fonte | Workflow | Autenticação |
+|-------|----------|--------------|
+| **Energy-Charts API** (default) | `flyte_fetch_bronze_energycharts.py` | Nenhuma |
+| ENTSO-E Transparency Platform | `flyte_fetch_bronze_api.py` | `ENTSOE_TOKEN` |
 
-As duas tasks correm **em paralelo** e são **idempotentes** (apagam partições do intervalo antes de inserir):
+### Workflows Flyte
+
+**Fonte default (Energy-Charts):**
+
+```
+fetch_bronze_energycharts
+  ├── fetch_consumo_ec  →  iceberg.bronze.consumo_api_raw
+  └── fetch_preco_ec    →  iceberg.bronze.preco_api_raw
+```
+
+**Fonte alternativa (ENTSO-E):**
 
 ```
 fetch_bronze_api
@@ -19,13 +31,15 @@ fetch_bronze_api
   └── fetch_preco_api    →  iceberg.bronze.preco_api_raw
 ```
 
-### Pseudo-código de ingestão
+As tasks correm **em paralelo** e são **idempotentes** (eliminam partições do intervalo antes de inserir).
+
+### Pseudo-código de ingestão (Energy-Charts — default)
 
 ```python
 # Para cada chunk do intervalo pedido:
 conn.execute(f"DELETE FROM bronze.consumo_api_raw WHERE process_date IN ({dates})")
 
-for row in entsoe_client.query_load('PT', start=start, end=end):
+for row in energycharts_client.get_total_power(country='pt', start=start, end=end):
     INSERT INTO bronze.consumo_api_raw (ts_utc, total, source_url, fetch_date, process_date)
     VALUES (row.ts_utc, row.total_mw, url, today, today)
 ```

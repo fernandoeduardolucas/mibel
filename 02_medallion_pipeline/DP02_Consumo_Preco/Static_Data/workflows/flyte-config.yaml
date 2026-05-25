@@ -1,25 +1,34 @@
-# Configuração Flyte para execução remota no cluster local (flytectl demo).
-# Usado pelo orquestrador run_medallion_consumo_precos.py com:
-#   pyflyte run --remote --config workflows/flyte-config.yaml ...
+# Configuração do cliente Flyte para execução remota no cluster local (flytectl demo).
 #
-# Pré-requisito: cluster Flyte a correr em localhost:30080
-#   flytectl demo start --image mibel-flyte:latest
+# Utilizado pelo orquestrador DP-02 Static em modo remoto:
+#   pyflyte run --remote --copy all --config workflows/flyte-config.yaml <workflow> <task>
 #
-# A imagem customizada (01_docker_stack/flyte/Dockerfile) redireciona o
-# armazenamento interno do Flyte para o MinIO do Compose via host.docker.internal:9000.
-# O host (pyflyte) faz upload para o mesmo MinIO em localhost:9000.
+# O orquestrador (run_medallion_consumo_precos.py) gere o ciclo de vida do cluster:
+#   1. docker build -t mibel-flyte:latest 01_docker_stack/flyte/
+#   2. flytectl demo start --image mibel-flyte:latest
+#   UI disponível em http://localhost:30080
+#
+# Imagem customizada (01_docker_stack/flyte/Dockerfile):
+#   - Baseada em ghcr.io/flyteorg/flyte-sandbox:latest
+#   - Aplica flyte-core-overrides.yaml: redireciona armazenamento interno
+#     para o MinIO do Compose (host.docker.internal:9000)
+#   - Corrige charts Helm offline e aumenta timeouts de arranque
+#
+# Fast registration (--copy all): faz upload do código local, incluindo
+# os ficheiros SQL de qualidade (04_quality/sql/), para o bucket flyte/ no MinIO.
+# Os CSVs brutos são excluídos via .flyteignore em Static_Data/.
 
 admin:
-  # Endpoint do Flyte control plane (flytectl demo K3s)
+  # Control plane do cluster Flyte (K3s gerido pelo flytectl demo)
   endpoint: localhost:30080
   authType: Pkce
   insecure: true
 
 storage:
-  # O orquestrador (host) faz upload dos artefactos de fast registration
-  # para o MinIO do Compose em localhost:9000.
-  # Os pods K3s acedem ao mesmo MinIO via host.docker.internal:9000
-  # (configurado em 01_docker_stack/flyte/flyte-core-overrides.yaml).
+  # O host (pyflyte) faz upload dos artefactos de fast registration para
+  # o MinIO do Compose em localhost:9000 (bucket: flyte/).
+  # Os pods K3s em execução no cluster acedem ao mesmo MinIO via
+  # host.docker.internal:9000, conforme configurado em flyte-core-overrides.yaml.
   type: minio
   connection:
     endpoint: "http://localhost:9000"

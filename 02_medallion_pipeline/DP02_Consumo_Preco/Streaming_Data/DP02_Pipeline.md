@@ -34,6 +34,22 @@ Orquestração: workflows **Flyte** em `workflows/`, executados localmente via `
 
 ### Fonte de dados
 
+O pipeline suporta duas fontes intercambiáveis. As tabelas Bronze são idênticas em ambos os casos — a camada Silver, Gold e os quality checks não requerem alterações conforme a fonte escolhida.
+
+#### Fonte padrão: Energy-Charts API (Fraunhofer ISE) — sem autenticação
+
+| Dado | Endpoint | Unidade | Granularidade |
+| ---- | -------- | ------- | ------------- |
+| Carga eléctrica nacional PT | `GET /public_power?country=pt` | MW | Horária (pode devolver 15 min — agregado para horário) |
+| Preço day-ahead Portugal | `GET /price?bzn=PT` | €/MWh | Horária |
+| Preço day-ahead Espanha | `GET /price?bzn=ES` | €/MWh | Horária |
+
+Não requer registo. Dados ENTSO-E redistribuídos pela Fraunhofer ISE.
+
+> **Nota sobre granularidade:** a Energy-Charts API pode devolver dados a 15 min para alguns períodos. A função `_aggregate_to_hourly()` agrega por hora via média antes da inserção; o Silver faz o mesmo com `DATE_TRUNC('hour') + AVG`, garantindo idempotência independente da granularidade.
+
+#### Fonte alternativa: ENTSO-E Transparency Platform — token obrigatório
+
 | Dado | Endpoint ENTSO-E | Unidade | Granularidade |
 |------|-----------------|---------|---------------|
 | Carga eléctrica nacional PT | `query_load('PT')` | MW | Horária |
@@ -69,35 +85,40 @@ Particionada por `process_date`.
 
 Particionada por `process_date`.
 
-### Workflow Flyte
+### Workflows Flyte
 
-**Ficheiro:** `workflows/flyte_fetch_bronze_api.py`  
-**Workflow:** `fetch_bronze_api`
+Existem dois workflows de Bronze, um por fonte. As tabelas de destino são as mesmas em ambos os casos.
 
-As duas tarefas (`fetch_consumo_api` e `fetch_preco_api`) correm **em paralelo**.
-Cada tarefa é **idempotente**: apaga as partições `process_date` do intervalo antes de inserir.
-Para intervalos superiores a 180 dias, o orquestrador divide automaticamente em chunks anuais para evitar timeouts.
+| Ficheiro | Workflow | Fonte | Autenticação |
+| -------- | -------- | ----- | ------------ |
+| `workflows/flyte_fetch_bronze_energycharts.py` | `fetch_bronze_energycharts` | Energy-Charts API | Nenhuma (padrão) |
+| `workflows/flyte_fetch_bronze_api.py` | `fetch_bronze_api` | ENTSO-E Transparency | `ENTSOE_TOKEN` obrigatório |
+
+Em ambos, as duas tarefas (consumo + preço) correm **em paralelo** e são **idempotentes** — apagam as partições `process_date` do intervalo antes de inserir.
 
 ```
-fetch_bronze_api
-  ├── fetch_consumo_api  →  consumo_api_raw
-  └── fetch_preco_api    →  preco_api_raw
+fetch_bronze_energycharts          fetch_bronze_api
+  ├── fetch_consumo_ec  ─┐           ├── fetch_consumo_api  ─┐
+  └── fetch_preco_ec    ─┴─►  consumo_api_raw + preco_api_raw
+                               └── fetch_preco_api    ─┘
 ```
 
-### Quality gate Bronze (10 checks)
+### Quality gate Bronze (12 checks)
 
-| Check | Critério |
-|-------|---------|
-| Nulos em `ts_utc` | 0 nulos → PASS |
-| Nulos em `total` | 0 nulos → PASS |
-| Nulos em `price_portugal_eur_mwh` | 0 nulos → PASS |
-| Range `total > 0` | MW positivo → PASS; negativo → WARN |
-| Preço PT não-negativo | Negativo é WARN (preços negativos possíveis no MIBEL) |
-| Unicidade `ts_utc` consumo | Sem duplicados → PASS |
-| Unicidade `ts_utc` preço | Sem duplicados → PASS |
-| Freshness consumo | Máx. 3 dias de atraso |
-| Freshness preço | Máx. 2 dias de atraso (day-ahead publica D-1) |
-| Completude diária | Dias com < 23 horas → WARN |
+| # | Check | Tabela | Status |
+| - | ----- | ------ | ------ |
+| 1 | Nulos em `ts_utc` | `consumo_api_raw` | FAIL |
+| 2 | Nulos em `total` | `consumo_api_raw` | FAIL |
+| 3 | Nulos em `ts_utc` | `preco_api_raw` | FAIL |
+| 4 | Nulos em `price_portugal_eur_mwh` | `preco_api_raw` | FAIL |
+| 5 | Range `total > 0` (MW positivo) | `consumo_api_raw` | WARN |
+| 6 | Preço PT não-negativo (negativos possíveis no MIBEL) | `preco_api_raw` | WARN |
+| 7 | Unicidade `ts_utc` (duplicados recuperáveis pela Silver) | `consumo_api_raw` | WARN |
+| 8 | Unicidade `ts_utc` (duplicados corrompem joins Gold) | `preco_api_raw` | FAIL |
+| 9 | Freshness máx. 3 dias de atraso | `consumo_api_raw` | WARN |
+| 10 | Freshness máx. 2 dias (day-ahead publica D-1) | `preco_api_raw` | WARN |
+| 11 | Completude diária ≥ 23 horas (tolerância DST) | `consumo_api_raw` | WARN |
+| 12 | Completude diária ≥ 23 horas (tolerância DST) | `preco_api_raw` | WARN |
 
 ---
 
@@ -217,18 +238,55 @@ Todas as colunas de `dp_energy_market_api_hourly`, mais:
 
 Última linha e linhas com lags nulos são excluídas → dataset pronto para treino.
 
+#### `iceberg.gold.ml_metrics_streaming`
+
+Métricas do último run de treino ML (GBR load forecasting sobre dados streaming). Mantém apenas o run mais recente.
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `run_ts` | TIMESTAMP WITH TIME ZONE | Timestamp do run MLflow |
+| `model_name` | VARCHAR | Nome do algoritmo |
+| `n_train` | BIGINT | Nº de exemplos de treino |
+| `n_test` | BIGINT | Nº de exemplos de teste |
+| `ts_train_start` / `ts_train_end` | TIMESTAMP WITH TIME ZONE | Janela temporal de treino |
+| `ts_test_start` / `ts_test_end` | TIMESTAMP WITH TIME ZONE | Janela temporal de teste |
+| `mae` | DOUBLE | Mean Absolute Error (MWh) |
+| `rmse` | DOUBLE | Root Mean Squared Error (MWh) |
+| `r2` | DOUBLE | R² score |
+| `mape` | DOUBLE | Mean Absolute Percentage Error (%) |
+| `n_estimators` / `max_depth` / `learning_rate` | INT / INT / DOUBLE | Hiperparâmetros GBR |
+
+#### `iceberg.gold.ml_feature_importance_streaming`
+
+Importância de features do último run de treino ML streaming. Mantém apenas o run mais recente.
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `run_ts` | TIMESTAMP WITH TIME ZONE | Timestamp do run MLflow |
+| `feature_name` | VARCHAR | Nome da feature |
+| `importance` | DOUBLE | Importância normalizada [0, 1] |
+| `rank` | INTEGER | Posição por importância descendente |
+
+Ambas as tabelas são populadas por `03_ml_pipeline/preco_consumo_streaming_mlflow_flow.py`.
+
 ### Workflow Flyte
 
-**Ficheiro:** `workflows/flyte_silver_to_gold.py`  
-**Workflow:** `silver_to_gold_api_full`
+**Ficheiro:** `workflows/flyte_silver_to_gold.py`
 
-As window functions operam sobre o **histórico completo** para garantir lags e médias móveis corretos nas fronteiras de data. O workflow materializa sempre o histórico total de forma idempotente.
+Dois modos de execução:
+
+| Workflow | Modo | Quando usar |
+| -------- | ---- | ----------- |
+| `silver_to_gold_api_full` | Full — reconstrói todo o histórico Silver | Ingestão inicial ou reset completo |
+| `silver_to_gold_api_incremental` | Incremental — reconstrói a partir de `since_date - 1 dia` | Execuções diárias (o recuo de 1 dia garante lags corretos nas fronteiras) |
+
+As window functions (`LAG`, `AVG OVER`) operam **sem `PARTITION BY`** para garantir lags e médias móveis corretos nas fronteiras de mês/ano. As duas tarefas do workflow têm dependência sequencial — a feature table ML depende do produto analítico.
 
 ```
-silver_to_gold_api_full
-  ├── build_dp_energy_market_api_full      →  dp_energy_market_api_hourly
-  └── build_feat_load_forecasting_api_full →  feat_load_forecasting_api_hourly
-        (depende do upstream — executa depois)
+silver_to_gold_api_full / silver_to_gold_api_incremental
+  ├── build_dp_energy_market_api_*      →  dp_energy_market_api_hourly
+  └── build_feat_load_forecasting_api_* →  feat_load_forecasting_api_hourly
+        (executa depois — depende do upstream)
 ```
 
 ---

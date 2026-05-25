@@ -60,7 +60,8 @@ FROM iceberg.bronze.preco_api_raw
 
 UNION ALL
 
--- 5. RANGE — carga total deve ser positiva (MW)
+-- 5. RANGE — carga total deve ser positiva (MW); consumo PT tipicamente entre 3 000–11 000 MW
+--    WARN (não FAIL) porque a Bronze preserva raw: falsos negativos são filtrados na Silver
 SELECT
     'bronze.consumo_api_raw » range » total > 0',
     CASE WHEN SUM(CASE WHEN total <= 0 THEN 1 ELSE 0 END) = 0
@@ -89,6 +90,7 @@ FROM iceberg.bronze.preco_api_raw
 UNION ALL
 
 -- 7. UNICIDADE — sem ts_utc duplicados em consumo_api_raw
+--    WARN (não FAIL): a Silver deduplica com ROW_NUMBER(); duplicados na Bronze são recuperáveis
 SELECT
     'bronze.consumo_api_raw » uniqueness » ts_utc',
     CASE WHEN dup_groups = 0 THEN 'PASS' ELSE 'WARN' END,
@@ -108,6 +110,7 @@ FROM (
 UNION ALL
 
 -- 8. UNICIDADE — sem ts_utc duplicados em preco_api_raw
+--    FAIL (mais severo que consumo): preços duplicados corromperiam joins Silver→Gold sem sinal claro
 SELECT
     'bronze.preco_api_raw » uniqueness » ts_utc',
     CASE WHEN dup_groups = 0 THEN 'PASS' ELSE 'FAIL' END,
@@ -127,6 +130,7 @@ FROM (
 UNION ALL
 
 -- 9. FRESHNESS — dados de consumo têm menos de 3 dias de atraso
+--    ENTSO-E transparency platform publica consumo com até 2 dias de latência; 3 dias dá margem operacional
 SELECT
     'bronze.consumo_api_raw » freshness » max_process_date',
     CASE WHEN date_diff('day', MAX(process_date), CURRENT_DATE) <= 3
@@ -153,6 +157,7 @@ FROM iceberg.bronze.preco_api_raw
 UNION ALL
 
 -- 11. COMPLETUDE — dias com menos de 23 horas de consumo
+--    23h (não 24h) porque nas transições DST (verão/inverno) um dia tem legitimamente 23 ou 25 horas
 SELECT
     'bronze.consumo_api_raw » completeness » horas_por_dia >= 23',
     CASE WHEN SUM(CASE WHEN cnt < 23 THEN 1 ELSE 0 END) = 0
@@ -169,7 +174,7 @@ FROM (
 
 UNION ALL
 
--- 12. COMPLETUDE — dias com menos de 23 horas de preços
+-- 12. COMPLETUDE — dias com menos de 23 horas de preços (mesmo critério DST do check 11)
 SELECT
     'bronze.preco_api_raw » completeness » horas_por_dia >= 23',
     CASE WHEN SUM(CASE WHEN cnt < 23 THEN 1 ELSE 0 END) = 0

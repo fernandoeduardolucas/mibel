@@ -17,8 +17,9 @@ contract:
   domain: energia/mercado-eletrico
   owner: equipa-engenharia-dados
   description: >
-    Contrato formal entre o pipeline de ingestão (produtor — Energy-Charts API por defeito,
-    ENTSO-E como alternativa) e os consumidores (Grafana, analistas, ML pipeline).
+    Contrato formal entre o pipeline de ingestão (produtor — Energy-Charts API por defeito sem
+    autenticação; ENTSO-E Transparency Platform como alternativa com token gratuito) e os
+    consumidores (Grafana, analistas, ML pipeline).
     Garante disponibilidade, schema, qualidade e comportamento da tabela
     iceberg.gold.dp_energy_market_api_hourly.
 
@@ -169,7 +170,7 @@ semantics:
     - rule: ts_utc é sempre UTC — sem ajuste de DST ou fuso local
     - rule: Apenas horas com consumo E preço disponíveis são incluídas (INNER JOIN)
     - rule: Preços negativos são registados e reportados (WARN) — não são erros
-    - rule: Duplicados ocasionais da API ENTSO-E são resolvidos por AVG na Silver
+    - rule: Duplicados ocasionais da API são resolvidos por AVG na Silver (afeta ambas as fontes)
 
 # -----------------------------------------------------------------------------
 # QUALITY — regras de qualidade contratualmente garantidas
@@ -325,7 +326,7 @@ change_management:
       date: "2022-01-01"
       description: >
         Versão inicial — 13 colunas + 2 de partição.
-        Fonte: ENTSO-E Transparency Platform (substituiu Energy-Charts/OMIE CSV).
+        Fontes suportadas: Energy-Charts API (default, sem autenticação) e ENTSO-E Transparency Platform (alternativa, token gratuito).
         Sufixo _api para coexistência com pipeline Static_Data.
 
 # -----------------------------------------------------------------------------

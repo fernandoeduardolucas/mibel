@@ -8,7 +8,8 @@ Todas as tabelas usam sufixo `_api` para coexistir com o pipeline Static_Data (C
 
 ### `iceberg.bronze.consumo_api_raw`
 
-**Origem:** `query_load('PT')` via ENTSO-E  
+**Origem (default):** Energy-Charts API — `GET /total_power?country=pt`  
+**Origem (alternativa):** ENTSO-E — `query_load('PT')` (requer `ENTSOE_TOKEN`)  
 **Granularidade:** horária (MW)  
 **Partição:** `process_date`  
 **Localização:** `s3a://warehouse/bronze/consumo_api_raw/`
@@ -30,7 +31,8 @@ Todas as tabelas usam sufixo `_api` para coexistir com o pipeline Static_Data (C
 
 ### `iceberg.bronze.preco_api_raw`
 
-**Origem:** `query_day_ahead_prices('PT'/'ES')` via ENTSO-E  
+**Origem (default):** Energy-Charts API — `GET /price?bzn=PT` + `GET /price?bzn=ES`  
+**Origem (alternativa):** ENTSO-E — `query_day_ahead_prices('PT'/'ES')` (requer `ENTSOE_TOKEN`)  
 **Granularidade:** horária (€/MWh)  
 **Partição:** `process_date`  
 **Localização:** `s3a://warehouse/bronze/preco_api_raw/`

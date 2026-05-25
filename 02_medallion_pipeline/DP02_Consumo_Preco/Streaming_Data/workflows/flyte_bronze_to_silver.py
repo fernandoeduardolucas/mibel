@@ -1,19 +1,15 @@
 """
-Workflow Flyte: Bronze → Silver — Streaming_Data (DP-02 API).
+Workflow Flyte: Bronze → Silver — DP-02 Streaming (API).
 
-Lê de iceberg.bronze.consumo_api_raw e iceberg.bronze.preco_api_raw,
-normaliza e escreve em iceberg.silver.consumo_api_hourly e preco_api_hourly.
-
-Diferença face ao pipeline estático:
-  - Bronze API já tem ts_utc normalizado (não precisa de date_raw+hour).
-  - Consumo já está em granularidade horária (MW por hora = MWh direto).
-  - Silver faz apenas deduplicação e filtragem de nulos.
+Ao contrário do pipeline estático, o Bronze da API já entrega ts_utc normalizado
+e consumo em granularidade horária, pelo que a Silver apenas deduplica (GROUP BY + AVG)
+e filtra nulos — sem reconstrução de timestamp nem conversão de unidade.
 
 Execução diária:
     pyflyte run workflows/flyte_bronze_to_silver.py bronze_to_silver_api \\
         --process_date 2024-01-15
 
-Execução completa:
+Reprocessamento completo:
     pyflyte run workflows/flyte_bronze_to_silver.py bronze_to_silver_api_full
 """
 
@@ -58,12 +54,10 @@ def _day_bounds(process_date: date) -> tuple[str, str]:
 @task(retries=3)
 def transform_consumo_api_silver(process_date: date) -> int:
     """
-    Promove consumo Bronze → Silver para o process_date indicado.
+    Promove consumo Bronze → Silver para um dia específico.
 
-    Bronze já está em MW horário. Silver converte MW → MWh (1:1 pois é horário)
-    e filtra registos com ts_utc nulo. Deduplicação por GROUP BY + AVG.
-
-    Idempotente: apaga as horas do dia antes de inserir.
+    AVG sobre duplicados dentro do mesmo ts_utc (registos repetidos da API).
+    Idempotente: apaga o intervalo do dia antes de inserir.
     """
     conn = _trino_conn()
     cur  = conn.cursor()
@@ -108,11 +102,11 @@ def transform_consumo_api_silver(process_date: date) -> int:
 @task(retries=3)
 def transform_preco_api_silver(process_date: date) -> int:
     """
-    Promove preços Bronze → Silver para o process_date indicado.
+    Promove preços Bronze → Silver para um dia específico.
 
-    Bronze já tem ts_utc normalizado. Silver filtra nulos e deduplica por GROUP BY + AVG.
-
-    Idempotente: apaga as horas do dia antes de inserir.
+    DATE_TRUNC('hour') antes do GROUP BY porque o Bronze de preços pode ter
+    sub-hora (dependendo do endpoint da API). AVG agrega duplicados.
+    Idempotente: apaga o intervalo do dia antes de inserir.
     """
     conn = _trino_conn()
     cur  = conn.cursor()
@@ -157,7 +151,7 @@ def transform_preco_api_silver(process_date: date) -> int:
 # ---------------------------------------------------------------------------
 @task(retries=3)
 def transform_consumo_api_silver_full() -> int:
-    """Materializa todo o histórico Bronze → Silver consumo. Idempotente."""
+    """Reprocessa todo o histórico Bronze → Silver consumo (trunca e reinsere)."""
     conn = _trino_conn()
     cur  = conn.cursor()
 
@@ -189,7 +183,7 @@ def transform_consumo_api_silver_full() -> int:
 # ---------------------------------------------------------------------------
 @task(retries=3)
 def transform_preco_api_silver_full() -> int:
-    """Materializa todo o histórico Bronze → Silver preços. Idempotente."""
+    """Reprocessa todo o histórico Bronze → Silver preços (trunca e reinsere)."""
     conn = _trino_conn()
     cur  = conn.cursor()
 
@@ -222,24 +216,13 @@ def transform_preco_api_silver_full() -> int:
 # ---------------------------------------------------------------------------
 @workflow
 def bronze_to_silver_api(process_date: date = date(2024, 1, 1)) -> None:
-    """
-    Transforma Bronze → Silver para o process_date indicado (consumo + preço em paralelo).
-
-    Execução:
-        pyflyte run workflows/flyte_bronze_to_silver.py bronze_to_silver_api \\
-            --process_date 2024-01-15
-    """
+    """Transforma Bronze → Silver para um dia (consumo + preço em paralelo)."""
     transform_consumo_api_silver(process_date=process_date)
     transform_preco_api_silver(process_date=process_date)
 
 
 @workflow
 def bronze_to_silver_api_full() -> None:
-    """
-    Transforma todo o Bronze disponível → Silver (consumo + preço em paralelo).
-
-    Execução:
-        pyflyte run workflows/flyte_bronze_to_silver.py bronze_to_silver_api_full
-    """
+    """Reprocessa todo o Bronze disponível → Silver (consumo + preço em paralelo)."""
     transform_consumo_api_silver_full()
     transform_preco_api_silver_full()

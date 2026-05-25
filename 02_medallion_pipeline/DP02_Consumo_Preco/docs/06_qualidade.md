@@ -27,16 +27,53 @@ Ficheiro: `04_quality/sql/01_bronze_checks.sql`
 
 ---
 
-## 2. Silver (4 checks)
+## 2. Silver (14 checks)
 
 Ficheiro: `04_quality/sql/02_silver_checks.sql`
 
+### Secção 1 — Taxa de Nulos (campos obrigatórios)
+
 | ID | Check | Critério | Nível |
 |----|-------|---------|-------|
-| S01 | Nulos em `ts_utc` e `total_mwh` | null rate = 0% | FAIL |
-| S02 | Unicidade `ts_utc` após deduplicação (consumo) | Sem duplicados | FAIL |
-| S03 | Nulos em `ts_utc` e `price_portugal_eur_mwh` | null rate = 0% | FAIL |
-| S04 | Unicidade `ts_utc` após deduplicação (preço) | Sem duplicados | FAIL |
+| S01 | Nulos em `ts_utc` (consumo) | null rate = 0% | FAIL |
+| S02 | Nulos em `total_mwh` (consumo) | null rate = 0% — consumo nulo inutiliza o registo para join e forecasting | FAIL |
+| S03 | Nulos em `ts_utc` (preço) | null rate = 0% | FAIL |
+| S04 | Nulos em `price_portugal_eur_mwh` (preço) | null rate = 0% — preço nulo impede features Gold | FAIL |
+
+### Secção 2 — Range (limites de domínio Portugal)
+
+| ID | Check | Critério | Nível |
+|----|-------|---------|-------|
+| S05 | `total_mwh > 0` (consumo positivo) | Portugal tipicamente 3 000–11 000 MWh/h; WARN porque valores zero esporádicos podem ocorrer | WARN |
+| S06 | `price_portugal_eur_mwh >= 0` (preço não-negativo) | Preços negativos são legítimos no MIBEL (excesso renovável) — contabilizados, não bloqueados | WARN |
+
+### Secção 3 — Unicidade
+
+| ID | Check | Critério | Nível |
+|----|-------|---------|-------|
+| S07 | Unicidade `ts_utc` após deduplicação (consumo) | Sem duplicados — a Silver aplica `ROW_NUMBER()` para deduplicar; duplicado aqui indica bug na transformação | FAIL |
+| S08 | Unicidade `ts_utc` após deduplicação (preço) | Sem duplicados — preços duplicados corromperiam joins Silver→Gold silenciosamente | FAIL |
+
+### Secção 4 — Integridade Referencial (join consumo ↔ preço)
+
+| ID | Check | Critério | Nível |
+|----|-------|---------|-------|
+| S09 | Horas de consumo sem par de preço (`consumo_sem_preco`) | Desfasamento de poucas horas é normal dado que as APIs têm latências distintas | WARN |
+| S10 | Horas de preço sem par de consumo (`preco_sem_consumo`) | Idem — WARN; a Gold resolve via INNER JOIN | WARN |
+
+### Secção 5 — Deduplicação (Silver ≤ Bronze em nº de registos)
+
+| ID | Check | Critério | Nível |
+|----|-------|---------|-------|
+| S11 | `COUNT(silver.consumo) <= COUNT(bronze.consumo)` | Silver nunca gera linhas novas — Silver > Bronze indica bug no INSERT | FAIL |
+| S12 | `COUNT(silver.preco) <= COUNT(bronze.preco)` | Idem para tabela de preços | FAIL |
+
+### Secção 6 — Completude Diária
+
+| ID | Check | Critério | Nível |
+|----|-------|---------|-------|
+| S13 | Dias com < 23 horas de consumo | Threshold 23h (não 24h) para acomodar transições DST em Portugal | WARN |
+| S14 | Dias com < 23 horas de preços | Idem — dia DST inverno→verão tem legitimamente 23 horas | WARN |
 
 ---
 

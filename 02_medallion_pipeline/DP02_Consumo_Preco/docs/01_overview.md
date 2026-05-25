@@ -10,18 +10,27 @@ A organização atua no setor energético em Portugal e pretende monitorizar a e
 
 ## 2. Pipeline — Streaming_Data
 
-O DP-02 usa a **ENTSO-E Transparency Platform** (transparency.entsoe.eu) como fonte de dados oficial, com ingestão incremental via API.
+O DP-02 ingere dados de consumo e preço via API, com duas fontes intercambiáveis:
+
+| Fonte | Flag | Autenticação | Default |
+|-------|------|--------------|---------|
+| **Energy-Charts API** (Fraunhofer ISE — redistribui ENTSO-E) | `--source energycharts` | Nenhuma | **Sim** |
+| ENTSO-E Transparency Platform (dados primários) | `--source entsoe` | Token gratuito | Não |
+
+As tabelas Bronze de destino são idênticas em ambos os casos — Silver, Gold e quality checks não mudam conforme a fonte.
 
 > A pasta `Static_Data/` mantém um pipeline legado sobre CSVs históricos (REN + OMIE). A documentação desta pasta (`docs/`) refere-se **exclusivamente** ao pipeline Streaming_Data.
 
 ### Arquitetura geral
 
 ```
-ENTSO-E API
-  ├── Actual Total Load PT  (query_load)
-  └── Day-Ahead Prices PT+ES  (query_day_ahead_prices)
-        │
-        ▼
+Energy-Charts API (default, sem token)
+  ├── total_power?country=pt  →  carga eléctrica nacional PT
+  └── price?bzn=PT / price?bzn=ES  →  preços day-ahead MIBEL
+  │
+  │   (alternativa: ENTSO-E API com ENTSOE_TOKEN)
+  │
+  ▼
    BRONZE  — ingestão raw, 1 linha por hora
         │
         ▼  deduplicação · filtragem nulos · unidade MW→MWh

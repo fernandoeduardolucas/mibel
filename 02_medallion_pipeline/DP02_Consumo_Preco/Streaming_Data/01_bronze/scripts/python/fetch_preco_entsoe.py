@@ -3,12 +3,12 @@ Fetch de preços day-ahead MIBEL horários via ENTSO-E Transparency Platform.
 
 Fonte: https://transparency.entsoe.eu/
 Dados: Day-Ahead Prices Portugal + Espanha, granularidade horária, EUR/MWh.
-Autenticacao: token gratuito (ver fetch_consumo_entsoe.py para instrucoes).
+Autenticação: token gratuito (ver fetch_consumo_entsoe.py para instruções completas).
 
-Melhoria vs Energy-Charts (fonte anterior):
-    - price_spain_eur_mwh agora preenchido (ES disponivel separadamente)
-    - Dados horários exactos (24 valores/dia -- Energy-Charts retornava 15-min)
-    - Sem flag "deprecated" na resposta
+Porquê ENTSO-E em vez de Energy-Charts (fonte anterior):
+    - price_spain_eur_mwh agora preenchido (ES disponível separadamente na ENTSO-E)
+    - Dados horários exatos (24 valores/dia — Energy-Charts retornava 15 min para preços)
+    - Sem endpoints "deprecated" na resposta
 
 Uso standalone:
     python fetch_preco_entsoe.py --start 2024-01-01 --end 2024-01-07
@@ -37,8 +37,8 @@ BATCH_SIZE = 2000
 def _get_client() -> EntsoePandasClient:
     if not ENTSOE_TOKEN:
         raise EnvironmentError(
-            "\n[ERRO] ENTSOE_TOKEN nao definido.\n"
-            "Ver instrucoes em fetch_consumo_entsoe.py\n"
+            "\n[ERRO] ENTSOE_TOKEN não definido.\n"
+            "Ver instruções de obtenção do token em fetch_consumo_entsoe.py\n"
         )
     return EntsoePandasClient(api_key=ENTSOE_TOKEN)
 
@@ -51,7 +51,12 @@ def _to_series(result) -> pd.Series:
 
 def fetch_price_data(start: date, end: date) -> list[dict]:
     """
-    Chama a ENTSO-E API e devolve lista de dicts com ts_utc, preco PT e preco ES.
+    Consulta a ENTSO-E API e devolve lista de registos com ts_utc, preço PT e preço ES.
+
+    O intervalo pedido à API é [start, end+1 dia) em UTC para garantir que o
+    último dia fica completo, independentemente do fuso horário local.
+    PT e ES são consultados separadamente e unidos por outer join no índice temporal.
+    Valores NaN são preservados como None (colunas independentes podem falhar individualmente).
     """
     client   = _get_client()
     start_ts = pd.Timestamp(start.isoformat(), tz="UTC")
@@ -120,7 +125,10 @@ def _trino_conn():
 def insert_to_bronze(records: list[dict], process_dates: list[date]) -> int:
     """
     Insere registos em iceberg.bronze.preco_api_raw.
-    Idempotente: apaga as particoes process_date antes de inserir.
+
+    Idempotente: elimina as partições process_date afetadas antes de inserir,
+    pelo que é seguro re-executar para o mesmo intervalo de datas.
+    Os registos são enviados em lotes de BATCH_SIZE para evitar payloads gigantes.
     """
     if not records:
         print("[fetch_preco ENTSOE] Nenhum registo para inserir.")

@@ -3,11 +3,9 @@
 -- Tabelas Iceberg com sufixo _api para coexistir com o pipeline estatico.
 -- Diferenca face ao estatico: ts_utc ja normalizado na ingesto (sem date_raw/hour).
 --
--- Fonte de dados: ENTSO-E Transparency Platform (transparency.entsoe.eu)
---   consumo_api_raw : Actual Total Load PT  -- query_load('PT')
---   preco_api_raw   : Day-Ahead Prices PT+ES -- query_day_ahead_prices('PT'/'ES')
---
--- Requer: ENTSOE_TOKEN (token gratuito via transparency@entsoe.eu)
+-- Fonte de dados: Energy-Charts API (api.energy-charts.info) — sem autenticacao
+--   consumo_api_raw : Carga total nacional PT  -- endpoint total_power?country=pt
+--   preco_api_raw   : Precos day-ahead PT+ES   -- endpoint price?bzn=PT / price?bzn=ES
 -- =============================================================================
 
 CREATE SCHEMA IF NOT EXISTS iceberg.bronze;
@@ -46,13 +44,13 @@ COMMENT ON COLUMN iceberg.bronze.consumo_api_raw.process_date IS 'Data lógica d
 
 -- -----------------------------------------------------------------------------
 -- Tabela 2: preco_api_raw
--- Origem: Energy-Charts API — endpoint price?bzn=PT (preços OMIE/MIBEL day-ahead)
--- Granularidade horária, €/MWh. Sem preço ES (não disponível neste endpoint).
+-- Origem: Energy-Charts API — endpoints price?bzn=PT e price?bzn=ES (preços OMIE/MIBEL day-ahead)
+-- Granularidade horária, €/MWh. Preço ES pode ser NULL se o endpoint não retornar dados.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS iceberg.bronze.preco_api_raw (
     ts_utc                  TIMESTAMP(6) WITH TIME ZONE,  -- timestamp UTC horário
     price_portugal_eur_mwh  DOUBLE,                        -- preço day-ahead PT (€/MWh)
-    price_spain_eur_mwh     DOUBLE,                        -- preço day-ahead ES (€/MWh, NULL se não disponível)
+    price_spain_eur_mwh     DOUBLE,                        -- preço day-ahead ES (€/MWh; NULL se endpoint não retornar dados ES)
     source_url              VARCHAR,                       -- URL da chamada API
     fetch_date              DATE,
     process_date            DATE

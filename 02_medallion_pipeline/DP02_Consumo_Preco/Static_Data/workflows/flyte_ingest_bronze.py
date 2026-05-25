@@ -1,16 +1,9 @@
 """
-Workflow Flyte: ingestão de CSVs para a camada Bronze — consumo_preco.
+Flyte workflow: ingestão Bronze para consumo_preco (DP-02 Static).
 
-Lê os CSVs históricos completos de consumo e preços do MinIO (raw/)
-e insere na camada Bronze do lakehouse Iceberg via Trino.
-
-Os CSVs raw são lidos do MinIO bucket 'warehouse' nos caminhos:
-  - raw/consumo-total-nacional.csv
-  - raw/Day-ahead Market Prices_20230101_20260311.csv
-
-Fontes:
-  - Consumo: REN (Redes Energéticas Nacionais) — granularidade 15 minutos
-  - Preços: OMIE day-ahead market prices PT+ES — granularidade horária (horas 1-25)
+Fontes no MinIO warehouse/raw/:
+  - consumo-total-nacional.csv        → REN, granularidade 15 min, unidade kW
+  - Day-ahead Market Prices_*.csv     → OMIE PT+ES, granularidade horária (horas 1-25)
 
 Execução:
     pyflyte run workflows/flyte_ingest_bronze.py ingest_bronze_full
@@ -27,19 +20,13 @@ import pandas as pd
 import trino
 from flytekit import task, workflow, ImageSpec
 
-# ---------------------------------------------------------------------------
-# ImageSpec — usado apenas em execução REMOTA (Flyte K3s sandbox).
-# Ignorado em modo local (--local-flyte); o processo Python do host é usado.
-# ---------------------------------------------------------------------------
+# Ignorado em modo local; o processo Python do host é usado em vez do container.
 ingest_image = ImageSpec(
     name="dp02_ingest_bronze",
     registry="localhost:30000",
     packages=["trino>=0.328.0", "boto3>=1.34.0", "pandas>=2.2.0"],
 )
 
-# ---------------------------------------------------------------------------
-# Configuração (via variáveis de ambiente para portabilidade)
-# ---------------------------------------------------------------------------
 TRINO_HOST       = os.getenv("TRINO_HOST", "host.docker.internal")
 TRINO_PORT       = int(os.getenv("TRINO_PORT", "8080"))
 
@@ -51,8 +38,8 @@ RAW_BUCKET       = os.getenv("RAW_BUCKET", "warehouse")
 CONSUMO_KEY = os.getenv("CONSUMO_KEY", "raw/consumo-total-nacional.csv")
 PRECO_KEY   = os.getenv("PRECO_KEY",   "raw/Day-ahead Market Prices_20230101_20260311.csv")
 
-BATCH_SIZE = 5000               # linhas por INSERT para evitar payloads excessivos
-MAX_PARTITIONS_PER_INSERT = 60  # abaixo do limite habitual do Trino/Iceberg
+BATCH_SIZE = 5000               # Trino rejeita payloads demasiado grandes
+MAX_PARTITIONS_PER_INSERT = 60  # Iceberg abre um writer por partição; acima de ~100 causa OOM
 
 
 def _trino_conn() -> trino.dbapi.Connection:
@@ -80,13 +67,7 @@ def _insert_partition_batches(
     columns: str,
     daily_rows: list[tuple[date | str, list[str]]],
 ) -> int:
-    """
-    Executa INSERTs agrupando vários dias por statement.
-
-    Mantém o número de partições por INSERT controlado para evitar o limite de
-    writers do Trino/Iceberg, reduzindo bastante o número de commits face a
-    inserir dia a dia.
-    """
+    """Agrupa dias em batches, respeitando os limites MAX_PARTITIONS e BATCH_SIZE."""
     inserted = 0
     batch_rows: list[str] = []
     batch_partitions: set[str] = set()
@@ -127,19 +108,9 @@ def _exec(cur, sql: str) -> None:
     cur.fetchall()
 
 
-# ---------------------------------------------------------------------------
-# Task: ingestão completa de consumo (todos os dias)
-# ---------------------------------------------------------------------------
 @task(retries=3, container_image=ingest_image)
 def ingest_consumo_full() -> int:
-    """
-    Lê consumo-total-nacional.csv completo do MinIO e carrega em Bronze.
-    Insere data a data para evitar o limite de partições abertas do Iceberg.
-    process_date é derivado da coluna datahora de cada registo.
-
-    Origem: REN CSV — granularidade 15 minutos, unidades kW.
-    Schema Bronze preserva todas as colunas originais mais metadados de ingestão.
-    """
+    """Trunca Bronze e re-insere o CSV REN completo. Particionado por datahora para respeitar limites Iceberg."""
     s3 = _s3_client()
     obj = s3.get_object(Bucket=RAW_BUCKET, Key=CONSUMO_KEY)
 
@@ -199,18 +170,11 @@ def ingest_consumo_full() -> int:
     return total
 
 
-# ---------------------------------------------------------------------------
-# Task: ingestão completa de preços (todos os dias)
-# ---------------------------------------------------------------------------
 @task(retries=3, container_image=ingest_image)
 def ingest_preco_full() -> int:
     """
-    Lê o CSV de preços day-ahead completo do MinIO e carrega em Bronze.
-    Insere data a data para evitar o limite de partições abertas do Iceberg.
-    process_date é derivado da coluna date_raw de cada registo.
-
-    Origem: OMIE day-ahead market prices — granularidade horária, horas 1-25.
-    Hora 25 (DST outono) é preservada no Bronze e filtrada na Silver.
+    Trunca Bronze e re-insere o CSV OMIE completo.
+    Hora 25 (recuo DST de outono) é preservada aqui e descartada na Silver.
     """
     s3 = _s3_client()
     obj = s3.get_object(Bucket=RAW_BUCKET, Key=PRECO_KEY)
@@ -269,19 +233,11 @@ def ingest_preco_full() -> int:
     return total
 
 
-# ---------------------------------------------------------------------------
-# Workflows
-# ---------------------------------------------------------------------------
 @workflow
 def ingest_bronze_full() -> None:
     """
-    Ingestão Bronze completa (todos os dados dos CSVs raw).
-    Trunca as tabelas Bronze e re-insere tudo a partir dos ficheiros em MinIO.
-
-    Pré-requisito: CSVs devem estar em MinIO warehouse/raw/ (upload feito pelo run script).
-
-    Execução directa:
-        pyflyte run workflows/flyte_ingest_bronze.py ingest_bronze_full
+    Pré-requisito: CSVs já enviados para MinIO warehouse/raw/ pelo run script.
+    Execução directa: pyflyte run workflows/flyte_ingest_bronze.py ingest_bronze_full
     """
     ingest_consumo_full()
     ingest_preco_full()

@@ -1,23 +1,26 @@
 """
-Workflow Flyte: fetch das APIs para a camada Bronze — Energy-Charts fallback (DP-02).
+Workflow Flyte — camada Bronze (DP-02 Streaming): ingestão via Energy-Charts API.
 
 Fonte: Energy-Charts API (Fraunhofer ISE) — api.energy-charts.info
-  - Consumo horário PT : GET /total_power?country=pt  (redistribui ENTSO-E)
-  - Preços day-ahead PT: GET /price?bzn=PT             (OMIE/MIBEL zona PT)
-  - Preços day-ahead ES: GET /price?bzn=ES             (OMIE/MIBEL zona ES)
+  Consumo horário PT : GET /public_power?country=pt  (dados ENTSO-E redistribuídos)
+  Preços day-ahead PT: GET /price?bzn=PT              (OMIE/MIBEL zona Portugal)
+  Preços day-ahead ES: GET /price?bzn=ES              (OMIE/MIBEL zona Espanha)
 
-Sem autenticação — alternativa ao flyte_fetch_bronze_api.py quando ENTSOE_TOKEN
-não está disponível. As tabelas Bronze de destino são as mesmas (_api suffix),
-pelo que Silver, Gold e quality checks não precisam de alterações.
+Sem autenticação — fonte alternativa ao flyte_fetch_bronze_api.py (ENTSO-E)
+quando ENTSOE_TOKEN não está disponível. As tabelas de destino Bronze são
+idênticas (sufixo _api_raw), pelo que a camada Silver, Gold e os quality
+checks não requerem alterações.
 
-Nota: Energy-Charts pode devolver consumo em granularidade 15-min para alguns
-períodos. O Silver já agrega por DATE_TRUNC('hour') + AVG, pelo que é transparente.
+Nota sobre granularidade: a Energy-Charts API pode devolver dados a 15 min
+para alguns períodos. A função _aggregate_to_hourly() agrega por hora via
+média antes da inserção; o Silver faz o mesmo com DATE_TRUNC('hour') + AVG,
+garantindo idempotência independente da granularidade da fonte.
 
-Execução standalone:
+Execução standalone (sem orquestrador):
     pyflyte run workflows/flyte_fetch_bronze_energycharts.py fetch_bronze_energycharts \\
         --start_date 2024-01-01 --end_date 2024-01-07
 
-Via orquestrador:
+Via orquestrador do pipeline:
     python run_streaming_pipeline.py --source energycharts --skip-docker --days 7
 """
 
@@ -33,16 +36,17 @@ from flytekit import task, workflow
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
-BASE_URL          = "https://api.energy-charts.info"
-LOAD_TYPE_NAME    = "Load"   # nome do production_type na resposta /public_power
-BATCH_SIZE = 2000
+BASE_URL       = "https://api.energy-charts.info"
+LOAD_TYPE_NAME = "Load"   # campo "name" do tipo de produção em /public_power que corresponde à carga
+BATCH_SIZE     = 2000     # nº máximo de linhas por INSERT para evitar timeouts do Trino
 
 
 # ---------------------------------------------------------------------------
-# Helpers partilhados
+# Utilitários internos partilhados pelas duas tarefas
 # ---------------------------------------------------------------------------
 
 def _trino_conn(schema: str = "bronze") -> trino.dbapi.Connection:
+    """Cria ligação ao Trino com catálogo iceberg e schema configurável."""
     return trino.dbapi.connect(
         host=TRINO_HOST,
         port=TRINO_PORT,
@@ -53,11 +57,13 @@ def _trino_conn(schema: str = "bronze") -> trino.dbapi.Connection:
 
 
 def _exec(cur, sql: str) -> None:
+    """Executa SQL sem retornar resultados (DDL / DELETE)."""
     cur.execute(sql)
     cur.fetchall()
 
 
 def _flush_batch(cur, table: str, cols: str, batch: list[str]) -> int:
+    """Insere o batch atual na tabela Trino e limpa a lista. Devolve nº de linhas inseridas."""
     if not batch:
         return 0
     cur.execute(f"INSERT INTO {table} ({cols}) VALUES {', '.join(batch)}")
@@ -68,6 +74,7 @@ def _flush_batch(cur, table: str, cols: str, batch: list[str]) -> int:
 
 
 def _ec_get(endpoint: str, params: dict) -> dict:
+    """Faz GET à Energy-Charts API e devolve o JSON; lança exceção em caso de erro HTTP."""
     url  = f"{BASE_URL}/{endpoint}"
     resp = requests.get(url, params=params, timeout=60)
     resp.raise_for_status()
@@ -75,7 +82,11 @@ def _ec_get(endpoint: str, params: dict) -> dict:
 
 
 def _find_load_series(production_types: list[dict]) -> list | None:
-    """Devolve a lista de valores de carga. Aceita variações de capitalização."""
+    """Localiza a série de carga na lista production_types da resposta /public_power.
+
+    A comparação é case-insensitive para tolerar variações na API (ex: "load" vs "Load").
+    Devolve a lista de valores ou None se o tipo não for encontrado.
+    """
     for pt in production_types:
         if pt.get("name", "").strip().lower() == LOAD_TYPE_NAME.lower():
             return pt.get("data")
@@ -83,7 +94,12 @@ def _find_load_series(production_types: list[dict]) -> list | None:
 
 
 def _aggregate_to_hourly(ts_value_pairs: list[tuple[datetime, float]]) -> dict[datetime, float]:
-    """Agrega pares (ts, valor) de granularidade sub-horária para horária via média."""
+    """Agrega pares (timestamp, valor) sub-horários para granularidade horária via média.
+
+    Trunca o timestamp ao início da hora e calcula a média de todos os valores
+    que caem nessa janela. Necessário porque a Energy-Charts API pode devolver
+    dados a 15 min dependendo do período e da zona de balanço.
+    """
     buckets: dict[datetime, list[float]] = {}
     for ts, val in ts_value_pairs:
         hour_ts = ts.replace(minute=0, second=0, microsecond=0)
@@ -92,16 +108,17 @@ def _aggregate_to_hourly(ts_value_pairs: list[tuple[datetime, float]]) -> dict[d
 
 
 # ---------------------------------------------------------------------------
-# Task 1: consumo horário PT — Energy-Charts /total_power
+# Task 1: consumo horário PT — Energy-Charts /public_power
 # ---------------------------------------------------------------------------
 
 @task(retries=3)
 def fetch_consumo_ec(start_date: date, end_date: date) -> int:
-    """
-    Obtém carga eléctrica nacional horária via Energy-Charts /total_power (PT).
+    """Obtém carga eléctrica horária de Portugal via Energy-Charts /public_power.
 
-    Sem autenticação. Idempotente: apaga process_dates do intervalo antes de inserir.
-    Destino: iceberg.bronze.consumo_api_raw — schema idêntico ao pipeline ENTSO-E.
+    Sem autenticação. Idempotente: remove os registos do intervalo (por process_date)
+    antes de inserir, para que re-execuções não criem duplicados.
+    Destino: iceberg.bronze.consumo_api_raw — schema compatível com o pipeline ENTSO-E.
+    Devolve o número total de linhas inseridas.
     """
     source_url = f"{BASE_URL}/public_power?country=pt&start={start_date}&end={end_date}"
     print(f"[fetch_consumo EC] GET {source_url}")
@@ -118,7 +135,7 @@ def fetch_consumo_ec(start_date: date, end_date: date) -> int:
         print(f"[fetch_consumo EC] Sem dados de carga para {start_date}--{end_date}.")
         return 0
 
-    # Energy-Charts pode devolver sub-horário (15-min); agregar para horário
+    # A API pode devolver granularidade 15-min; agrega para horário antes da inserção
     raw_pairs = [
         (datetime.fromtimestamp(ts, tz=timezone.utc), float(v))
         for ts, v in zip(unix_seconds, load_data)
@@ -182,11 +199,12 @@ def fetch_consumo_ec(start_date: date, end_date: date) -> int:
 
 @task(retries=3)
 def fetch_preco_ec(start_date: date, end_date: date) -> int:
-    """
-    Obtém preços day-ahead PT e ES via Energy-Charts /price.
+    """Obtém preços day-ahead de Portugal e Espanha via Energy-Charts /price.
 
-    Sem autenticação. Idempotente: apaga process_dates do intervalo antes de inserir.
-    Destino: iceberg.bronze.preco_api_raw — schema idêntico ao pipeline ENTSO-E.
+    Sem autenticação. Idempotente: remove os registos do intervalo (por process_date)
+    antes de inserir, para que re-execuções não criem duplicados.
+    Destino: iceberg.bronze.preco_api_raw — schema compatível com o pipeline ENTSO-E.
+    Devolve o número total de linhas inseridas (união PT ∪ ES).
     """
     print(f"[fetch_preco EC] GET precos PT+ES: {start_date} -> {end_date}")
 
@@ -210,7 +228,7 @@ def fetch_preco_ec(start_date: date, end_date: date) -> int:
         print(f"[fetch_preco EC] Erro ES: {exc}")
         es_unix, es_prices = [], []
 
-    # Agregar de sub-horário (15-min) para horário via média
+    # Agrega PT e ES de sub-horário (15-min) para horário via média, se aplicável
     pt_map = _aggregate_to_hourly([
         (datetime.fromtimestamp(ts, tz=timezone.utc), float(p))
         for ts, p in zip(pt_unix, pt_prices) if p is not None
@@ -279,7 +297,7 @@ def fetch_preco_ec(start_date: date, end_date: date) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Workflow: consumo + preço em paralelo
+# Workflow principal: fetch consumo + preço em paralelo
 # ---------------------------------------------------------------------------
 
 @workflow
@@ -287,10 +305,13 @@ def fetch_bronze_energycharts(
     start_date: date = date.today() - timedelta(days=6),
     end_date:   date = date.today(),
 ) -> None:
-    """
-    Obtém dados Energy-Charts (consumo + preço PT+ES) e insere na camada Bronze.
-    Sem autenticação — alternativa ao workflow ENTSO-E.
-    As duas tarefas correm em paralelo (sem dependências entre si).
+    """Ingest de consumo e preços Energy-Charts para a camada Bronze (DP-02 Streaming).
+
+    Alternativa sem autenticação ao workflow ENTSO-E (flyte_fetch_bronze_api.py).
+    As tarefas fetch_consumo_ec e fetch_preco_ec não têm dependências entre si
+    e são executadas em paralelo pelo Flyte.
+
+    Janela por omissão: últimos 7 dias (start_date=hoje-6, end_date=hoje).
 
     Execução:
         pyflyte run workflows/flyte_fetch_bronze_energycharts.py fetch_bronze_energycharts \\

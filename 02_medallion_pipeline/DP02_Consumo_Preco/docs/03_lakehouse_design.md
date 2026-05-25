@@ -18,10 +18,10 @@ UTC é o tempo canónico em todas as camadas Silver e Gold.
 
 ### Bronze
 
-| Tabela | Origem |
-|--------|--------|
-| `iceberg.bronze.consumo_api_raw` | `query_load('PT')` via ENTSO-E |
-| `iceberg.bronze.preco_api_raw` | `query_day_ahead_prices('PT'/'ES')` via ENTSO-E |
+| Tabela | Origem (default) | Origem (alternativa) |
+|--------|-----------------|----------------------|
+| `iceberg.bronze.consumo_api_raw` | Energy-Charts `total_power?country=pt` | ENTSO-E `query_load('PT')` |
+| `iceberg.bronze.preco_api_raw` | Energy-Charts `price?bzn=PT` + `price?bzn=ES` | ENTSO-E `query_day_ahead_prices('PT'/'ES')` |
 
 ### Silver
 
@@ -114,7 +114,7 @@ DESCRIBE iceberg.gold.dp_energy_market_api_hourly;
 | `domain` | `consumo_preco` |
 | `schema_version` | `1` |
 | `retention_policy` | `indefinite` |
-| `source_system` | `entsoe_api` |
+| `source_system` | `energycharts_api` (default) / `entsoe_api` (alternativa) |
 
 **Silver:**
 

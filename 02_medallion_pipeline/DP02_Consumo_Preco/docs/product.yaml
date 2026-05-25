@@ -12,7 +12,8 @@ product:
   owner: equipa-engenharia-dados
   description: >
     Produto analítico horário que integra carga eléctrica nacional (MWh) e preço
-    day-ahead Portugal (€/MWh) provenientes da ENTSO-E Transparency Platform.
+    day-ahead Portugal (€/MWh). Fonte por defeito: Energy-Charts API (sem autenticação);
+    alternativa: ENTSO-E Transparency Platform (token gratuito).
     Responde à pergunta de negócio: "Em que intervalo horário diário é mais
     vantajoso vender energia renovável à rede?"
   status: active

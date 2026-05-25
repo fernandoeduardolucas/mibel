@@ -2,6 +2,21 @@
 -- CHECKS DE QUALIDADE — CAMADA GOLD (Streaming_Data / API)
 -- Tabelas: iceberg.gold.dp_energy_market_api_hourly
 --        + iceberg.gold.feat_load_forecasting_api_hourly
+--
+-- Estrutura de resultado por check:
+--   check_name   — identificador no formato <tabela> » <categoria> » <coluna>
+--   status       — PASS | WARN | FAIL
+--   valor_pct    — valor observado (%, contagem, ou count absoluto conforme o check)
+--   threshold_pct— limiar de referência (0.0 = tolerância zero; outro valor = margem aceitável)
+--   detalhe      — mensagem legível com contagens concretas
+--
+-- Categorias de checks:
+--   null_rate      — colunas obrigatórias não podem ter nulos
+--   uniqueness     — ts_utc deve ser chave primária (sem duplicados)
+--   range          — valores temporais devem estar dentro de intervalos válidos
+--   lag_null_rate  — features de lag têm nulos esperados apenas nas primeiras N horas
+--   join_integrity — contagem Gold deve corresponder ao join Silver×Silver
+--   count          — feature table ML deve ter exatamente dp_count - 24 linhas
 -- =============================================================================
 
 -- 1. TAXA DE NULOS — ts_utc em dp_energy_market_api_hourly
@@ -93,7 +108,7 @@ FROM iceberg.gold.dp_energy_market_api_hourly
 
 UNION ALL
 
--- 7. LAGS — taxa de nulos em consumo_lag_1h (primeiras 1 hora são NULL por design)
+-- 7. LAGS — taxa de nulos em consumo_lag_1h (1ª linha de cada sessão é NULL por design; threshold 1%)
 SELECT
     'gold.dp_energy_market_api_hourly » lag_null_rate » consumo_lag_1h',
     CASE WHEN ROUND(100.0 * SUM(CASE WHEN consumo_lag_1h IS NULL THEN 1 ELSE 0 END)
@@ -108,7 +123,7 @@ FROM iceberg.gold.dp_energy_market_api_hourly
 
 UNION ALL
 
--- 8. LAGS — taxa de nulos em consumo_lag_24h (primeiras 24 horas são NULL)
+-- 8. LAGS — taxa de nulos em consumo_lag_24h (primeiras 24h são NULL; threshold 5% para datasets curtos)
 SELECT
     'gold.dp_energy_market_api_hourly » lag_null_rate » consumo_lag_24h',
     CASE WHEN ROUND(100.0 * SUM(CASE WHEN consumo_lag_24h IS NULL THEN 1 ELSE 0 END)
@@ -123,7 +138,7 @@ FROM iceberg.gold.dp_energy_market_api_hourly
 
 UNION ALL
 
--- 9. INTEGRIDADE — Gold tem o mesmo COUNT que o join Silver×Silver
+-- 9. INTEGRIDADE — Gold deve ter o mesmo COUNT que o INNER JOIN Silver×Silver (tolerância ±5 linhas por possível atraso de ingestão)
 SELECT
     'gold.dp_energy_market_api_hourly » join_integrity » count_vs_silver',
     CASE WHEN gold_count = silver_join_count THEN 'PASS'
@@ -143,7 +158,7 @@ FROM (
 
 UNION ALL
 
--- 10. ML FEATURE TABLE — count deve ser Gold - 1 (última linha sem target)
+-- 10. ML FEATURE TABLE — count deve ser Gold - 24 (target consumo_next_hour requer 24h de lookahead; últimas 24 linhas excluídas)
 SELECT
     'gold.feat_load_forecasting_api_hourly » count » dp_minus_1',
     CASE WHEN ABS(feat_count - (dp_count - 24)) <= 50 THEN 'PASS' ELSE 'WARN' END,
@@ -175,7 +190,10 @@ ORDER BY status DESC, check_name;
 
 
 -- =============================================================================
--- DETALHE: rolling features — verificar valores válidos
+-- DETALHE: estatísticas descritivas da tabela Gold principal
+-- Útil para inspecção rápida de valores médios, cobertura temporal e
+-- presença de nulos nas rolling features (rolling_avg_consumo_24h fica NULL
+-- nas primeiras 24h após cada reinício do pipeline).
 -- =============================================================================
 SELECT
     COUNT(*)                                                                 AS total_linhas,

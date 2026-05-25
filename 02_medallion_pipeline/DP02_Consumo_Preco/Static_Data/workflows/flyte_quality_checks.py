@@ -1,16 +1,16 @@
 """
-Workflow Flyte: gate de qualidade entre camadas — consumo_preco.
+Gate de qualidade entre camadas do pipeline consumo_preco (DP-02 Static).
 
-Executa os checks SQL de qualidade para uma camada e lança excepção
-se existirem verificações com status FAIL. Checks WARN são registados
-mas não bloqueiam a promoção de dados.
+Lê os ficheiros SQL em 04_quality/sql/, executa o bloco UNION ALL de sumário
+via Trino e classifica cada verificação como PASS / WARN / FAIL.
+FAIL bloqueia a promoção; WARN regista aviso mas não bloqueia.
 
-Uso típico no pipeline:
-    1. ingest_bronze        -> quality_gate(layer="bronze")
-    2. bronze_to_silver     -> quality_gate(layer="silver")
-    3. silver_to_gold       -> quality_gate(layer="gold")
+Ordem de execução no pipeline:
+    1. fetch_bronze  -> quality_gate(layer="bronze")
+    2. bronze_to_silver -> quality_gate(layer="silver")
+    3. silver_to_gold   -> quality_gate(layer="gold")
 
-Execução standalone:
+Execução standalone via pyflyte:
     pyflyte run workflows/flyte_quality_checks.py quality_gate_bronze
     pyflyte run workflows/flyte_quality_checks.py quality_gate_silver
     pyflyte run workflows/flyte_quality_checks.py quality_gate_gold
@@ -26,10 +26,8 @@ import trino
 from flytekit import task, workflow, ImageSpec
 from flytekit.exceptions.user import FlyteRecoverableException
 
-# ---------------------------------------------------------------------------
-# ImageSpec — usado apenas em execução REMOTA (Flyte K3s sandbox).
-# Ignorado em modo local (--local-flyte); o processo Python do host é usado.
-# ---------------------------------------------------------------------------
+# ImageSpec só é materializado em execução remota (K3s sandbox).
+# Em modo local (pyflyte run --local) o processo Python do host é usado directamente.
 quality_image = ImageSpec(
     name="dp02_quality",
     registry="localhost:30000",
@@ -39,7 +37,6 @@ quality_image = ImageSpec(
 TRINO_HOST = os.getenv("TRINO_HOST", "host.docker.internal")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
 
-# Ficheiros SQL em 04_quality/sql/ relativo à raiz do sub-pipeline consumo_preco
 _SQL_DIR = Path(__file__).parent.parent / "04_quality" / "sql"
 
 _LAYER_SQL = {
@@ -61,13 +58,11 @@ def _trino_conn() -> trino.dbapi.Connection:
 
 def _run_checks(layer: str) -> list[dict]:
     """
-    Executa o SQL de qualidade para a camada indicada.
+    Executa o bloco UNION ALL de sumário do ficheiro SQL da camada indicada.
 
-    O ficheiro SQL contém um único bloco UNION ALL seguido de queries
-    de detalhe separadas por ';'. Executa apenas o primeiro bloco
-    (sumário de checks com check_name / status / valor_pct / threshold_pct / detalhe).
-
-    Retorna lista de dicts com os resultados de cada verificação.
+    Cada ficheiro SQL contém um bloco principal (sumário com check_name / status /
+    valor_pct / threshold_pct / detalhe) seguido de queries de detalhe separadas
+    por ';'. Só o primeiro bloco é executado aqui.
     """
     sql_path = _LAYER_SQL[layer]
     if not sql_path.exists():
@@ -78,9 +73,9 @@ def _run_checks(layer: str) -> list[dict]:
 
     raw_sql = sql_path.read_text(encoding="utf-8")
 
-    # Extrai apenas o primeiro statement (bloco UNION ALL com ORDER BY final).
-    # Usa versão sem comentários para localizar o ';' real — evita falsos positivos
-    # em linhas de comentário (ex: "-- aceite como extra; threshold de 23").
+    # Strip comments before finding the first ';' — sem este passo, um ';' dentro
+    # de um comentário SQL (ex: "-- threshold de 23; aceite") seria detectado
+    # prematuramente e truncaria o statement de sumário.
     sql_no_comments = re.sub(r"--[^\n]*", "", raw_sql)
     first_semi = sql_no_comments.find(";")
     summary_sql = (sql_no_comments[:first_semi] if first_semi != -1 else sql_no_comments).strip()
@@ -99,12 +94,11 @@ def quality_gate(layer: str) -> int:
     """
     Gate de qualidade para a camada indicada ('bronze', 'silver' ou 'gold').
 
-    Comportamento:
-    - PASS  -> regista no log, não bloqueia.
-    - WARN  -> regista no log com aviso, não bloqueia (dados promovidos com ressalva).
-    - FAIL  -> lança FlyteRecoverableException (com retries=2) — bloqueia promoção.
+    PASS  -> registado no log; não bloqueia.
+    WARN  -> registado como aviso; dados promovidos com ressalva.
+    FAIL  -> lança FlyteRecoverableException; bloqueia promoção (retries=2).
 
-    Retorna o número de checks com status PASS.
+    Retorna o número de checks PASS.
     """
     if layer not in _LAYER_SQL:
         raise ValueError(
@@ -145,9 +139,8 @@ def quality_gate(layer: str) -> int:
     return len(passes)
 
 
-# ---------------------------------------------------------------------------
-# Workflows por camada — execução directa sem passar layer como argumento
-# ---------------------------------------------------------------------------
+# Workflows por camada — permitem execução directa via `pyflyte run` sem
+# precisar de passar o argumento `layer` na linha de comandos.
 
 @workflow
 def quality_gate_bronze() -> int:

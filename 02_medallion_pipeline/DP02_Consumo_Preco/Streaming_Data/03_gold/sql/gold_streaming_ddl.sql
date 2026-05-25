@@ -85,3 +85,62 @@ COMMENT ON TABLE iceberg.gold.feat_load_forecasting_api_hourly IS
 'Feature table Gold para treino de modelos ML de previsão de carga. Inclui variável alvo consumo_next_hour (LEAD 1h). Origem: Energy-Charts API.';
 
 COMMENT ON COLUMN iceberg.gold.feat_load_forecasting_api_hourly.consumo_next_hour IS 'Consumo da hora seguinte (variável alvo para load forecasting). Última linha da série excluída.';
+
+-- -----------------------------------------------------------------------------
+-- Tabela 3: ml_metrics_streaming
+-- Métricas do último run ML (GBR load forecasting sobre dados streaming).
+-- Upstream: preco_consumo_streaming_mlflow_flow.py
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS iceberg.gold.ml_metrics_streaming (
+    run_ts           TIMESTAMP(6) WITH TIME ZONE,  -- timestamp do run MLflow
+    model_name       VARCHAR,                        -- nome do algoritmo
+    n_train          BIGINT,                         -- nº exemplos de treino
+    n_test           BIGINT,                         -- nº exemplos de teste
+    ts_train_start   TIMESTAMP(6) WITH TIME ZONE,   -- início da janela de treino
+    ts_train_end     TIMESTAMP(6) WITH TIME ZONE,   -- fim da janela de treino
+    ts_test_start    TIMESTAMP(6) WITH TIME ZONE,   -- início da janela de teste
+    ts_test_end      TIMESTAMP(6) WITH TIME ZONE,   -- fim da janela de teste
+    mae              DOUBLE,                         -- Mean Absolute Error (MWh)
+    rmse             DOUBLE,                         -- Root Mean Squared Error (MWh)
+    r2               DOUBLE,                         -- R² score
+    mape             DOUBLE,                         -- Mean Absolute Percentage Error (%)
+    n_estimators     INTEGER,                        -- hiperparâmetro GBR
+    max_depth        INTEGER,                        -- hiperparâmetro GBR
+    learning_rate    DOUBLE                          -- hiperparâmetro GBR
+)
+WITH (
+    format = 'PARQUET',
+    location = 's3a://warehouse/gold/ml_metrics_streaming/'
+);
+
+ALTER TABLE iceberg.gold.ml_metrics_streaming
+SET PROPERTIES
+    format_version = 2,
+    object_store_layout_enabled = true;
+
+COMMENT ON TABLE iceberg.gold.ml_metrics_streaming IS
+'Métricas do último treino ML para load forecasting streaming (GBR). Mantém apenas o run mais recente. Fonte: preco_consumo_streaming_mlflow_flow.py.';
+
+-- -----------------------------------------------------------------------------
+-- Tabela 4: ml_feature_importance_streaming
+-- Importância de features do último run ML (streaming).
+-- Upstream: preco_consumo_streaming_mlflow_flow.py
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS iceberg.gold.ml_feature_importance_streaming (
+    run_ts        TIMESTAMP(6) WITH TIME ZONE,  -- timestamp do run MLflow
+    feature_name  VARCHAR,                        -- nome da feature
+    importance    DOUBLE,                         -- importância normalizada [0, 1]
+    rank          INTEGER                         -- posição por importância descendente
+)
+WITH (
+    format = 'PARQUET',
+    location = 's3a://warehouse/gold/ml_feature_importance_streaming/'
+);
+
+ALTER TABLE iceberg.gold.ml_feature_importance_streaming
+SET PROPERTIES
+    format_version = 2,
+    object_store_layout_enabled = true;
+
+COMMENT ON TABLE iceberg.gold.ml_feature_importance_streaming IS
+'Importância de features do último treino ML streaming (GBR). Mantém apenas o run mais recente. Fonte: preco_consumo_streaming_mlflow_flow.py.';

@@ -411,7 +411,7 @@ def main() -> None:
                 "docker", "compose", "-f", str(compose_file),
                 "exec", "-T", "trino", "trino",
             ],
-            input=(stmt + ";").encode("utf-8"),
+            input=(stmt + ";"),
             capture_output=True,
             text=True,
         )

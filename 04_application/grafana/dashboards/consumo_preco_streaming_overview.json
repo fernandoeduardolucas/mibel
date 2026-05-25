@@ -1342,26 +1342,26 @@
 
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-      "description": "Total de exemplos disponíveis na feature store para treino/inferência do modelo de load forecasting.",
+      "description": "Total de amostras utilizadas no treino e teste do modelo (n_train + n_test).",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": { "fixedColor": "blue", "mode": "fixed" },
           "decimals": 0,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [ { "color": "blue", "value": null } ]
           },
-          "unit": "none"
+          "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 61 },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 61 },
       "id": 30,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
-        "justifyMode": "auto",
+        "justifyMode": "center",
         "orientation": "auto",
         "percentChangeColorMode": "standard",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
@@ -1374,17 +1374,63 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 0,
-          "rawSQL": "SELECT COUNT(*) AS value FROM iceberg.gold.feat_load_forecasting_api_hourly WHERE ts_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6))",
+          "rawSQL": "SELECT (n_train + n_test) AS value FROM iceberg.gold.ml_metrics_streaming ORDER BY run_ts DESC LIMIT 1",
           "refId": "A"
         }
       ],
-      "title": "Total Exemplos ML",
+      "title": "Total Amostras ML",
       "type": "stat"
     },
 
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-      "description": "Média do target consumo_next_hour no período. Indica nível base de carga a prever.",
+      "description": "Coeficiente de determinação do modelo — quanto da variância do target é explicada. 1.0 = ajuste perfeito.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 4,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.9 },
+              { "color": "green", "value": 0.95 }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 61 },
+      "id": 31,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 0,
+          "rawSQL": "SELECT r2 AS value FROM iceberg.gold.ml_metrics_streaming ORDER BY run_ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "R² Score",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Mean Absolute Percentage Error — erro médio em percentagem. < 2% = excelente, < 5% = aceitável.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -1392,64 +1438,147 @@
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "red", "value": 5 }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 61 },
+      "id": 32,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 0,
+          "rawSQL": "SELECT mape AS value FROM iceberg.gold.ml_metrics_streaming ORDER BY run_ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "MAPE (%)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Mean Absolute Error em MWh — erro médio absoluto nas previsões de carga horária.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "orange", "mode": "fixed" },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "orange", "value": null } ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 61 },
+      "id": 33,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 0,
+          "rawSQL": "SELECT mae AS value FROM iceberg.gold.ml_metrics_streaming ORDER BY run_ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "MAE (MWh)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Root Mean Squared Error em MWh — penaliza mais os erros grandes. Quanto menor, melhor.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "semi-dark-orange", "mode": "fixed" },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "semi-dark-orange", "value": null } ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 61 },
+      "id": 35,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 0,
+          "rawSQL": "SELECT rmse AS value FROM iceberg.gold.ml_metrics_streaming ORDER BY run_ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "RMSE (MWh)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+      "description": "Intervalo de dados utilizado no último treino (ts_train_start → ts_test_end).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
             "steps": [ { "color": "blue", "value": null } ]
           },
           "unit": "none"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 61 },
-      "id": 31,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.1.0",
-      "targets": [
-        {
-          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-          "format": 0,
-          "rawSQL": "SELECT ROUND(AVG(consumo_next_hour), 2) AS value FROM iceberg.gold.feat_load_forecasting_api_hourly WHERE ts_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6))",
-          "refId": "A"
-        }
-      ],
-      "title": "Target Médio — consumo_next_hour (MWh)",
-      "type": "stat"
-    },
-
-    {
-      "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-      "description": "Registos com target consumo_next_hour nulo. SLO: 0 (exceto última hora da janela temporal, sem valor futuro disponível).",
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "decimals": 0,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "red", "value": 24 }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 61 },
-      "id": 32,
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 61 },
+      "id": 36,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
-        "justifyMode": "auto",
+        "justifyMode": "center",
         "orientation": "auto",
         "percentChangeColorMode": "standard",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
@@ -1462,28 +1591,66 @@
         {
           "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
           "format": 0,
-          "rawSQL": "SELECT SUM(CASE WHEN consumo_next_hour IS NULL THEN 1 ELSE 0 END) AS value FROM iceberg.gold.feat_load_forecasting_api_hourly WHERE ts_utc BETWEEN CAST(from_unixtime($__from / 1000) AS TIMESTAMP(6)) AND CAST(from_unixtime($__to / 1000) AS TIMESTAMP(6))",
+          "rawSQL": "SELECT CONCAT(CAST(CAST(ts_train_start AS DATE) AS VARCHAR), ' → ', CAST(CAST(ts_test_end AS DATE) AS VARCHAR)) AS value FROM iceberg.gold.ml_metrics_streaming ORDER BY run_ts DESC LIMIT 1",
           "refId": "A"
         }
       ],
-      "title": "Nulos no Target (consumo_next_hour)",
+      "title": "Período de Treino",
       "type": "stat"
     },
 
     {
       "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
-      "description": "Metadados do modelo ML que consome esta feature store",
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 61 },
-      "id": 33,
+      "description": "Importância relativa de cada feature no modelo GradientBoostingRegressor (último run).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [ { "color": "green", "value": null } ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "importance" },
+            "properties": [
+              { "id": "unit", "value": "percentunit" },
+              { "id": "decimals", "value": 3 },
+              { "id": "custom.cellOptions", "value": { "mode": "gradient", "type": "gauge" } },
+              { "id": "custom.width", "value": 200 },
+              { "id": "color", "value": { "mode": "continuous-GrYlRd" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "rank" },
+            "properties": [ { "id": "custom.width", "value": 50 } ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 10, "x": 0, "y": 65 },
+      "id": 37,
       "options": {
-        "code": { "language": "plaintext", "showLineNumbers": false, "showMiniMap": false },
-        "content": "**Modelo:** GradientBoostingRegressor\n\n**Target:** `consumo_next_hour`\n\n**R²:** 0.989 &nbsp;|&nbsp; **MAPE:** 1.30%\n\n**Consumer:** MLflow + Flyte\n\n**Grain:** 1 registo/hora UTC &nbsp;|&nbsp; **Chave:** `ts_utc`",
-        "mode": "markdown"
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true
       },
       "pluginVersion": "11.1.0",
-      "title": "Modelo ML — GradientBoostingRegressor",
-      "type": "text"
+      "targets": [
+        {
+          "datasource": { "type": "trino-datasource", "uid": "trino-iceberg" },
+          "format": 0,
+          "rawSQL": "SELECT rank, feature_name, importance FROM iceberg.gold.ml_feature_importance_streaming WHERE run_ts = (SELECT MAX(run_ts) FROM iceberg.gold.ml_feature_importance_streaming) ORDER BY rank ASC",
+          "refId": "A"
+        }
+      ],
+      "title": "Top-10 Feature Importance",
+      "type": "table"
     },
 
     {
@@ -1534,7 +1701,7 @@
           }
         ]
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 65 },
+      "gridPos": { "h": 8, "w": 14, "x": 10, "y": 65 },
       "id": 34,
       "options": {
         "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -1563,5 +1730,5 @@
   "timezone": "utc",
   "title": "DP02 — Consumo e Preço (Streaming)",
   "uid": "dp02-consumo-preco-streaming",
-  "version": 1
+  "version": 2
 }

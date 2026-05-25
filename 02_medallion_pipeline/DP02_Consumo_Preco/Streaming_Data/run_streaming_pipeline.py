@@ -34,6 +34,7 @@ import hashlib
 import logging
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -60,13 +61,15 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 WORKFLOWS: dict[str, tuple[str, str]] = {
-    "bronze_entsoe":  ("flyte_fetch_bronze_api.py",          "fetch_bronze_api"),
-    "bronze_ec":      ("flyte_fetch_bronze_energycharts.py",  "fetch_bronze_energycharts"),
-    "silver_full":    ("flyte_bronze_to_silver.py",           "bronze_to_silver_api_full"),
-    "gold_full":      ("flyte_silver_to_gold.py",             "silver_to_gold_api_full"),
-    "quality_bronze": ("flyte_quality_checks.py",             "quality_gate_bronze_api"),
-    "quality_silver": ("flyte_quality_checks.py",             "quality_gate_silver_api"),
-    "quality_gold":   ("flyte_quality_checks.py",             "quality_gate_gold_api"),
+    "bronze_entsoe":       ("flyte_fetch_bronze_api.py",          "fetch_bronze_api"),
+    "bronze_ec":           ("flyte_fetch_bronze_energycharts.py",  "fetch_bronze_energycharts"),
+    "silver_full":         ("flyte_bronze_to_silver.py",           "bronze_to_silver_api_full"),
+    "silver_incremental":  ("flyte_bronze_to_silver.py",           "bronze_to_silver_api"),
+    "gold_full":           ("flyte_silver_to_gold.py",             "silver_to_gold_api_full"),
+    "gold_incremental":    ("flyte_silver_to_gold.py",             "silver_to_gold_api_incremental"),
+    "quality_bronze":      ("flyte_quality_checks.py",             "quality_gate_bronze_api"),
+    "quality_silver":      ("flyte_quality_checks.py",             "quality_gate_silver_api"),
+    "quality_gold":        ("flyte_quality_checks.py",             "quality_gate_gold_api"),
 }
 
 # ---------------------------------------------------------------------------
@@ -292,6 +295,30 @@ def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Watermark — detecção do último dia já carregado no Bronze
+# ---------------------------------------------------------------------------
+
+def get_bronze_watermark(compose_file: Path) -> date | None:
+    """Retorna MAX(process_date) de bronze.consumo_api_raw, ou None se a tabela estiver vazia."""
+    result = subprocess.run(
+        [
+            "docker", "compose", "-f", str(compose_file),
+            "exec", "-T", "trino", "trino",
+            "--execute",
+            "SELECT CAST(MAX(process_date) AS VARCHAR) FROM iceberg.bronze.consumo_api_raw;",
+        ],
+        text=True, capture_output=True, timeout=30,
+    )
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.strip().splitlines():
+        cleaned = line.strip().strip('"')
+        if re.match(r"\d{4}-\d{2}-\d{2}", cleaned):
+            return date.fromisoformat(cleaned)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # pyflyte runner
 # ---------------------------------------------------------------------------
 
@@ -475,6 +502,7 @@ def main() -> None:
 
     today = date.today()
 
+    watermark_mode = False  # resolvido após Docker+DDL
     if args.start and args.end:
         start_date = date.fromisoformat(args.start)
         end_date   = date.fromisoformat(args.end)
@@ -487,12 +515,14 @@ def main() -> None:
         end_date   = today
         start_date = today - timedelta(days=args.days - 1)
     else:
-        # Default: últimos 12 meses
-        end_date = today
-        try:
-            start_date = today.replace(year=today.year - 1)
-        except ValueError:  # 29 Fev em ano não bissexto
-            start_date = today.replace(year=today.year - 1, day=28)
+        # Modo incremental: watermark resolvido depois de Docker+DDL estarem prontos.
+        # Placeholder — start_date é substituído após a query ao Bronze.
+        watermark_mode = True
+        start_date = date(2022, 1, 1)
+        end_date   = today
+
+    # use_full_rebuild: Silver e Gold fazem DELETE completo + reload histórico
+    use_full_rebuild = args.full or args.clean
 
     start_str = start_date.isoformat()
     end_str   = end_date.isoformat()
@@ -595,6 +625,24 @@ def main() -> None:
         else:
             run_log.info("--skip-ddl: DDL medallion ignorado.")
 
+        # --- Watermark: resolver start_date após DDL (tabela já existe) ---
+        if watermark_mode:
+            watermark = get_bronze_watermark(compose_file)
+            if watermark is None:
+                run_log.info("Primeira execução — histórico completo desde %s", start_date)
+            else:
+                start_date = watermark + timedelta(days=1)
+                start_str  = start_date.isoformat()
+                run_log.info(
+                    "Modo incremental: watermark=%s → start_date=%s", watermark, start_date
+                )
+            if start_date > end_date:
+                run_log.info(
+                    "Dados já atualizados até %s. Nada a processar.", end_date
+                )
+                status = "SUCCESS"
+                return
+
         run_log.info("=" * 60)
         run_log.info("Pipeline Streaming_Data (DP-02 API) - %s -> %s", start_str, end_str)
         run_log.info("=" * 60)
@@ -654,9 +702,21 @@ def main() -> None:
 
         # --- FASE 2: Silver transform ---
         run_log.info("=" * 60)
-        run_log.info("FASE 2 - Silver transform COMPLETO")
-        run_log.info("=" * 60)
-        pyflyte_run_with_retry(venv_python, workflows_dir, *WORKFLOWS["silver_full"], {})
+        if use_full_rebuild:
+            run_log.info("FASE 2 - Silver transform COMPLETO")
+            run_log.info("=" * 60)
+            pyflyte_run_with_retry(venv_python, workflows_dir, *WORKFLOWS["silver_full"], {})
+        else:
+            total_days = (end_date - start_date).days + 1
+            run_log.info("FASE 2 - Silver transform INCREMENTAL (%d dias)", total_days)
+            run_log.info("=" * 60)
+            current = start_date
+            while current <= end_date:
+                pyflyte_run_with_retry(
+                    venv_python, workflows_dir, *WORKFLOWS["silver_incremental"],
+                    {"process_date": current.isoformat()},
+                )
+                current += timedelta(days=1)
 
         rows_silver = (
             get_row_count(compose_file, "iceberg.silver.consumo_api_hourly")
@@ -673,9 +733,17 @@ def main() -> None:
 
         # --- FASE 3: Gold transform ---
         run_log.info("=" * 60)
-        run_log.info("FASE 3 - Gold transform COMPLETO")
-        run_log.info("=" * 60)
-        pyflyte_run_with_retry(venv_python, workflows_dir, *WORKFLOWS["gold_full"], {})
+        if use_full_rebuild:
+            run_log.info("FASE 3 - Gold transform COMPLETO")
+            run_log.info("=" * 60)
+            pyflyte_run_with_retry(venv_python, workflows_dir, *WORKFLOWS["gold_full"], {})
+        else:
+            run_log.info("FASE 3 - Gold transform INCREMENTAL (janela desde %s)", start_date)
+            run_log.info("=" * 60)
+            pyflyte_run_with_retry(
+                venv_python, workflows_dir, *WORKFLOWS["gold_incremental"],
+                {"since_date": start_str},
+            )
 
         rows_gold = get_row_count(compose_file, "iceberg.gold.dp_energy_market_api_hourly")
         run_log.info("Gold produzido: %d linhas em dp_energy_market_api_hourly", rows_gold)

@@ -42,17 +42,21 @@ Service URLs:
 - **Grafana**: <http://localhost:3300> (admin/admin)
 - **Hive Metastore (Thrift)**: `thrift://localhost:9083`
 
-### Flyte Sandbox (External Orchestration — v1.3)
+### Flyte Local Cluster (External Orchestration — v1.3)
 
-Flyte runs as a **separate container outside Docker Compose**, with its own internal Kubernetes (K3s). It cannot join the Compose network directly.
+Flyte runs as a **local cluster managed by `flytectl demo`**, with its own internal Kubernetes (K3s). It cannot join the Compose network directly.
 
-Install and start a local Flyte cluster via `flytectl`:
+Install `flytectl`, then the orchestrator handles the rest automatically:
 
 ```bash
-# Follow: https://docs-legacy.flyte.org/en/v1.13.3/getting_started_with_workflow_development/running_a_workflow_locally.html
-flytectl demo start   # waits several minutes for Helm + K3s startup
+# Install flytectl: https://docs-legacy.flyte.org/en/v1.13.3/getting_started_with_workflow_development/running_a_workflow_locally.html
+# The orchestrator (run_medallion_consumo_precos.py) will:
+#   1. docker build -t mibel-flyte:latest 01_docker_stack/flyte/
+#   2. flytectl demo start --image mibel-flyte:latest
 # UI available at http://localhost:30080
 ```
+
+> **Why a custom image?** `flytectl demo start` defaults to a SHA-tagged image from `cr.flyte.org` that may not be available. The custom image (`01_docker_stack/flyte/Dockerfile`) is based on the stable `ghcr.io/flyteorg/flyte-sandbox:latest` with patches for offline Helm charts, extended timeouts, and storage redirect to the Compose MinIO.
 
 **Connecting Flyte tasks to Compose services** — Flyte task pods are isolated from Compose. Use `host.docker.internal` as the hostname:
 
@@ -71,20 +75,20 @@ AWS_ACCESS_KEY_ID=minioadmin
 AWS_SECRET_ACCESS_KEY=minioadmin
 ```
 
-> On Linux, start the Flyte sandbox with `--add-host host.docker.internal:host-gateway`. On Windows/macOS (Docker Desktop) this works out of the box.
+> On Linux you may need `--add-host host.docker.internal:host-gateway`. On Windows/macOS (Docker Desktop) this works out of the box.
 
-Flyte config files: `01_docker_stack/flyte/Dockerfile` + `flyte-core-overrides.yaml`.
+Flyte config files: `01_docker_stack/flyte/Dockerfile` + `flyte-core-overrides.yaml` (storage override to Compose MinIO).
 
 **Flyte execution model** — Two modes depending on the data product:
 
 | DP | Flyte mode | Notes |
 | --- | --- | --- |
 | DP-01 | Local | Monolithic `flyte_workflow.py`; tasks run in local Python process |
-| DP-02 Static | **Remote** | Modular `workflows/` (one file per layer); tasks run in K3s pods; sandbox managed by `run_medallion_consumo_precos.py` |
+| DP-02 Static | **Remote** | Modular `workflows/` (one file per layer); tasks run in K3s pods; cluster managed by `run_medallion_consumo_precos.py` |
 | DP-02 Streaming | Local | Tasks run in local Python process |
 | DP-03 | None | Orchestrated directly by run script (no Flyte) |
 
-**DP-02 Static remote execution** — The orchestrator auto-starts the sandbox if not running (builds `mibel-flyte:latest` from `01_docker_stack/flyte/Dockerfile`, then `docker run --privileged`). Tasks in K3s pods connect to Trino/MinIO via `host.docker.internal`. Fast registration (`--copy all`) uploads local code (including `04_quality/sql/`) to MinIO `flyte/` bucket. A `.flyteignore` at `Static_Data/` excludes raw CSVs from the upload. Flyte config: `workflows/flyte-config.yaml`.
+**DP-02 Static remote execution** — The orchestrator builds `mibel-flyte:latest` and auto-starts the cluster via `flytectl demo start --image mibel-flyte:latest` if not running. Tasks in K3s pods connect to Trino/MinIO via `host.docker.internal`. Fast registration (`--copy all`) uploads local code (including `04_quality/sql/`) to MinIO `flyte/` bucket. A `.flyteignore` at `Static_Data/` excludes raw CSVs from the upload. Flyte config: `workflows/flyte-config.yaml`.
 
 ## Data Pipeline Commands
 

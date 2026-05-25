@@ -1,14 +1,16 @@
-# Configuração Flyte para execução remota no sandbox local (K3s).
+# Configuração Flyte para execução remota no cluster local (flytectl demo).
 # Usado pelo orquestrador run_medallion_consumo_precos.py com:
 #   pyflyte run --remote --config workflows/flyte-config.yaml ...
 #
-# Pré-requisito: sandbox Flyte a correr em localhost:30080
-#   docker build -t mibel-flyte:latest 01_docker_stack/flyte/
-#   docker run --privileged -d --name mibel-flyte-sandbox \
-#     -p 30080:30080 -p 30000:30000 mibel-flyte:latest
+# Pré-requisito: cluster Flyte a correr em localhost:30080
+#   flytectl demo start --image mibel-flyte:latest
+#
+# A imagem customizada (01_docker_stack/flyte/Dockerfile) redireciona o
+# armazenamento interno do Flyte para o MinIO do Compose via host.docker.internal:9000.
+# O host (pyflyte) faz upload para o mesmo MinIO em localhost:9000.
 
 admin:
-  # Endpoint do Flyte control plane (sandbox K3s)
+  # Endpoint do Flyte control plane (flytectl demo K3s)
   endpoint: localhost:30080
   authType: Pkce
   insecure: true

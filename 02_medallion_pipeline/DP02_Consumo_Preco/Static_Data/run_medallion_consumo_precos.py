@@ -7,33 +7,36 @@ Fontes de dados:
   - Preços:  Day-ahead Market Prices_*.csv (OMIE, granularidade horária)
 
 Modo de execução:
-  Os workflows Flyte correm em modo REMOTO no sandbox Flyte (K3s).
-  O sandbox é iniciado automaticamente se não estiver a correr.
-  Os tasks nos pods K3s ligam ao Trino e MinIO via host.docker.internal.
+  Os workflows Flyte correm em modo REMOTO no cluster local Flyte (flytectl demo).
+  O cluster é iniciado automaticamente via 'flytectl demo start' se não estiver a correr.
+  Os tasks nos pods K3s ligam ao Trino e MinIO do Compose via host.docker.internal.
 
   O DP-02 Streaming (run_streaming_pipeline.py) usa execução LOCAL Flyte.
 
+Pré-requisito externo:
+  flytectl deve estar instalado e acessível no PATH.
+  Instruções: https://docs-legacy.flyte.org/en/v1.13.3/getting_started_with_workflow_development/running_a_workflow_locally.html
+
 Fluxo padrão (sem parâmetros, equivalente a --full):
-  1. Verifica pré-requisitos (Docker, Python)
+  1. Verifica pré-requisitos (Docker, Python, flytectl)
   2. Sobe stack Docker Compose (se não estiver a correr)
   3. Espera Trino disponível
-  4. Verifica/arranca sandbox Flyte (mibel-flyte-sandbox)
-  5. Aguarda sandbox ficar disponível (~3-5 min na 1ª vez)
-  6. Cria/instala venv local com dependências Flyte
-  7. Aplica DDL via Trino CLI (cria schemas e tabelas Iceberg se não existirem)
-  8. Faz upload dos CSVs raw para MinIO (warehouse/raw/)
-  9. Executa ingestão Bronze COMPLETA via Flyte Remoto
- 10. Quality gate Bronze (remoto)
- 11. Executa transformação Silver COMPLETA via Flyte Remoto
- 12. Quality gate Silver (remoto)
- 13. Executa transformação Gold COMPLETA via Flyte Remoto
- 14. Quality gate Gold (remoto)
- 15. Validação final: COUNT e intervalo das tabelas Gold
+  4. Verifica/arranca cluster Flyte via 'flytectl demo start' (~3-10 min na 1ª vez)
+  5. Cria/instala venv local com dependências Flyte
+  6. Aplica DDL via Trino CLI (cria schemas e tabelas Iceberg se não existirem)
+  7. Faz upload dos CSVs raw para MinIO (warehouse/raw/)
+  8. Executa ingestão Bronze COMPLETA via Flyte Remoto
+  9. Quality gate Bronze (remoto)
+ 10. Executa transformação Silver COMPLETA via Flyte Remoto
+ 11. Quality gate Silver (remoto)
+ 12. Executa transformação Gold COMPLETA via Flyte Remoto
+ 13. Quality gate Gold (remoto)
+ 14. Validação final: COUNT e intervalo das tabelas Gold
 
-Execução rápida (stack + sandbox já a correr, DDL já aplicado):
+Execução rápida (stack + cluster Flyte já a correr, DDL já aplicado):
     python run_medallion_consumo_precos.py --skip-docker --skip-ddl --skip-flyte
 
-Execução completa (inclui Docker, Flyte sandbox e DDL):
+Execução completa (inclui Docker, Flyte e DDL):
     python run_medallion_consumo_precos.py
 
 Execução de um mês específico:
@@ -43,7 +46,7 @@ Flags úteis:
     --skip-docker    não faz compose up (stack já a correr)
     --skip-ddl       não reaplicar o DDL (tabelas já criadas)
     --skip-upload    não re-faz upload dos CSVs para MinIO
-    --skip-flyte     não verifica/arranca o sandbox Flyte (já a correr externamente)
+    --skip-flyte     não verifica/arranca o cluster Flyte (já a correr externamente)
     --build          faz --build no compose up
     --no-quality     salta os quality gates (útil em dev)
 
@@ -66,11 +69,10 @@ from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
-# Constantes — Flyte sandbox
+# Constantes — Flyte demo cluster (flytectl + imagem customizada)
 # ---------------------------------------------------------------------------
 
 FLYTE_SANDBOX_IMAGE = "mibel-flyte:latest"
-FLYTE_SANDBOX_NAME  = "mibel-flyte-sandbox"
 FLYTE_SANDBOX_URL   = "http://localhost:30080"
 
 FLYTE_PROJECT = "flytesnacks"
@@ -182,84 +184,77 @@ def wait_for_trino(compose_file: Path, attempts: int = 30, sleep_seconds: int = 
 
 
 # ---------------------------------------------------------------------------
-# Flyte sandbox helpers
+# Flyte demo helpers (flytectl + imagem customizada)
 # ---------------------------------------------------------------------------
 
-def flyte_sandbox_running() -> bool:
-    """Verifica se o container do sandbox Flyte está em execução."""
-    result = subprocess.run(
-        ["docker", "ps", "--filter", f"name={FLYTE_SANDBOX_NAME}", "--format", "{{.Names}}"],
-        text=True, capture_output=True,
-    )
-    return FLYTE_SANDBOX_NAME in result.stdout
+def flytectl_installed() -> bool:
+    return shutil.which("flytectl") is not None
+
+
+def flyte_demo_running() -> bool:
+    """Verifica se o cluster flytectl demo responde ao health endpoint."""
+    try:
+        with urllib.request.urlopen(f"{FLYTE_SANDBOX_URL}/healthz", timeout=3) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
 
 
 def build_flyte_image(docker_root: Path) -> None:
     """Constrói a imagem customizada do sandbox Flyte."""
     flyte_dir = docker_root / "flyte"
-    must_exist(flyte_dir, "directório 01_docker_stack/flyte/ (Dockerfile do sandbox)")
-    print(f"\n>>> A construir imagem Flyte sandbox: {FLYTE_SANDBOX_IMAGE}")
+    must_exist(flyte_dir, "directório 01_docker_stack/flyte/")
+    print(f"\n>>> A construir imagem Flyte: {FLYTE_SANDBOX_IMAGE}")
     run(["docker", "build", "-t", FLYTE_SANDBOX_IMAGE, str(flyte_dir)])
-
-
-def start_flyte_sandbox() -> None:
-    """Arranca o container do sandbox Flyte em modo privilegiado."""
-    # Remove container parado com o mesmo nome (se existir)
-    subprocess.run(
-        ["docker", "rm", "-f", FLYTE_SANDBOX_NAME],
-        text=True, capture_output=True,
-    )
-    print(f"\n>>> A arrancar sandbox Flyte: {FLYTE_SANDBOX_NAME}")
-    run([
-        "docker", "run", "--privileged", "-d",
-        "--name", FLYTE_SANDBOX_NAME,
-        "--add-host", "host.docker.internal:host-gateway",
-        "-p", "30080:30080",
-        "-p", "30000:30000",
-        FLYTE_SANDBOX_IMAGE,
-    ])
-    print(
-        f">>> Sandbox iniciado. UI disponível (após arranque) em: {FLYTE_SANDBOX_URL}\n"
-        ">>> A aguardar K3s + Helm (3-10 min na 1ª vez) ..."
-    )
 
 
 def wait_for_flyte_sandbox(attempts: int = 72, sleep_seconds: int = 10) -> None:
     """
-    Aguarda o sandbox Flyte ficar disponível.
+    Aguarda o cluster Flyte ficar disponível após 'flytectl demo start'.
     Default: 72 tentativas × 10 s = 12 min máximo.
-    Na 1ª inicialização pode demorar 3-10 min (K3s + Helm chart).
     """
     health_url = f"{FLYTE_SANDBOX_URL}/healthz"
     for attempt in range(1, attempts + 1):
-        print(f"\n>>> Flyte sandbox disponível? ({attempt}/{attempts})")
+        print(f"\n>>> Flyte demo disponível? ({attempt}/{attempts})")
         try:
             with urllib.request.urlopen(health_url, timeout=5) as resp:
                 if resp.status == 200:
-                    print(f">>> Flyte sandbox OK — UI: {FLYTE_SANDBOX_URL}")
+                    print(f">>> Flyte demo OK — UI: {FLYTE_SANDBOX_URL}")
                     return
         except Exception:
             pass
         time.sleep(sleep_seconds)
     raise SystemExit(
-        f"Erro: Flyte sandbox não ficou disponível em {attempts * sleep_seconds}s.\n"
-        f"Verifica os logs: docker logs {FLYTE_SANDBOX_NAME}"
+        f"Erro: Flyte demo não ficou disponível em {attempts * sleep_seconds}s.\n"
+        "Verifica: flytectl demo status"
     )
 
 
-def ensure_flyte_sandbox(docker_root: Path) -> None:
+def ensure_flyte_demo(docker_root: Path) -> None:
     """
-    Garante que o sandbox Flyte está a correr.
-    Constrói a imagem e arranca o container se necessário.
+    Garante que o cluster Flyte local (flytectl demo) está a correr.
+    Constrói a imagem customizada e usa 'flytectl demo start --image' para evitar
+    depender de imagens remotas cuja SHA pode não estar disponível no registry.
     """
-    if flyte_sandbox_running():
-        print(f"\n>>> Flyte sandbox já a correr: {FLYTE_SANDBOX_NAME}")
+    if not flytectl_installed():
+        raise SystemExit(
+            "Erro: 'flytectl' não encontrado no PATH.\n"
+            "Instala em: https://docs-legacy.flyte.org/en/v1.13.3/"
+            "getting_started_with_workflow_development/running_a_workflow_locally.html"
+        )
+
+    if flyte_demo_running():
+        print(f"\n>>> Flyte demo cluster já a correr: {FLYTE_SANDBOX_URL}")
         return
 
-    print("\n>>> Sandbox Flyte não encontrado. A preparar...")
+    print("\n>>> Cluster Flyte não encontrado. A preparar...")
     build_flyte_image(docker_root)
-    start_flyte_sandbox()
-    wait_for_flyte_sandbox()
+    print(f"\n>>> A arrancar cluster Flyte via 'flytectl demo start --image {FLYTE_SANDBOX_IMAGE}'...")
+    print(">>> (Pode demorar 3-10 min na 1ª vez — K3s + Helm)")
+    run(["flytectl", "demo", "start", "--image", FLYTE_SANDBOX_IMAGE])
+    # flytectl demo start blocks until ready; health check as safety net
+    if not flyte_demo_running():
+        wait_for_flyte_sandbox()
 
 
 # ---------------------------------------------------------------------------
@@ -413,9 +408,9 @@ def main() -> None:
     parser.add_argument("--skip-ddl",     action="store_true", help="salta a aplicação de DDL")
     parser.add_argument("--skip-upload",  action="store_true", help="salta upload dos CSVs para MinIO")
     parser.add_argument("--skip-flyte",   action="store_true",
-                        help="salta verificação/arranque do sandbox Flyte (já a correr externamente)")
+                        help="salta verificação/arranque do cluster Flyte (já a correr: flytectl demo start)")
     parser.add_argument("--local-flyte",  action="store_true",
-                        help="executa os workflows Flyte localmente (sem sandbox K3s); implica --skip-flyte")
+                        help="executa os workflows Flyte localmente (sem cluster K3s); implica --skip-flyte")
     parser.add_argument("--no-quality",   action="store_true", help="salta os quality gates")
     args = parser.parse_args()
 
@@ -483,17 +478,17 @@ def main() -> None:
     else:
         print("\n>>> --skip-docker: compose up ignorado.")
 
-    # --- Flyte sandbox ---
+    # --- Flyte demo cluster ---
     local_flyte = args.local_flyte
     if local_flyte:
-        print("\n>>> --local-flyte: workflows Flyte executados localmente (sem sandbox K3s).")
+        print("\n>>> --local-flyte: workflows Flyte executados localmente (sem cluster K3s).")
     elif not args.skip_flyte:
         print("\n" + "=" * 60)
-        print("FASE PRÉ — Sandbox Flyte (K3s remoto)")
+        print("FASE PRÉ — Cluster Flyte local (flytectl demo)")
         print("=" * 60)
-        ensure_flyte_sandbox(docker_root)
+        ensure_flyte_demo(docker_root)
     else:
-        print(f"\n>>> --skip-flyte: assumindo sandbox '{FLYTE_SANDBOX_NAME}' já a correr.")
+        print(f"\n>>> --skip-flyte: assumindo cluster Flyte já a correr em {FLYTE_SANDBOX_URL}.")
 
     # --- DDL (idempotente: IF NOT EXISTS) ---
     if not args.skip_ddl:

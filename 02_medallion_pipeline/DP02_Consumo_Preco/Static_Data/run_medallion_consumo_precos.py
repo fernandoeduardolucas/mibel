@@ -119,6 +119,28 @@ def run(
         )
 
 
+def run_with_retry(
+    cmd: list[str],
+    *,
+    max_attempts: int = 3,
+    delay: int = 5,
+    **kwargs,
+) -> None:
+    for attempt in range(1, max_attempts + 1):
+        try:
+            run(cmd, **kwargs)
+            return
+        except subprocess.CalledProcessError as exc:
+            if attempt == max_attempts:
+                raise
+            print(
+                f"[AVISO] Tentativa {attempt}/{max_attempts} falhou (exit {exc.returncode}). "
+                f"A repetir em {delay}s...",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+
+
 def must_exist(path: Path, description: str) -> None:
     if not path.exists():
         raise SystemExit(f"Erro: {description} não encontrado em: {path}")
@@ -281,18 +303,101 @@ def create_local_venv(pipeline_root: Path, base_python: str) -> Path:
 def apply_ddl(compose_file: Path, sql_file: Path, stage_name: str) -> None:
     print(f"\n>>> DDL {stage_name}: {sql_file.name}")
     sql_text = sql_file.read_text(encoding="utf-8")
-    sql_clean = re.sub(r'--[^\n]*', '', sql_text)
+    sql_clean = re.sub(r"--[^\n]*", "", sql_text)
     statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
-    for stmt in statements:
-        subprocess.run(
-            [
-                "docker", "compose", "-f", str(compose_file),
-                "exec", "-T", "trino", "trino",
-            ],
+    for i, stmt in enumerate(statements, 1):
+        result = subprocess.run(
+            ["docker", "compose", "-f", str(compose_file), "exec", "-T", "trino", "trino"],
             input=(stmt + ";").encode("utf-8"),
             capture_output=True,
         )
-    print(f"    DDL {stage_name} aplicado.")
+        if result.returncode != 0:
+            stderr = result.stderr.decode("utf-8", errors="replace").strip()
+            stdout = result.stdout.decode("utf-8", errors="replace").strip()
+            preview = (stmt[:120] + "...") if len(stmt) > 120 else stmt
+            raise SystemExit(
+                f"\nDDL {stage_name} falhou no statement {i}:\n"
+                f"  SQL: {preview}\n"
+                f"  STDOUT: {stdout}\n"
+                f"  STDERR: {stderr}"
+            )
+    print(f"    DDL {stage_name} aplicado ({len(statements)} statements).")
+
+
+def trino_execute(compose_file: Path, sql: str, *, max_attempts: int = 3) -> None:
+    cmd = [
+        "docker", "compose", "-f", str(compose_file),
+        "exec", "-T", "trino", "trino",
+    ]
+    for attempt in range(1, max_attempts + 1):
+        result = subprocess.run(cmd, input=sql.encode("utf-8"), capture_output=True)
+        if result.stdout:
+            print(result.stdout.decode("utf-8", errors="replace"))
+        if result.returncode == 0:
+            return
+        if attempt < max_attempts:
+            print(
+                f"[AVISO] Tentativa {attempt}/{max_attempts} falhou. A repetir em 5s...",
+                file=sys.stderr,
+            )
+            if result.stderr:
+                print(result.stderr.decode("utf-8", errors="replace"), file=sys.stderr)
+            time.sleep(5)
+        else:
+            if result.stderr:
+                print(result.stderr.decode("utf-8", errors="replace"), file=sys.stderr)
+            raise subprocess.CalledProcessError(result.returncode, cmd)
+
+
+def run_quality_checks(compose_file: Path, sql_file: Path, layer_name: str) -> None:
+    print(f"\n>>> Quality gate — {layer_name}: {sql_file.name}")
+    sql_text = sql_file.read_text(encoding="utf-8")
+    sql_clean = re.sub(r"--[^\n]*", "", sql_text)
+    statements = [s.strip() for s in sql_clean.split(";") if s.strip()]
+    if not statements:
+        print(f"    [AVISO] Nenhum statement encontrado em {sql_file.name}.")
+        return
+
+    check_sql = statements[0] + ";"
+    cmd = [
+        "docker", "compose", "-f", str(compose_file),
+        "exec", "-T", "trino", "trino",
+        "--output-format", "TSV_HEADER",
+        "--execute", check_sql,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(
+            f"Quality gate {layer_name} falhou ao executar checks:\n{result.stderr.strip()}"
+        )
+
+    lines = result.stdout.strip().splitlines()
+    if len(lines) < 2:
+        print(f"    [AVISO] Quality gate {layer_name}: sem resultados.")
+        return
+
+    fail_checks, warn_checks, pass_checks = [], [], []
+    for line in lines[1:]:
+        cols = line.split("\t")
+        status = cols[1].strip() if len(cols) > 1 else "?"
+        if status == "FAIL":
+            fail_checks.append(line)
+        elif status == "WARN":
+            warn_checks.append(line)
+        else:
+            pass_checks.append(line)
+
+    print(f"\n    PASS: {len(pass_checks)}  WARN: {len(warn_checks)}  FAIL: {len(fail_checks)}")
+    for line in warn_checks:
+        print(f"    [WARN] {line.split(chr(9))[0]} — {line.split(chr(9))[-1]}")
+    for line in fail_checks:
+        print(f"    [FAIL] {line.split(chr(9))[0]} — {line.split(chr(9))[-1]}")
+
+    if fail_checks:
+        raise SystemExit(
+            f"\nQuality gate {layer_name} bloqueado: {len(fail_checks)} check(s) em FAIL."
+        )
+    print(f"    Quality gate {layer_name} OK.")
 
 
 # ---------------------------------------------------------------------------
@@ -538,9 +643,9 @@ def main() -> None:
 
         if not args.no_quality:
             print("\n" + "=" * 60)
-            print("QUALITY GATE — Bronze [remoto]")
+            print("QUALITY GATE — Bronze")
             print("=" * 60)
-            remote_run("flyte_quality_checks.py", "quality_gate_bronze")
+            run_quality_checks(compose_file, pipeline_root / "04_quality" / "sql" / "01_bronze_checks.sql", "Bronze")
 
         print("\n" + "=" * 60)
         print("FASE 2 — Silver transform COMPLETO (todo o período Bronze)")
@@ -550,9 +655,9 @@ def main() -> None:
 
         if not args.no_quality:
             print("\n" + "=" * 60)
-            print("QUALITY GATE — Silver [remoto]")
+            print("QUALITY GATE — Silver")
             print("=" * 60)
-            remote_run("flyte_quality_checks.py", "quality_gate_silver")
+            run_quality_checks(compose_file, pipeline_root / "04_quality" / "sql" / "02_silver_checks.sql", "Silver")
 
         print("\n" + "=" * 60)
         print("FASE 3 — Gold transform COMPLETO (todo o período Silver)")
@@ -562,9 +667,9 @@ def main() -> None:
 
         if not args.no_quality:
             print("\n" + "=" * 60)
-            print("QUALITY GATE — Gold [remoto]")
+            print("QUALITY GATE — Gold")
             print("=" * 60)
-            remote_run("flyte_quality_checks.py", "quality_gate_gold")
+            run_quality_checks(compose_file, pipeline_root / "04_quality" / "sql" / "03_gold_checks.sql", "Gold")
 
         # --- Validação final ---
         print("\n" + "=" * 60)
@@ -579,14 +684,7 @@ def main() -> None:
             "CAST(MIN(ts_utc) AS VARCHAR), CAST(MAX(ts_utc) AS VARCHAR) "
             "FROM iceberg.gold.feat_load_forecasting_hourly;"
         )
-        subprocess.run(
-            [
-                "docker", "compose", "-f", str(compose_file),
-                "exec", "-T", "trino", "trino",
-                "--execute", validation_sql,
-            ],
-            text=True,
-        )
+        trino_execute(compose_file, validation_sql)
 
         print(f"\n{'=' * 60}")
         print("Pipeline Medallion consumo_preco (DP-02) concluída com sucesso!")
@@ -613,9 +711,9 @@ def main() -> None:
 
     if not args.no_quality:
         print("\n" + "=" * 60)
-        print("QUALITY GATE — Bronze [remoto]")
+        print("QUALITY GATE — Bronze")
         print("=" * 60)
-        remote_run("flyte_quality_checks.py", "quality_gate_bronze")
+        run_quality_checks(compose_file, pipeline_root / "04_quality" / "sql" / "01_bronze_checks.sql", "Bronze")
 
     print("\n" + "=" * 60)
     print(f"FASE 2 — Silver transform  (process_date={process_date}) [remoto]")
@@ -625,9 +723,9 @@ def main() -> None:
 
     if not args.no_quality:
         print("\n" + "=" * 60)
-        print("QUALITY GATE — Silver [remoto]")
+        print("QUALITY GATE — Silver")
         print("=" * 60)
-        remote_run("flyte_quality_checks.py", "quality_gate_silver")
+        run_quality_checks(compose_file, pipeline_root / "04_quality" / "sql" / "02_silver_checks.sql", "Silver")
 
     print("\n" + "=" * 60)
     print("FASE 3 — Gold transform COMPLETO (window functions requerem histórico completo)")
@@ -637,9 +735,9 @@ def main() -> None:
 
     if not args.no_quality:
         print("\n" + "=" * 60)
-        print("QUALITY GATE — Gold [remoto]")
+        print("QUALITY GATE — Gold")
         print("=" * 60)
-        remote_run("flyte_quality_checks.py", "quality_gate_gold")
+        run_quality_checks(compose_file, pipeline_root / "04_quality" / "sql" / "03_gold_checks.sql", "Gold")
 
     # --- Validação final ---
     print("\n" + "=" * 60)
@@ -654,14 +752,7 @@ def main() -> None:
         f"FROM iceberg.gold.feat_load_forecasting_hourly "
         f"WHERE year = {year} AND month = {month};"
     )
-    subprocess.run(
-        [
-            "docker", "compose", "-f", str(compose_file),
-            "exec", "-T", "trino", "trino",
-            "--execute", validation_sql,
-        ],
-        text=True,
-    )
+    trino_execute(compose_file, validation_sql)
 
     print(f"\n{'=' * 60}")
     print("Pipeline Medallion consumo_preco (DP-02) concluída com sucesso!")

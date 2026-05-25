@@ -369,10 +369,10 @@ def pyflyte_run(
     """
     cmd = [
         str(venv_python), "-m", "flytekit.clis.sdk_in_container.pyflyte",
+        "--config", str(flyte_config),
         "run",
         "--remote",
         "--copy", "all",
-        "--config", str(flyte_config),
         "--project", FLYTE_PROJECT,
         "--domain", FLYTE_DOMAIN,
         workflow_file,

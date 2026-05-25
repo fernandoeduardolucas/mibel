@@ -13,6 +13,17 @@ RUN grep -rl -- "--timeout" /usr/local/bin/ 2>/dev/null \
     | xargs sed -i 's/--timeout [0-9]*m[0-9]*s/--timeout 30m0s/g' \
     || true
 
+# Remove dependencies whose Helm repos no longer exist (kubernetes/dashboard and
+# spark-on-k8s-operator both return 404). They are disabled in the sandbox by
+# default (condition flags are false) so removing them has no functional impact.
+# Keep only flyte-core (file://) and contour (bitnami, still alive).
+COPY flyte-Chart.yaml /flyteorg/share/flyte/Chart.yaml
+
+# Pre-register the bitnami repo and vendor all remaining dependencies so that
+# helm upgrade never needs to reach the internet at container startup.
+RUN helm repo add bitnami https://charts.bitnami.com/bitnami \
+    && helm dep update /flyteorg/share/flyte
+
 # Helm value overrides: point Flyte artifact storage at the Compose MinIO
 # instead of the sandbox's internal MinIO.
 COPY flyte-core-overrides.yaml /etc/flyte/state/flyte-core-overrides.yaml

@@ -177,14 +177,19 @@ def ensure_docker_engine_running() -> None:
     raise SystemExit("Erro: Docker Engine não está a correr. Arranca o Docker e repete.")
 
 
-def wait_for_trino(compose_file: Path, attempts: int = 30, sleep_seconds: int = 2) -> None:
+def wait_for_trino(compose_file: Path, attempts: int = 40, sleep_seconds: int = 3) -> None:
+    import urllib.request
+    import urllib.error
+
     base_cmd = [
         "docker", "compose", "-f", str(compose_file),
         "exec", "-T", "trino", "trino",
     ]
+
+    # Fase 1: aguardar que o Trino CLI (via docker exec) responda — confirma o processo interno
     trino_ready = False
     for attempt in range(1, attempts + 1):
-        log.info("Trino disponível? (%d/%d)", attempt, attempts)
+        log.info("Trino CLI disponível? (%d/%d)", attempt, attempts)
         result = subprocess.run(
             base_cmd + ["--execute", "SELECT 1;"],
             text=True, capture_output=True, timeout=10,
@@ -196,7 +201,32 @@ def wait_for_trino(compose_file: Path, attempts: int = 30, sleep_seconds: int = 
     if not trino_ready:
         raise SystemExit("Erro: Trino não ficou disponível dentro do tempo esperado.")
 
-    # Verificar que o catálogo iceberg está funcional (depende de Hive Metastore + MinIO)
+    # Fase 2: aguardar que o endpoint HTTP localhost:8080 responda sem SERVER_STARTING_UP
+    # O cliente Python trino usa HTTP direto — é necessário verificar separadamente.
+    http_ready = False
+    for attempt in range(1, attempts + 1):
+        log.info("Trino HTTP (localhost:8080) disponível? (%d/%d)", attempt, attempts)
+        try:
+            req = urllib.request.Request(
+                "http://localhost:8080/v1/info",
+                headers={"X-Trino-User": "admin"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                import json as _json
+                info = _json.loads(resp.read())
+                if info.get("starting") is False:
+                    http_ready = True
+                    break
+                log.info("Trino ainda a inicializar (starting=true) — a aguardar...")
+        except Exception:
+            pass
+        time.sleep(sleep_seconds)
+    if not http_ready:
+        raise SystemExit(
+            "Erro: Trino HTTP (localhost:8080) não ficou disponível dentro do tempo esperado."
+        )
+
+    # Fase 3: verificar que o catálogo iceberg está funcional (depende de Hive Metastore + MinIO)
     result = subprocess.run(
         base_cmd + ["--execute", "SHOW SCHEMAS FROM iceberg;"],
         text=True, capture_output=True, timeout=30,
@@ -604,9 +634,11 @@ def main() -> None:
             if args.build:
                 compose_up.append("--build")
             run(compose_up, timeout=300)
-            wait_for_trino(compose_file)
         else:
             run_log.info("--skip-docker: compose up ignorado.")
+        # Sempre verificar que Trino está pronto (HTTP + iceberg), mesmo com --skip-docker.
+        # O cliente Python trino usa HTTP direto — pode falhar se Trino ainda estiver a inicializar.
+        wait_for_trino(compose_file)
 
         # --- Cleanup (opcional) ---
         if args.clean:

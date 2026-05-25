@@ -359,25 +359,34 @@ def pyflyte_run(
     workflow_name: str,
     params: dict[str, str],
     flyte_config: Path,
+    local: bool = False,
 ) -> None:
     """
-    Invoca pyflyte run em modo remoto (Flyte K3s sandbox).
+    Invoca pyflyte run em modo remoto (Flyte K3s sandbox) ou local.
 
-    Usa --copy all para copiar os ficheiros locais (incluindo SQL de qualidade)
-    para o MinIO e disponibilizá-los nos pods K3s.
+    local=True: executa as tasks no processo Python local (sem sandbox K3s).
+    local=False: usa --remote --copy all para submeter ao sandbox.
     O cwd é pipeline_root para que 04_quality/sql/ seja incluído no tarball.
     """
-    cmd = [
-        str(venv_python), "-m", "flytekit.clis.sdk_in_container.pyflyte",
-        "--config", str(flyte_config),
-        "run",
-        "--remote",
-        "--copy", "all",
-        "--project", FLYTE_PROJECT,
-        "--domain", FLYTE_DOMAIN,
-        workflow_file,
-        workflow_name,
-    ]
+    if local:
+        cmd = [
+            str(venv_python), "-m", "flytekit.clis.sdk_in_container.pyflyte",
+            "run",
+            workflow_file,
+            workflow_name,
+        ]
+    else:
+        cmd = [
+            str(venv_python), "-m", "flytekit.clis.sdk_in_container.pyflyte",
+            "--config", str(flyte_config),
+            "run",
+            "--remote",
+            "--copy", "all",
+            "--project", FLYTE_PROJECT,
+            "--domain", FLYTE_DOMAIN,
+            workflow_file,
+            workflow_name,
+        ]
     for key, value in params.items():
         cmd += [f"--{key}", value]
     run(cmd, cwd=pipeline_root)
@@ -405,6 +414,8 @@ def main() -> None:
     parser.add_argument("--skip-upload",  action="store_true", help="salta upload dos CSVs para MinIO")
     parser.add_argument("--skip-flyte",   action="store_true",
                         help="salta verificação/arranque do sandbox Flyte (já a correr externamente)")
+    parser.add_argument("--local-flyte",  action="store_true",
+                        help="executa os workflows Flyte localmente (sem sandbox K3s); implica --skip-flyte")
     parser.add_argument("--no-quality",   action="store_true", help="salta os quality gates")
     args = parser.parse_args()
 
@@ -473,7 +484,10 @@ def main() -> None:
         print("\n>>> --skip-docker: compose up ignorado.")
 
     # --- Flyte sandbox ---
-    if not args.skip_flyte:
+    local_flyte = args.local_flyte
+    if local_flyte:
+        print("\n>>> --local-flyte: workflows Flyte executados localmente (sem sandbox K3s).")
+    elif not args.skip_flyte:
         print("\n" + "=" * 60)
         print("FASE PRÉ — Sandbox Flyte (K3s remoto)")
         print("=" * 60)
@@ -501,12 +515,20 @@ def main() -> None:
     else:
         print("\n>>> --skip-upload: upload de CSVs ignorado.")
 
+    # In local mode tasks run in the host Python process; override hostnames so
+    # they connect to the Docker-mapped ports on localhost instead of the
+    # container-internal host.docker.internal address.
+    if local_flyte:
+        os.environ.setdefault("TRINO_HOST", "localhost")
+        os.environ.setdefault("MINIO_ENDPOINT", "http://localhost:9000")
+
     # Alias para reduzir repetição na chamada pyflyte_run
     def remote_run(wf_file: str, wf_name: str, params: dict[str, str] | None = None) -> None:
         pyflyte_run(
             venv_python, pipeline_root,
             f"workflows/{wf_file}", wf_name,
             params or {}, flyte_config,
+            local=local_flyte,
         )
 
     # =========================================================================

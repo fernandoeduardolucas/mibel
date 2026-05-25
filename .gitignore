@@ -52,10 +52,6 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Generated data (raw inputs e outputs processados — não pertencem ao repo)
-**/data/raw/
-**/data/clean/
-**/*.parquet
 
 # Claude Code (configuração local do assistente)
 .claude/

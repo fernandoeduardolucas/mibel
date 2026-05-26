@@ -388,9 +388,9 @@ check_name | status | valor_pct | threshold_pct | detalhe
 \end{lstlisting}
 
 \begin{itemize}[leftmargin=*,noitemsep]
-  \item \textbf{\textcolor{pass-green}{PASS}}: valor dentro dos limites definidos no contrato do DP
-  \item \textbf{\textcolor{warn-orange}{WARN}}: anomalia não crítica que não viola o contrato mas merece atenção, pipeline continua, log emitido, registo persistido em \texttt{quality\_log}
-  \item \textbf{\textcolor{fail-red}{FAIL}}: violação crítica do contrato, com \texttt{SystemExit} imediato; os dados corrompidos não chegam a dashboards, modelos ML ou APIs
+  \item \textbf {PASS}: valor dentro dos limites definidos no contrato do DP
+  \item \textbf{WARN}: anomalia não crítica que não viola o contrato mas merece atenção, pipeline continua, log emitido, registo persistido em \texttt{quality\_log}
+  \item \textbf{FAIL}: violação crítica do contrato, com \texttt{SystemExit} imediato; os dados corrompidos não chegam a dashboards, modelos ML ou APIs
 \end{itemize}
 
 Todos os resultados de todos os checks são persistidos automaticamente na tabela \texttt{iceberg.gold.quality\_log} (particionada por \texttt{run\_date}), permitindo auditoria histórica completa, \textit{trending} de WARNs ao longo do tempo e rastreabilidade de que execução produziu cada resultado de qualidade.
@@ -483,11 +483,11 @@ Com injeção de 5\% de corrupção (\texttt{--type all --pct 5}, $\sim$26\,000 
 
 \begin{itemize}[leftmargin=*,noitemsep]
   \item Linhas \texttt{ok}: $\sim$95\% ($\sim$24\,700); linhas \texttt{null\_values}: $\sim$2,5\%; linhas \texttt{out\_of\_range}: $\sim$2,5\%
-  \item Check S13 (\texttt{pct\_ok >= 95\%}) transita para \textcolor{warn-orange}{WARN} (limiar exactamente na fronteira)
-  \item Checks S06--S10 (intervalos físicos de meteorologia: temperatura, precipitação, vento, radiação, nebulosidade) transitam para \textcolor{fail-red}{FAIL}, bloqueando a promoção para Gold até ao restauro dos dados originais
+  \item Check S13 (\texttt{pct\_ok >= 95\%}) transita para WARN (limiar exactamente na fronteira)
+  \item Checks S06--S10 (intervalos físicos de meteorologia: temperatura, precipitação, vento, radiação, nebulosidade) transitam para FAIL, bloqueando a promoção para Gold até ao restauro dos dados originais
 \end{itemize}
 
-O restauro é imediato via \texttt{--restore}, que elimina as linhas corrompidas da Bronze. A nova execução da Silver confirma que todos os checks regressam a \textcolor{pass-green}{PASS} e que a Gold não foi contaminada durante o período de corrupção, uma vez que a Gold filtra explicitamente por \texttt{\_quality\_flag = 'ok'} antes de qualquer join ou cálculo de features.
+O restauro é imediato via \texttt{--restore}, que elimina as linhas corrompidas da Bronze. A nova execução da Silver confirma que todos os checks regressam a PASS e que a Gold não foi contaminada durante o período de corrupção, uma vez que a Gold filtra explicitamente por \texttt{\_quality\_flag = 'ok'} antes de qualquer join ou cálculo de features.
 
 A demo valida empiricamente o papel de cada camada na arquitetura medallion: a Bronze actua como \textit{landing zone} fiel à fonte (sem rejeições nem transformações), enquanto a Silver é a única fronteira de limpeza que impede dados inválidos de contaminar targets de treino ML e visualizações operacionais.
 
